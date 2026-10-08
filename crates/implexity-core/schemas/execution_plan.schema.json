@@ -1,0 +1,250 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "implexity-execution-plan/4",
+  "title": "Implexity release-candidate execution plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "status",
+    "product",
+    "handoff_target",
+    "semantic_version",
+    "semantic_version_is_not_gui_branding",
+    "release_candidate_id",
+    "release_candidate_boundary",
+    "promotion_requirements",
+    "tested_host",
+    "global_invariants",
+    "authority_rules",
+    "gates",
+    "known_open_items",
+    "supervision",
+    "final_evidence"
+  ],
+  "properties": {
+    "schema": {"const": "implexity-execution-plan/4"},
+    "status": {"const": "release_candidate_plan"},
+    "product": {"const": "Implexity"},
+    "handoff_target": {"const": "automation"},
+    "semantic_version": {"type": "string", "minLength": 1},
+    "semantic_version_is_not_gui_branding": {"const": true},
+    "release_candidate_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{2,127}$"
+    },
+    "release_candidate_boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "exact_acceleration_external_evidence_earned",
+        "full_grid_primal_benchmark_completed",
+        "canonical_delivery_promoted",
+        "generation_10_launch",
+        "mcp_submission",
+        "production_optimization",
+        "boundary_campaign",
+        "rendered_production_qa",
+        "approximate_acceleration_implementation"
+      ],
+      "properties": {
+        "exact_acceleration_external_evidence_earned": {"const": false},
+        "full_grid_primal_benchmark_completed": {"const": false},
+        "canonical_delivery_promoted": {"const": false},
+        "generation_10_launch": {"const": false},
+        "mcp_submission": {"const": false},
+        "production_optimization": {"const": false},
+        "boundary_campaign": {"const": false},
+        "rendered_production_qa": {"const": false},
+        "approximate_acceleration_implementation": {"const": false}
+      }
+    },
+    "promotion_requirements": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "unchanged_final_source_manifest",
+        "closed_semantic_evidence_set",
+        "exact_acceleration_verification",
+        "full_grid_primal_benchmark",
+        "three_prelaunch_quiescence_scans",
+        "three_postrun_quiescence_scans",
+        "independent_delivery_verification",
+        "external_verified_delivery_envelope_is_sole_promotion_authority",
+        "in_tree_markers_cannot_promote"
+      ],
+      "properties": {
+        "unchanged_final_source_manifest": {"const": true},
+        "closed_semantic_evidence_set": {"const": true},
+        "exact_acceleration_verification": {"const": true},
+        "full_grid_primal_benchmark": {"const": true},
+        "three_prelaunch_quiescence_scans": {"const": true},
+        "three_postrun_quiescence_scans": {"const": true},
+        "independent_delivery_verification": {"const": true},
+        "external_verified_delivery_envelope_is_sole_promotion_authority": {"const": true},
+        "in_tree_markers_cannot_promote": {"const": true}
+      }
+    },
+    "tested_host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operating_system", "python", "node", "windows_native_execution"],
+      "properties": {
+        "operating_system": {"type": "string", "minLength": 1},
+        "python": {"type": "string", "minLength": 1},
+        "node": {"type": "string", "minLength": 1},
+        "windows_native_execution": {"const": "not performed"}
+      }
+    },
+    "global_invariants": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "physics_neutral_common_kernel",
+        "opaque_named_design_coordinates",
+        "physics_owned_by_typed_packages",
+        "strict_typed_addins",
+        "fail_closed_derivatives",
+        "accepted_only_authoritative_state",
+        "approximate_truth_never_authoritative",
+        "historical_artifacts_immutable",
+        "stage57_science_unchanged",
+        "stage57_explicit_coordinate_binding"
+      ],
+      "properties": {
+        "physics_neutral_common_kernel": {"const": true},
+        "opaque_named_design_coordinates": {"const": true},
+        "physics_owned_by_typed_packages": {"const": true},
+        "strict_typed_addins": {"const": true},
+        "fail_closed_derivatives": {"const": true},
+        "accepted_only_authoritative_state": {"const": true},
+        "approximate_truth_never_authoritative": {"const": true},
+        "historical_artifacts_immutable": {"const": true},
+        "stage57_science_unchanged": {"const": true},
+        "stage57_explicit_coordinate_binding": {"const": "model:control"}
+      }
+    },
+    "authority_rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "verify_before_mutation",
+        "one_gate_at_a_time",
+        "fail_closed",
+        "no_launch_from_source_bundle_alone",
+        "generation_10_requires_supervisor_authority_and_audited_companion_capsule",
+        "preview_identity_separate_from_exact",
+        "manifest_rebind_only_after_stable_changes",
+        "independent_review_before_promotion"
+      ],
+      "properties": {
+        "verify_before_mutation": {"const": true},
+        "one_gate_at_a_time": {"const": true},
+        "fail_closed": {"const": true},
+        "no_launch_from_source_bundle_alone": {"const": true},
+        "generation_10_requires_supervisor_authority_and_audited_companion_capsule": {"const": true},
+        "preview_identity_separate_from_exact": {"const": true},
+        "manifest_rebind_only_after_stable_changes": {"const": true},
+        "independent_review_before_promotion": {"const": true}
+      }
+    },
+    "gates": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "purpose", "depends_on"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "purpose": {"type": "string", "minLength": 1},
+          "depends_on": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1},
+            "uniqueItems": true
+          },
+          "inputs": {"$ref": "#/$defs/nonemptyTextList"},
+          "commands": {"$ref": "#/$defs/nonemptyTextList"},
+          "required_artifacts": {"$ref": "#/$defs/nonemptyTextList"},
+          "failure_predicates": {"$ref": "#/$defs/nonemptyTextList"},
+          "restart_policy": {"type": "string", "minLength": 1},
+          "blocked_in_this_bundle": {"const": true},
+          "blocking_reason": {"type": "string", "minLength": 1},
+          "required_preconditions": {"$ref": "#/$defs/nonemptyTextList"},
+          "measurements": {"$ref": "#/$defs/nonemptyTextList"},
+          "implemented_work": {"$ref": "#/$defs/nonemptyTextList"},
+          "ordered_work": {"$ref": "#/$defs/nonemptyTextList"},
+          "required_tests": {"$ref": "#/$defs/nonemptyTextList"},
+          "qualification_boundary": {"$ref": "#/$defs/nonemptyTextList"},
+          "limitations": {"$ref": "#/$defs/nonemptyTextList"},
+          "hard_barriers": {"$ref": "#/$defs/nonemptyTextList"},
+          "required_package_evidence": {"$ref": "#/$defs/nonemptyTextList"}
+        }
+      }
+    },
+    "known_open_items": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "disposition"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "disposition": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "supervision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "change_set_requires_scope",
+        "scientific_invariants_statement",
+        "focused_adversarial_tests",
+        "broad_regression_after_focused_tests",
+        "result_deviation_blocker_fix_restart_ledger",
+        "independent_verification_before_promotion"
+      ],
+      "properties": {
+        "change_set_requires_scope": {"const": true},
+        "scientific_invariants_statement": {"const": true},
+        "focused_adversarial_tests": {"const": true},
+        "broad_regression_after_focused_tests": {"const": true},
+        "result_deviation_blocker_fix_restart_ledger": {"const": true},
+        "independent_verification_before_promotion": {"const": true}
+      }
+    },
+    "final_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "inside_archive",
+        "outside_archive",
+        "archive_sha256_inside_archive",
+        "reason"
+      ],
+      "properties": {
+        "inside_archive": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "outside_archive": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "archive_sha256_inside_archive": {"const": false},
+        "reason": {"type": "string", "minLength": 1}
+      }
+    }
+  },
+  "$defs": {
+    "nonemptyTextList": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1}
+    }
+  }
+}

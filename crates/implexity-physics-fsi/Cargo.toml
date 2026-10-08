@@ -1,0 +1,44 @@
+# SPDX-License-Identifier: Apache-2.0
+# METAPLEXIS-DISCLAIMER-BEGIN sha256=c7c02258f245d1dcd6db1e8066ef4f6bc1bf36430d91bf9aab026671723c058f
+# Open-access statement and disclaimer: see DISCLAIMER.md.
+# METAPLEXIS-DISCLAIMER-END
+
+[package]
+autotests = false
+name = "implexity-physics-fsi"
+description = "Dynamic two-way fluid-structure interaction (moving-occupancy lattice Boltzmann flow coupled to large-deformation soft solids) with exact gradients of time- and cycle-averaged responses for topology optimization (package fluid_structure_dynamics)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+implexity-core = { workspace = true }
+implexity-geometry = { workspace = true }
+implexity-ad = { workspace = true }
+implexity-linalg = { workspace = true }
+implexity-optim = { workspace = true }
+implexity-solve = { workspace = true }
+implexity-runtime = { workspace = true }
+implexity-physics-solid = { workspace = true }
+implexity-physics-lbm = { workspace = true, features = ["moving"] }
+serde_json = { workspace = true, features = ["preserve_order"] }
+ndarray = { workspace = true }
+rayon = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+
+[lints]
+workspace = true
+
+[lib]
+test = false
+doctest = false
+
+[[bin]]
+name = "implexity-fsi-continue"
+path = "src/bin/implexity-fsi-continue.rs"
+test = false
+doc = false

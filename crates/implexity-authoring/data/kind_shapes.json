@@ -1,0 +1,424 @@
+{
+  "kinds": {
+    "array.linear": {
+      "arity": 1,
+      "discrete": [
+        "count_x",
+        "count_y",
+        "count_z"
+      ],
+      "init": [
+        "axes",
+        "neighbours"
+      ],
+      "struct": [
+        "axes",
+        "neighbours"
+      ]
+    },
+    "array.polar": {
+      "arity": 1,
+      "discrete": [
+        "count"
+      ],
+      "init": [
+        "neighbours"
+      ],
+      "struct": [
+        "neighbours"
+      ]
+    },
+    "box": {
+      "arity": null,
+      "discrete": [],
+      "init": [],
+      "struct": []
+    },
+    "capsule": {
+      "arity": null,
+      "discrete": [],
+      "init": [],
+      "struct": []
+    },
+    "cell_grid_field": {
+      "arity": null,
+      "discrete": [],
+      "init": [
+        "field_class",
+        "source",
+        "measurement",
+        "visualization"
+      ],
+      "struct": []
+    },
+    "chamfer": {
+      "arity": 2,
+      "discrete": [],
+      "init": [
+        "op"
+      ],
+      "struct": [
+        "op"
+      ]
+    },
+    "cone": {
+      "arity": null,
+      "discrete": [],
+      "init": [],
+      "struct": []
+    },
+    "constant": {
+      "arity": null,
+      "discrete": [],
+      "init": [],
+      "struct": []
+    },
+    "cylinder": {
+      "arity": null,
+      "discrete": [],
+      "init": [],
+      "struct": []
+    },
+    "difference": {
+      "arity": 2,
+      "discrete": [],
+      "init": [],
+      "struct": []
+    },
+    "fillet": {
+      "arity": 2,
+      "discrete": [],
+      "init": [
+        "op"
+      ],
+      "struct": [
+        "op"
+      ]
+    },
+    "grid_field": {
+      "arity": null,
+      "discrete": [],
+      "init": [
+        "field_class",
+        "source",
+        "measurement",
+        "visualization"
+      ],
+      "struct": []
+    },
+    "interpolate": {
+      "arity": 2,
+      "discrete": [],
+      "init": [],
+      "struct": []
+    },
+    "intersect": {
+      "arity": 2,
+      "discrete": [],
+      "init": [],
+      "struct": []
+    },
+    "lattice.controlled": {
+      "arity": null,
+      "discrete": [],
+      "init": [
+        "control_schema",
+        "origin_mm",
+        "domain_mm",
+        "analysis_grid",
+        "control_grid",
+        "period_mm",
+        "thickness_range_mm",
+        "interface_mm",
+        "stretch_limit",
+        "beta_mask",
+        "beta_phase",
+        "beta_topology",
+        "fixed_regions",
+        "geometry_grid",
+        "frozen_geometry",
+        "minimum_wall_mm"
+      ],
+      "struct": [
+        "control_schema",
+        "origin_mm",
+        "domain_mm",
+        "analysis_grid",
+        "geometry_grid",
+        "control_grid",
+        "period_mm",
+        "thickness_range_mm",
+        "interface_mm",
+        "stretch_limit",
+        "beta_mask",
+        "beta_phase",
+        "beta_topology",
+        "fixed_regions",
+        "frozen_geometry"
+      ]
+    },
+    "lattice.controlled_assembly": {
+      "arity": null,
+      "discrete": [],
+      "init": [
+        "assembly_schema",
+        "control_schema",
+        "origin_mm",
+        "domain_mm",
+        "analysis_grid",
+        "control_grid",
+        "interface_mm",
+        "volumes",
+        "composition",
+        "phase_policy",
+        "fixed_regions",
+        "frozen_geometry"
+      ],
+      "struct": [
+        "assembly_schema",
+        "control_schema",
+        "origin_mm",
+        "domain_mm",
+        "analysis_grid",
+        "control_grid",
+        "interface_mm",
+        "volumes",
+        "composition",
+        "phase_policy",
+        "fixed_regions",
+        "frozen_geometry"
+      ]
+    },
+    "mask": {
+      "arity": 3,
+      "discrete": [],
+      "init": [],
+      "struct": []
+    },
+    "mesh_sdf": {
+      "arity": 0,
+      "discrete": [],
+      "init": [
+        "field_class",
+        "source",
+        "measurement",
+        "visualization"
+      ],
+      "struct": []
+    },
+    "negate": {
+      "arity": 1,
+      "discrete": [],
+      "init": [],
+      "struct": []
+    },
+    "offset": {
+      "arity": 1,
+      "discrete": [],
+      "init": [],
+      "struct": []
+    },
+    "optimize": {
+      "arity": null,
+      "discrete": [],
+      "init": [
+        "child",
+        "free",
+        "objective",
+        "constraints",
+        "case"
+      ],
+      "struct": []
+    },
+    "plane": {
+      "arity": null,
+      "discrete": [],
+      "init": [],
+      "struct": []
+    },
+    "remap.affine": {
+      "arity": 1,
+      "discrete": [],
+      "init": [],
+      "struct": []
+    },
+    "remap.clamp": {
+      "arity": 1,
+      "discrete": [],
+      "init": [],
+      "struct": []
+    },
+    "remap.soft_clamp": {
+      "arity": 1,
+      "discrete": [],
+      "init": [],
+      "struct": []
+    },
+    "rotate": {
+      "arity": 1,
+      "discrete": [],
+      "init": [],
+      "struct": []
+    },
+    "rounded_box": {
+      "arity": null,
+      "discrete": [],
+      "init": [],
+      "struct": []
+    },
+    "scale.nonuniform": {
+      "arity": 1,
+      "discrete": [],
+      "init": [],
+      "struct": []
+    },
+    "scale.nonuniform_safe": {
+      "arity": 1,
+      "discrete": [],
+      "init": [],
+      "struct": []
+    },
+    "scale.uniform": {
+      "arity": 1,
+      "discrete": [],
+      "init": [],
+      "struct": []
+    },
+    "shell": {
+      "arity": 1,
+      "discrete": [],
+      "init": [],
+      "struct": []
+    },
+    "sphere": {
+      "arity": null,
+      "discrete": [],
+      "init": [],
+      "struct": []
+    },
+    "spline_curve": {
+      "arity": null,
+      "discrete": [],
+      "init": [
+        "basis",
+        "closed",
+        "revolve",
+        "samples_per_segment"
+      ],
+      "struct": [
+        "basis",
+        "closed",
+        "revolve",
+        "samples_per_segment"
+      ]
+    },
+    "torus": {
+      "arity": null,
+      "discrete": [],
+      "init": [],
+      "struct": []
+    },
+    "tpms": {
+      "arity": null,
+      "discrete": [],
+      "init": [
+        "family",
+        "normalise"
+      ],
+      "struct": [
+        "family",
+        "normalise"
+      ]
+    },
+    "translate": {
+      "arity": 1,
+      "discrete": [],
+      "init": [],
+      "struct": []
+    },
+    "union": {
+      "arity": 2,
+      "discrete": [],
+      "init": [],
+      "struct": []
+    },
+    "warp.bend": {
+      "arity": 1,
+      "discrete": [],
+      "init": [],
+      "struct": []
+    },
+    "warp.taper": {
+      "arity": 1,
+      "discrete": [],
+      "init": [],
+      "struct": []
+    },
+    "warp.twist": {
+      "arity": 1,
+      "discrete": [],
+      "init": [],
+      "struct": []
+    },
+    "with_fields": {
+      "arity": null,
+      "discrete": [],
+      "init": [],
+      "struct": []
+    },
+    "profile.rectangle": {
+      "arity": 0,
+      "discrete": [],
+      "init": [],
+      "struct": []
+    },
+    "profile.circle": {
+      "arity": 0,
+      "discrete": [],
+      "init": [],
+      "struct": []
+    },
+    "profile.polygon": {
+      "arity": 0,
+      "discrete": [],
+      "init": [
+        "constraints"
+      ],
+      "struct": [
+        "constraints"
+      ]
+    },
+    "extrude": {
+      "arity": 1,
+      "discrete": [],
+      "init": [],
+      "struct": []
+    },
+    "revolve": {
+      "arity": 1,
+      "discrete": [],
+      "init": [],
+      "struct": []
+    },
+    "reflect": {
+      "arity": 1,
+      "discrete": [],
+      "init": [],
+      "struct": []
+    },
+    "loft": {
+      "arity": 0,
+      "discrete": [],
+      "init": [],
+      "struct": []
+    },
+    "sweep.tube": {
+      "arity": 0,
+      "discrete": [],
+      "init": [],
+      "struct": []
+    }
+  },
+  "schema": "implexity-rs-kind-shapes/1",
+  "source": "gen_authoring_kinds.py"
+}

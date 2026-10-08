@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "implexity://schemas/cfd/saddle-point-linear-solver-v23-stage1",
+  "title": "Implexity CFD sparse saddle-point linear solver declaration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "method",
+    "relativeTolerance",
+    "absoluteTolerance",
+    "restart",
+    "maximumIterations",
+    "velocityBlock",
+    "pressureSchur",
+    "transposeMode"
+  ],
+  "properties": {
+    "method": {
+      "enum": [
+        "gmres",
+        "lgmres"
+      ]
+    },
+    "relativeTolerance": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "exclusiveMaximum": 1
+    },
+    "absoluteTolerance": {
+      "type": "number",
+      "minimum": 0
+    },
+    "restart": {
+      "type": "integer",
+      "minimum": 2
+    },
+    "maximumIterations": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "transposeMode": {
+      "const": "exact_preconditioner_transpose"
+    },
+    "velocityBlock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "strategy",
+        "dropTolerance",
+        "fillFactor"
+      ],
+      "properties": {
+        "strategy": {
+          "enum": [
+            "ilu",
+            "direct",
+            "jacobi"
+          ]
+        },
+        "dropTolerance": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 1
+        },
+        "fillFactor": {
+          "type": "number",
+          "minimum": 1
+        }
+      }
+    },
+    "pressureSchur": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "approximation",
+        "strategy",
+        "dropTolerance",
+        "fillFactor",
+        "relativeRegularization"
+      ],
+      "properties": {
+        "approximation": {
+          "const": "C_plus_B_diagA_inverse_BT"
+        },
+        "strategy": {
+          "enum": [
+            "ilu",
+            "direct",
+            "jacobi"
+          ]
+        },
+        "dropTolerance": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 1
+        },
+        "fillFactor": {
+          "type": "number",
+          "minimum": 1
+        },
+        "relativeRegularization": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

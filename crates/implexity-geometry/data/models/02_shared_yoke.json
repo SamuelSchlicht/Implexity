@@ -1,0 +1,481 @@
+{
+ "arrays": {},
+ "doc": "a clamp yoke whose four bolt holes are ONE node with four parents",
+ "meta": {
+  "example": "02_shared_yoke",
+  "header": [
+   "A clamp yoke with four bolt holes -- and ONE bolt-hole node, named by four",
+   "parents.",
+   "",
+   "THIS IS THE FILE THE NODE TABLE EXISTS FOR.  `Node.describe()` inlines",
+   "children, so a nested-tree document would write the bolt feature four times",
+   "and read it back as four independent copies; editing \"the\" hole would then",
+   "move one of them.  Here `bolt` appears once and `h_mm`, `h_mp`, `h_pm`, `h_pp`",
+   "each name it.  Deserialising constructs it exactly once and hands the SAME",
+   "object to all four, so there is nothing to propagate: there is one node.",
+   "",
+   "WATCH IT HAPPEN",
+   "  implexity model show models/02_shared_yoke.json",
+   "      -- `bolt` is printed once, expanded, and marked `shared by 4`; the other",
+   "         three parents print a back-reference instead of a second copy.",
+   "  implexity model set models/02_shared_yoke.json bore_d=6.5 -o /tmp/yoke.json",
+   "      -- ONE node parameter moves -- `bore.radius_mm` -- and all four holes",
+   "         change, because the four translates name the same `bolt`, and that",
+   "         one bolt contains that one bore.  There is nothing to propagate.",
+   "",
+   "SHARING IS BY IDENTITY, NEVER BY CONTENT.  The two `pad` nodes below are",
+   "structurally identical and are NOT merged: the author wrote them separately,",
+   "and content-deduplicating them would create a coupling nobody asked for --",
+   "a later edit to one would silently move geometry the engineer was not looking",
+   "at.  `implexity model show` reports 1 shared node here, not 2.",
+   "",
+   "TRY",
+   "  implexity model show      models/02_shared_yoke.json",
+   "  implexity model params    models/02_shared_yoke.json",
+   "  implexity model set       models/02_shared_yoke.json bore_d=6.5 --dry-run",
+   "  implexity model eval      models/02_shared_yoke.json --node bolt --grid 10"
+  ],
+  "teaches": "a shared subtree with four parents; sharing by identity, never by content"
+ },
+ "name": "clamp yoke, four holes from one node",
+ "nodes": {
+  "blank": {
+   "children": [
+    {
+     "name": "plate",
+     "node": "plate"
+    },
+    {
+     "name": "pads",
+     "node": "pads"
+    }
+   ],
+   "kind": "union",
+   "params": {
+    "k_scale": 1.0
+   },
+   "units": {
+    "k_scale": "-"
+   }
+  },
+  "bolt": {
+   "children": [
+    {
+     "name": "bore",
+     "node": "bore"
+    },
+    {
+     "name": "counterbore",
+     "node": "cbore_at"
+    }
+   ],
+   "doc": "THE SHARED SUBTREE: bore + counterbore, one bolt feature.  Four parents name this id",
+   "kind": "union",
+   "params": {
+    "k_scale": 1.0
+   },
+   "units": {
+    "k_scale": "-"
+   }
+  },
+  "bore": {
+   "children": [],
+   "doc": "the through bore",
+   "kind": "cylinder",
+   "params": {
+    "half_height_mm": {
+     "expr": "plate_z"
+    },
+    "radius_mm": {
+     "expr": "bore_d / 2"
+    }
+   },
+   "units": {
+    "half_height_mm": "mm",
+    "radius_mm": "mm"
+   }
+  },
+  "cbore": {
+   "children": [],
+   "doc": "the counterbore, before it is lifted to the top face",
+   "kind": "cylinder",
+   "params": {
+    "half_height_mm": {
+     "expr": "cbore_z"
+    },
+    "radius_mm": {
+     "expr": "cbore_d / 2"
+    }
+   },
+   "units": {
+    "half_height_mm": "mm",
+    "radius_mm": "mm"
+   }
+  },
+  "cbore_at": {
+   "children": [
+    {
+     "name": "shape",
+     "node": "cbore"
+    }
+   ],
+   "kind": "translate",
+   "params": {
+    "dx_mm": 0.0,
+    "dy_mm": 0.0,
+    "dz_mm": {
+     "expr": "plate_z / 2"
+    }
+   },
+   "units": {
+    "dx_mm": "mm",
+    "dy_mm": "mm",
+    "dz_mm": "mm"
+   }
+  },
+  "h_mm": {
+   "children": [
+    {
+     "name": "bolt",
+     "node": "bolt"
+    }
+   ],
+   "kind": "translate",
+   "params": {
+    "dx_mm": {
+     "expr": "-pitch_x / 2"
+    },
+    "dy_mm": {
+     "expr": "-pitch_y / 2"
+    },
+    "dz_mm": 0.0
+   },
+   "units": {
+    "dx_mm": "mm",
+    "dy_mm": "mm",
+    "dz_mm": "mm"
+   }
+  },
+  "h_mp": {
+   "children": [
+    {
+     "name": "bolt",
+     "node": "bolt"
+    }
+   ],
+   "kind": "translate",
+   "params": {
+    "dx_mm": {
+     "expr": "-pitch_x / 2"
+    },
+    "dy_mm": {
+     "expr": "pitch_y / 2"
+    },
+    "dz_mm": 0.0
+   },
+   "units": {
+    "dx_mm": "mm",
+    "dy_mm": "mm",
+    "dz_mm": "mm"
+   }
+  },
+  "h_pm": {
+   "children": [
+    {
+     "name": "bolt",
+     "node": "bolt"
+    }
+   ],
+   "kind": "translate",
+   "params": {
+    "dx_mm": {
+     "expr": "pitch_x / 2"
+    },
+    "dy_mm": {
+     "expr": "-pitch_y / 2"
+    },
+    "dz_mm": 0.0
+   },
+   "units": {
+    "dx_mm": "mm",
+    "dy_mm": "mm",
+    "dz_mm": "mm"
+   }
+  },
+  "h_pp": {
+   "children": [
+    {
+     "name": "bolt",
+     "node": "bolt"
+    }
+   ],
+   "kind": "translate",
+   "params": {
+    "dx_mm": {
+     "expr": "pitch_x / 2"
+    },
+    "dy_mm": {
+     "expr": "pitch_y / 2"
+    },
+    "dz_mm": 0.0
+   },
+   "units": {
+    "dx_mm": "mm",
+    "dy_mm": "mm",
+    "dz_mm": "mm"
+   }
+  },
+  "holes": {
+   "children": [
+    {
+     "name": "minus",
+     "node": "holes_m"
+    },
+    {
+     "name": "plus",
+     "node": "holes_p"
+    }
+   ],
+   "kind": "union",
+   "params": {
+    "k_scale": 1.0
+   },
+   "units": {
+    "k_scale": "-"
+   }
+  },
+  "holes_m": {
+   "children": [
+    {
+     "name": "a",
+     "node": "h_mm"
+    },
+    {
+     "name": "b",
+     "node": "h_mp"
+    }
+   ],
+   "kind": "union",
+   "params": {
+    "k_scale": 1.0
+   },
+   "units": {
+    "k_scale": "-"
+   }
+  },
+  "holes_p": {
+   "children": [
+    {
+     "name": "a",
+     "node": "h_pm"
+    },
+    {
+     "name": "b",
+     "node": "h_pp"
+    }
+   ],
+   "kind": "union",
+   "params": {
+    "k_scale": 1.0
+   },
+   "units": {
+    "k_scale": "-"
+   }
+  },
+  "pad_a": {
+   "children": [],
+   "doc": "structurally identical to pad_b and deliberately NOT shared with it",
+   "kind": "cylinder",
+   "params": {
+    "half_height_mm": {
+     "expr": "plate_z / 2 + 1.0"
+    },
+    "radius_mm": {
+     "expr": "pad_d / 2"
+    }
+   },
+   "units": {
+    "half_height_mm": "mm",
+    "radius_mm": "mm"
+   }
+  },
+  "pad_a_at": {
+   "children": [
+    {
+     "name": "shape",
+     "node": "pad_a"
+    }
+   ],
+   "kind": "translate",
+   "params": {
+    "dx_mm": {
+     "expr": "-plate_x / 2 + pad_d"
+    },
+    "dy_mm": 0.0,
+    "dz_mm": 0.0
+   },
+   "units": {
+    "dx_mm": "mm",
+    "dy_mm": "mm",
+    "dz_mm": "mm"
+   }
+  },
+  "pad_b": {
+   "children": [],
+   "kind": "cylinder",
+   "params": {
+    "half_height_mm": {
+     "expr": "plate_z / 2 + 1.0"
+    },
+    "radius_mm": {
+     "expr": "pad_d / 2"
+    }
+   },
+   "units": {
+    "half_height_mm": "mm",
+    "radius_mm": "mm"
+   }
+  },
+  "pad_b_at": {
+   "children": [
+    {
+     "name": "shape",
+     "node": "pad_b"
+    }
+   ],
+   "kind": "translate",
+   "params": {
+    "dx_mm": {
+     "expr": "plate_x / 2 - pad_d"
+    },
+    "dy_mm": 0.0,
+    "dz_mm": 0.0
+   },
+   "units": {
+    "dx_mm": "mm",
+    "dy_mm": "mm",
+    "dz_mm": "mm"
+   }
+  },
+  "pads": {
+   "children": [
+    {
+     "name": "a",
+     "node": "pad_a_at"
+    },
+    {
+     "name": "b",
+     "node": "pad_b_at"
+    }
+   ],
+   "kind": "union",
+   "params": {
+    "k_scale": 1.0
+   },
+   "units": {
+    "k_scale": "-"
+   }
+  },
+  "part": {
+   "children": [
+    {
+     "name": "blank",
+     "node": "blank"
+    },
+    {
+     "name": "holes",
+     "node": "holes"
+    }
+   ],
+   "doc": "the yoke: the blank with all four bolt features removed",
+   "kind": "difference",
+   "params": {
+    "k_scale": 1.0
+   },
+   "units": {
+    "k_scale": "-"
+   }
+  },
+  "plate": {
+   "children": [],
+   "kind": "rounded_box",
+   "params": {
+    "bx_mm": {
+     "expr": "plate_x / 2"
+    },
+    "by_mm": {
+     "expr": "plate_y / 2"
+    },
+    "bz_mm": {
+     "expr": "plate_z / 2"
+    },
+    "radius_mm": {
+     "bind": "corner_r"
+    }
+   },
+   "units": {
+    "bx_mm": "mm",
+    "by_mm": "mm",
+    "bz_mm": "mm",
+    "radius_mm": "mm"
+   }
+  }
+ },
+ "outputs": {
+  "all_holes": "holes",
+  "one_bolt": "bolt"
+ },
+ "parameters": {
+  "bore_d": {
+   "doc": "through bore -- ONE node drives all four holes",
+   "max": 12.0,
+   "min": 3.0,
+   "units": "mm",
+   "value": 5.5
+  },
+  "cbore_d": {
+   "doc": "counterbore diameter",
+   "units": "mm",
+   "value": 10.0
+  },
+  "cbore_z": {
+   "doc": "counterbore depth from the top face",
+   "units": "mm",
+   "value": 3.0
+  },
+  "corner_r": {
+   "units": "mm",
+   "value": 3.0
+  },
+  "pad_d": {
+   "doc": "the two clamp pads, written separately on purpose -- see the header",
+   "units": "mm",
+   "value": 16.0
+  },
+  "pitch_x": {
+   "doc": "bolt circle pitch along x",
+   "units": "mm",
+   "value": 40.0
+  },
+  "pitch_y": {
+   "doc": "bolt circle pitch along y",
+   "units": "mm",
+   "value": 24.0
+  },
+  "plate_x": {
+   "units": "mm",
+   "value": 60.0
+  },
+  "plate_y": {
+   "units": "mm",
+   "value": 40.0
+  },
+  "plate_z": {
+   "units": "mm",
+   "value": 8.0
+  }
+ },
+ "root": "part",
+ "schema": "implexity-model/1",
+ "units": "mm"
+}

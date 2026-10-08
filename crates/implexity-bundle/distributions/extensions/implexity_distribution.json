@@ -1,0 +1,9 @@
+{
+  "schema": "implexity-distribution/1",
+  "distribution_id": "implexity_extensions",
+  "label": "Rust-native physics packages beyond the Python reference",
+  "catalogues": {
+    "packages": "package_catalog.json",
+    "history_responses": "history_response_catalog.json"
+  }
+}

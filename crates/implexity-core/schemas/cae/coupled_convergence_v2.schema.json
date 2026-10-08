@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "implexity://schemas/cae/coupled-convergence/2",
+  "title": "Implexity physics-agnostic per-field coupled convergence policy",
+  "type": "object",
+  "minProperties": 2,
+  "required": [
+    "schema"
+  ],
+  "propertyNames": {
+    "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+  },
+  "properties": {
+    "schema": {
+      "const": "implexity-coupled-convergence/2"
+    }
+  },
+  "additionalProperties": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "scale",
+      "tolerance"
+    ],
+    "properties": {
+      "scale": {
+        "$ref": "#/$defs/positive_finite_number"
+      },
+      "tolerance": {
+        "$ref": "#/$defs/positive_finite_number"
+      }
+    }
+  },
+  "$defs": {
+    "positive_finite_number": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    }
+  }
+}

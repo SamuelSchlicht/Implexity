@@ -1,0 +1,55 @@
+{
+  "schema": "implexity-history-response-catalog/1",
+  "components": [
+    {
+      "component_id": "material_history_monitor",
+      "response_units": {
+        "material_stored_energy_J": "J",
+        "material_conductivity_mean_W_mK": "W/(m K)",
+        "material_yield_mean_Pa": "Pa"
+      },
+      "requires": [
+        "material_stored_energy_J_m3",
+        "material_conductivity_W_mK",
+        "material_yield_stress_Pa",
+        "solid_cell_volume_m3"
+      ]
+    },
+    {
+      "component_id": "liquid_only_history_guard",
+      "response_units": {
+        "fluid_subcooling_bound_K": "K",
+        "phase_cell_nodal_subcooling_bound_K": "K"
+      },
+      "requires": [
+        "pressure_absolute_Pa",
+        "fluid_temperature_K",
+        "phase_cell_temperature_upper_K",
+        "fluid_fraction"
+      ]
+    },
+    {
+      "component_id": "liquid_pressure_margin",
+      "response_units": {
+        "fluid_pressure_margin_bound_Pa": "Pa",
+        "phase_cell_pressure_margin_bound_Pa": "Pa"
+      },
+      "requires": [
+        "pressure_absolute_Pa",
+        "fluid_temperature_K",
+        "phase_cell_temperature_upper_K",
+        "fluid_fraction"
+      ]
+    },
+    {
+      "component_id": "shared_temperature_extrema",
+      "response_units": {
+        "shared_temperature_max_K": "K",
+        "shared_temperature_upper_bound_K": "K"
+      },
+      "requires": [
+        "shared_nodal_temperature_K"
+      ]
+    }
+  ]
+}

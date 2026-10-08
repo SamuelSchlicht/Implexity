@@ -1,0 +1,17 @@
+{
+  "schema": "implexity-package-catalog/1",
+  "packages": [
+    {
+      "package_id": "soft_matter_mechanics",
+      "label": "Nonlinear soft-matter mechanics",
+      "installer": "implexity.addins.soft_matter_mechanics",
+      "scope": "Finite-deformation hyperelastic laws (neo-Hookean, Mooney-Rivlin, Yeoh, Ogden, Gent, Arruda-Boyce, Holzapfel-Gasser-Ogden fibres), decoupled volumetric functions and a stabilised mixed u-p formulation against locking, follower pressure, Newmark/generalized-alpha dynamics with Rayleigh damping, Prony finite-strain viscoelasticity, and density/fibre-angle topology design with exact history adjoints. No contact or fluid coupling."
+    },
+    {
+      "package_id": "region_history_responses",
+      "label": "Region-resolved history responses",
+      "installer": "implexity.addins.region_history_responses",
+      "scope": "History response observers restricted to material regions of a shared-temperature host: membership-weighted smooth proxies and literal maxima of the nodal temperature per solid endmember, endmember bond line, wetted solid/fluid wall and fluid, and of the accumulated equivalent plastic strain over one resolved load cycle per solid endmember with the Miner usage of a Coffin-Manson life, a correlation-based wall-film temperature correction (Gnielinski film coefficient at the bulk coolant speed and an authored hydraulic diameter) of the wetted wall and the solid regions, with exact derivatives through states and design. The design-quality observer occupancy_grayness reports the cell mean of 4 rho (1 - rho) of the host's physical occupancy (0 for a binary design) with its exact design derivative, as an objective term or a bound (for example tightened by a stage schedule of response targets). Diagnostic and constraint responses; no material calibration or fatigue-life certification."
+    }
+  ]
+}

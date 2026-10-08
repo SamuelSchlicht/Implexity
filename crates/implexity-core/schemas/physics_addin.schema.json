@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "implexity://schemas/physics-addin/2",
+  "title": "Implexity strict physics add-in contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version", "addin_id", "category", "fidelity", "runtime_route",
+    "execution_kind", "supported_operations", "exact_design_derivatives",
+    "exact_state_transpose", "provides",
+    "consumes", "responses", "authoring", "scope", "design_inputs"
+  ],
+  "properties": {
+    "contract_version": {"const": 2},
+    "addin_id": {"type": "string", "minLength": 1},
+    "category": {"enum": ["field", "constitutive", "interface", "evolution", "network", "process", "material"]},
+    "fidelity": {"enum": ["screening", "intermediate", "high", "qualification"]},
+    "scope": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1, "uniqueItems": true},
+    "priority": {"type": "integer"},
+    "runtime_route": {"enum": ["composite", "array", "mature_job", "job_extension"]},
+    "lifecycle": {"type": ["string", "null"]},
+    "exact_design_derivatives": {"type": "boolean"},
+    "exact_state_transpose": {"type": "boolean"},
+    "owner_id": {"type": "string"},
+    "execution_kind": {"enum": ["residual", "algebraic", "operation", "provider", "lifecycle_extension"]},
+    "supported_operations": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "no_op_operations": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "provides": {"type": "array", "items": {"$ref": "#/$defs/port"}},
+    "consumes": {"type": "array", "items": {"$ref": "#/$defs/port"}},
+    "responses": {"type": "array", "items": {"$ref": "#/$defs/response"}},
+    "authoring": {"type": "array", "items": {"$ref": "#/$defs/authoring"}},
+    "design_inputs": {"type": "array", "items": {"$ref": "#/$defs/designInput"}},
+    "notes": {"type": "array", "items": {"type": "string"}}
+  },
+  "$defs": {
+    "port": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["quantity", "unit", "domain", "interface", "temporal", "conserved", "port_id", "cardinality", "aggregation"],
+      "properties": {
+        "quantity": {"type": "string", "minLength": 1},
+        "unit": {"type": "string", "minLength": 1},
+        "domain": {"type": "string", "minLength": 1},
+        "interface": {"type": ["string", "null"]},
+        "temporal": {"enum": ["instantaneous", "lagged", "history", "steady"]},
+        "conserved": {"type": "boolean"},
+        "port_id": {"type": "string", "minLength": 1},
+        "cardinality": {"type": "string", "minLength": 1},
+        "aggregation": {"enum": ["single", "sum", "mean", "minimum", "maximum", "concatenate"]}
+      }
+    },
+    "response": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["response", "unit", "differentiable", "design_reachable", "depends_on"],
+      "properties": {
+        "response": {"type": "string", "minLength": 1},
+        "unit": {"type": "string", "minLength": 1},
+        "differentiable": {"type": "boolean"},
+        "design_reachable": {"type": "boolean"},
+        "depends_on": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "label": {"type": "string"},
+        "description": {"type": "string"},
+        "family": {"type": "string"}
+      }
+    },
+    "authoring": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "optional"],
+      "properties": {
+        "key": {"type": "string", "minLength": 1},
+        "description": {"type": "string"},
+        "optional": {"type": "boolean"}
+      }
+    },
+    "designInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["coordinate", "addin_id", "port_id"],
+      "properties": {
+        "coordinate": {"type": "string", "minLength": 1},
+        "addin_id": {"type": "string"},
+        "port_id": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "implexity-engineering-agent-action/1",
+  "title": "Implexity Engineering Agent Action",
+  "type": "object",
+  "required": ["action", "payload"],
+  "properties": {
+    "action": {"type": "string"},
+    "payload": {"type": "object"},
+    "reason": {"type": "string"}
+  },
+  "additionalProperties": false
+}

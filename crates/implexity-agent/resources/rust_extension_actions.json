@@ -1,0 +1,1290 @@
+{
+  "schema": "implexity-rust-extension-agent-actions/1",
+  "extension": "implexity-rust-extension/1",
+  "actions": [
+    {
+      "name": "inspect_dynamic_results",
+      "label": "Inspect dynamic results",
+      "permission": "read",
+      "mutates": false,
+      "requires_model": false,
+      "description": "Read dynamic result stores and their declared fields, series, cycles, frames, ranges, and state identities.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{12}$",
+            "minLength": 12,
+            "maxLength": 12
+          },
+          "store": {
+            "type": "string",
+            "minLength": 9,
+            "maxLength": 120,
+            "pattern": "^(service/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,95}|job/[0-9a-f]{12}/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,95})$",
+            "description": "a dynamic result store: service/<store> or job/<job_id>/<store> (from inspect_dynamic_results)"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "read_time_series",
+      "label": "Read dynamic time series",
+      "permission": "read",
+      "mutates": false,
+      "requires_model": false,
+      "description": "Read scalar series and statistics from a dynamic store. Set spectral, period, pulse, or chart options through the schema. Decimation retains extremes.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "store": {
+            "type": "string",
+            "minLength": 9,
+            "maxLength": 120,
+            "pattern": "^(service/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,95}|job/[0-9a-f]{12}/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,95})$",
+            "description": "a dynamic result store: service/<store> or job/<job_id>/<store> (from inspect_dynamic_results)"
+          },
+          "series": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 16,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+            },
+            "description": "series names (default: all, at most 16)"
+          },
+          "t_start": {
+            "type": "number",
+            "minimum": -1000000000000000.0,
+            "maximum": 1000000000000000.0
+          },
+          "t_end": {
+            "type": "number",
+            "minimum": -1000000000000000.0,
+            "maximum": 1000000000000000.0
+          },
+          "last_cycles": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100000,
+            "description": "only the last n periods"
+          },
+          "max_points": {
+            "type": "integer",
+            "minimum": 16,
+            "maximum": 4096,
+            "description": "samples returned per series (default 512)"
+          },
+          "spectrum": {
+            "type": "object",
+            "properties": {
+              "window": {
+                "enum": [
+                  "hann",
+                  "rectangular"
+                ]
+              },
+              "peaks": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 16
+              }
+            },
+            "additionalProperties": false,
+            "description": "amplitude spectra of the returned window (full resolution, not decimated)"
+          },
+          "period": {
+            "type": "object",
+            "properties": {
+              "series": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+              },
+              "level": {
+                "type": "number",
+                "minimum": -1000000000000000.0,
+                "maximum": 1000000000000000.0
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "series"
+            ],
+            "description": "estimate the period from up-crossings of level (default: the mean)"
+          },
+          "pulse": {
+            "type": "object",
+            "properties": {
+              "series": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+              },
+              "threshold": {
+                "type": "number",
+                "minimum": -1000000000000000.0,
+                "maximum": 1000000000000000.0
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "series",
+              "threshold"
+            ],
+            "description": "pulse measures of a series that is open while above threshold"
+          },
+          "chart": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "time_series",
+                  "spectrum",
+                  "phase_portrait"
+                ]
+              },
+              "x": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+              },
+              "y": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+              },
+              "derivative": {
+                "type": "boolean",
+                "description": "phase portrait of x against dx/dt"
+              },
+              "log_y": {
+                "type": "boolean"
+              },
+              "cursor_t": {
+                "type": "number",
+                "minimum": -1000000000000000.0,
+                "maximum": 1000000000000000.0
+              },
+              "width_px": {
+                "type": "integer",
+                "minimum": 160,
+                "maximum": 1600
+              },
+              "height_px": {
+                "type": "integer",
+                "minimum": 120,
+                "maximum": 1200
+              },
+              "background": {
+                "enum": [
+                  "dark",
+                  "white"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "kind"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "store"
+        ]
+      }
+    },
+    {
+      "name": "render_dynamic_frames",
+      "label": "Render dynamic result frames",
+      "permission": "read",
+      "mutates": false,
+      "requires_model": false,
+      "description": "Render a dynamic store as a contact sheet. Select declared fields, sections, phases, or times. Set flow overlays and deformation scales through the schema. Keep color ranges consistent across frames.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "store": {
+            "type": "string",
+            "minLength": 9,
+            "maxLength": 120,
+            "pattern": "^(service/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,95}|job/[0-9a-f]{12}/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,95})$",
+            "description": "a dynamic result store: service/<store> or job/<job_id>/<store> (from inspect_dynamic_results)"
+          },
+          "compare_stores": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 6,
+            "items": {
+              "type": "string",
+              "minLength": 9,
+              "maxLength": 120,
+              "pattern": "^(service/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,95}|job/[0-9a-f]{12}/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,95})$",
+              "description": "a dynamic result store: service/<store> or job/<job_id>/<store> (from inspect_dynamic_results)"
+            },
+            "description": "render the same view of several stores side by side (replaces store)"
+          },
+          "frames": {
+            "type": "object",
+            "properties": {
+              "indices": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 16,
+                "items": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 100000000
+                },
+                "description": "positions in the list of retained frames"
+              },
+              "phases": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 16,
+                "items": {
+                  "type": "number",
+                  "minimum": 0.0,
+                  "maximum": 1.0
+                },
+                "description": "phases in [0, 1) of the selected cycle (nearest stored frame)"
+              },
+              "times": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 16,
+                "items": {
+                  "type": "number",
+                  "minimum": -1000000000000000.0,
+                  "maximum": 1000000000000000.0
+                },
+                "description": "times (nearest stored frame)"
+              },
+              "count": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 16,
+                "description": "frames evenly spread over the selected cycle (default 8)"
+              },
+              "cycle": {
+                "oneOf": [
+                  {
+                    "const": "last"
+                  },
+                  {
+                    "type": "integer",
+                    "minimum": -1000000000,
+                    "maximum": 1000000000
+                  }
+                ],
+                "description": "which retained cycle (default last); transient stores ignore it"
+              }
+            },
+            "additionalProperties": false,
+            "description": "which frames: exactly one of indices, phases, times or count"
+          },
+          "columns": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 8
+          },
+          "field": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$",
+            "description": "field to colour: a field of the store manifest, or a field derived from a stored vector field by finite differences: curl:<field> (vorticity-like), q_criterion:<field>, divergence:<field>"
+          },
+          "component": {
+            "enum": [
+              "magnitude",
+              "x",
+              "y",
+              "z"
+            ],
+            "description": "vector fields: magnitude (default) or one component"
+          },
+          "mode": {
+            "enum": [
+              "section",
+              "iso",
+              "kymograph",
+              "phase_average"
+            ],
+            "description": "section (default): the field on its 2-D grid or a planar slice of a 3-D grid; iso: an iso-surface of a 3-D field coloured by `field`; kymograph: space-time plot along a line; phase_average: the field averaged per phase bin over all retained cycles"
+          },
+          "plane": {
+            "enum": [
+              "x",
+              "y",
+              "z"
+            ],
+            "description": "3-D grids: the slice normal (default z)"
+          },
+          "position": {
+            "type": "number",
+            "minimum": 0.0,
+            "maximum": 1.0,
+            "description": "3-D grids: slice position as a fraction of the extent along the normal (default 0.5)"
+          },
+          "colormap": {
+            "enum": [
+              "auto",
+              "viridis",
+              "magma",
+              "inferno",
+              "plasma",
+              "coolwarm",
+              "phase",
+              "gray"
+            ],
+            "description": "perceptually uniform, colour-vision-deficiency safe maps; auto follows the provider's palette hint (sequential viridis, diverging coolwarm, cyclic phase)"
+          },
+          "value_range": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": {
+              "type": "number",
+              "minimum": -1000000000000000.0,
+              "maximum": 1000000000000000.0
+            },
+            "description": "explicit colour range; default: the range over the whole captured run (identical in every frame)"
+          },
+          "range": {
+            "enum": [
+              "run",
+              "frames"
+            ],
+            "description": "run (default): colour range over the whole captured run; frames: over the rendered frames only"
+          },
+          "occupancy": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$",
+            "description": "an occupancy field on the same grid: drawn as the 0.5 contour"
+          },
+          "fill_occupancy": {
+            "type": "boolean",
+            "description": "also shade the occupied region"
+          },
+          "flow": {
+            "type": "object",
+            "properties": {
+              "field": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$",
+                "description": "a vector field on the same grid"
+              },
+              "style": {
+                "enum": [
+                  "streamlines",
+                  "lic"
+                ]
+              },
+              "separation_px": {
+                "type": "number",
+                "minimum": 4.0,
+                "maximum": 80.0,
+                "description": "streamline separation in pixels (default 14)"
+              },
+              "length_px": {
+                "type": "number",
+                "minimum": 2.0,
+                "maximum": 60.0,
+                "description": "LIC kernel half-length in pixels (default 12)"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "field"
+            ],
+            "description": "flow overlay: evenly spaced streamlines with direction arrows, or line integral convolution"
+          },
+          "deformation": {
+            "type": "object",
+            "properties": {
+              "field": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$",
+                "description": "a displacement field (kind displacement): on a reference node grid, or on the nodes of a mesh"
+              },
+              "scale": {
+                "type": "number",
+                "minimum": 0.0,
+                "maximum": 1000000.0,
+                "description": "deformation scale; 1 draws the true deformation (default 1)"
+              },
+              "mask": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$",
+                "description": "an occupancy or scalar (e.g. a reference density) selecting the solid: on the reference grid, on its cell grid (one cell fewer per axis, offset by half a spacing), or on the nodes or cells of the displacement's mesh (fields or static mesh attributes); default: an occupancy on the cell grid or the mesh"
+              },
+              "mask_threshold": {
+                "type": "number",
+                "minimum": -1000000000000.0,
+                "maximum": 1000000000000.0,
+                "description": "cells whose mask value (cell masks) or mean node value (node masks) is below this are void (default 0.5)"
+              },
+              "colour": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$",
+                "description": "a scalar colouring the deformed solid: on the reference grid, its cell grid, or the nodes or cells of the displacement's mesh (e.g. an element stress); default: the view field when it lives there"
+              },
+              "grid_every": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 64,
+                "description": "draw every n-th deformed reference grid line (0: none)"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "field"
+            ],
+            "description": "draw a deformed solid on top: reference cells (grid cells, their Freudenthal-Kuhn simplices, or mesh triangles/tetrahedra) moved by scale x displacement; planar frames show the solid's section with its outline, iso (3-D) frames its deformed boundary surface (clipped with its cut as the cap) over a section plane of the view field"
+          },
+          "iso": {
+            "type": "object",
+            "properties": {
+              "field": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$",
+                "description": "the 3-D field whose iso-surface is drawn (default: the first occupancy field of the grid)"
+              },
+              "value": {
+                "type": "number",
+                "minimum": -1000000000000000.0,
+                "maximum": 1000000000000000.0,
+                "description": "iso value (default 0.5)"
+              },
+              "clip": {
+                "type": "object",
+                "properties": {
+                  "point": {
+                    "type": "array",
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "items": {
+                      "type": "number",
+                      "minimum": -1000000000000000.0,
+                      "maximum": 1000000000000000.0
+                    }
+                  },
+                  "normal": {
+                    "type": "array",
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "items": {
+                      "type": "number",
+                      "minimum": -1000000000000000.0,
+                      "maximum": 1000000000000000.0
+                    }
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "point",
+                  "normal"
+                ],
+                "description": "remove the side the normal points to and cap the section"
+              },
+              "camera": {
+                "enum": [
+                  "iso",
+                  "front",
+                  "rear",
+                  "left",
+                  "right",
+                  "top",
+                  "bottom"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "description": "mode iso"
+          },
+          "kymograph": {
+            "type": "object",
+            "properties": {
+              "from": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 3,
+                "items": {
+                  "type": "number",
+                  "minimum": -1000000000000000.0,
+                  "maximum": 1000000000000000.0
+                }
+              },
+              "to": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 3,
+                "items": {
+                  "type": "number",
+                  "minimum": -1000000000000000.0,
+                  "maximum": 1000000000000000.0
+                }
+              },
+              "samples": {
+                "type": "integer",
+                "minimum": 16,
+                "maximum": 1024
+              }
+            },
+            "additionalProperties": false,
+            "description": "mode kymograph: the sampled line in physical coordinates (default: across the middle of the grid along its first axis)"
+          },
+          "phase_bins": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 64,
+            "description": "mode phase_average: bins per period (default 12)"
+          },
+          "width_px": {
+            "type": "integer",
+            "minimum": 96,
+            "maximum": 1600
+          },
+          "height_px": {
+            "type": "integer",
+            "minimum": 96,
+            "maximum": 1200
+          },
+          "background": {
+            "enum": [
+              "dark",
+              "white"
+            ]
+          },
+          "renderer": {
+            "enum": [
+              "software",
+              "gui_panel"
+            ],
+            "description": "software (default): the deterministic CPU renderer (every option); gui_panel: a browser capture of the dynamic-results panel of this service's GUI (viewer/rust_ext/dynamic_results.html) showing the first selected frame of store with the same view (sections, iso-surfaces with a centre clip, phase averages; no kymographs, comparisons or explicit value ranges); needs an installed Chromium"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "field"
+        ]
+      }
+    },
+    {
+      "name": "render_cycle_animation",
+      "label": "Render cycle animation",
+      "permission": "read",
+      "mutates": false,
+      "requires_model": false,
+      "description": "Render stored cycles as animated WebP or GIF. Set views and phase sampling through the schema. The image limit is 8 MiB. Display interpolation does not calculate new physics.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "store": {
+            "type": "string",
+            "minLength": 9,
+            "maxLength": 120,
+            "pattern": "^(service/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,95}|job/[0-9a-f]{12}/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,95})$",
+            "description": "a dynamic result store: service/<store> or job/<job_id>/<store> (from inspect_dynamic_results)"
+          },
+          "cycle": {
+            "oneOf": [
+              {
+                "const": "last"
+              },
+              {
+                "type": "integer",
+                "minimum": -1000000000,
+                "maximum": 1000000000
+              }
+            ],
+            "description": "which retained cycle (default last); transient stores ignore it"
+          },
+          "cycles": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 8
+          },
+          "frames_per_cycle": {
+            "type": "integer",
+            "minimum": 2,
+            "maximum": 96
+          },
+          "fps": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 60
+          },
+          "format": {
+            "enum": [
+              "webp",
+              "gif"
+            ]
+          },
+          "field": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$",
+            "description": "field to colour: a field of the store manifest, or a field derived from a stored vector field by finite differences: curl:<field> (vorticity-like), q_criterion:<field>, divergence:<field>"
+          },
+          "component": {
+            "enum": [
+              "magnitude",
+              "x",
+              "y",
+              "z"
+            ],
+            "description": "vector fields: magnitude (default) or one component"
+          },
+          "mode": {
+            "enum": [
+              "section",
+              "iso",
+              "kymograph",
+              "phase_average"
+            ],
+            "description": "section (default): the field on its 2-D grid or a planar slice of a 3-D grid; iso: an iso-surface of a 3-D field coloured by `field`; kymograph: space-time plot along a line; phase_average: the field averaged per phase bin over all retained cycles"
+          },
+          "plane": {
+            "enum": [
+              "x",
+              "y",
+              "z"
+            ],
+            "description": "3-D grids: the slice normal (default z)"
+          },
+          "position": {
+            "type": "number",
+            "minimum": 0.0,
+            "maximum": 1.0,
+            "description": "3-D grids: slice position as a fraction of the extent along the normal (default 0.5)"
+          },
+          "colormap": {
+            "enum": [
+              "auto",
+              "viridis",
+              "magma",
+              "inferno",
+              "plasma",
+              "coolwarm",
+              "phase",
+              "gray"
+            ],
+            "description": "perceptually uniform, colour-vision-deficiency safe maps; auto follows the provider's palette hint (sequential viridis, diverging coolwarm, cyclic phase)"
+          },
+          "value_range": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": {
+              "type": "number",
+              "minimum": -1000000000000000.0,
+              "maximum": 1000000000000000.0
+            },
+            "description": "explicit colour range; default: the range over the whole captured run (identical in every frame)"
+          },
+          "range": {
+            "enum": [
+              "run",
+              "frames"
+            ],
+            "description": "run (default): colour range over the whole captured run; frames: over the rendered frames only"
+          },
+          "occupancy": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$",
+            "description": "an occupancy field on the same grid: drawn as the 0.5 contour"
+          },
+          "fill_occupancy": {
+            "type": "boolean",
+            "description": "also shade the occupied region"
+          },
+          "flow": {
+            "type": "object",
+            "properties": {
+              "field": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$",
+                "description": "a vector field on the same grid"
+              },
+              "style": {
+                "enum": [
+                  "streamlines",
+                  "lic"
+                ]
+              },
+              "separation_px": {
+                "type": "number",
+                "minimum": 4.0,
+                "maximum": 80.0,
+                "description": "streamline separation in pixels (default 14)"
+              },
+              "length_px": {
+                "type": "number",
+                "minimum": 2.0,
+                "maximum": 60.0,
+                "description": "LIC kernel half-length in pixels (default 12)"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "field"
+            ],
+            "description": "flow overlay: evenly spaced streamlines with direction arrows, or line integral convolution"
+          },
+          "deformation": {
+            "type": "object",
+            "properties": {
+              "field": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$",
+                "description": "a displacement field (kind displacement): on a reference node grid, or on the nodes of a mesh"
+              },
+              "scale": {
+                "type": "number",
+                "minimum": 0.0,
+                "maximum": 1000000.0,
+                "description": "deformation scale; 1 draws the true deformation (default 1)"
+              },
+              "mask": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$",
+                "description": "an occupancy or scalar (e.g. a reference density) selecting the solid: on the reference grid, on its cell grid (one cell fewer per axis, offset by half a spacing), or on the nodes or cells of the displacement's mesh (fields or static mesh attributes); default: an occupancy on the cell grid or the mesh"
+              },
+              "mask_threshold": {
+                "type": "number",
+                "minimum": -1000000000000.0,
+                "maximum": 1000000000000.0,
+                "description": "cells whose mask value (cell masks) or mean node value (node masks) is below this are void (default 0.5)"
+              },
+              "colour": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$",
+                "description": "a scalar colouring the deformed solid: on the reference grid, its cell grid, or the nodes or cells of the displacement's mesh (e.g. an element stress); default: the view field when it lives there"
+              },
+              "grid_every": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 64,
+                "description": "draw every n-th deformed reference grid line (0: none)"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "field"
+            ],
+            "description": "draw a deformed solid on top: reference cells (grid cells, their Freudenthal-Kuhn simplices, or mesh triangles/tetrahedra) moved by scale x displacement; planar frames show the solid's section with its outline, iso (3-D) frames its deformed boundary surface (clipped with its cut as the cap) over a section plane of the view field"
+          },
+          "iso": {
+            "type": "object",
+            "properties": {
+              "field": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$",
+                "description": "the 3-D field whose iso-surface is drawn (default: the first occupancy field of the grid)"
+              },
+              "value": {
+                "type": "number",
+                "minimum": -1000000000000000.0,
+                "maximum": 1000000000000000.0,
+                "description": "iso value (default 0.5)"
+              },
+              "clip": {
+                "type": "object",
+                "properties": {
+                  "point": {
+                    "type": "array",
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "items": {
+                      "type": "number",
+                      "minimum": -1000000000000000.0,
+                      "maximum": 1000000000000000.0
+                    }
+                  },
+                  "normal": {
+                    "type": "array",
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "items": {
+                      "type": "number",
+                      "minimum": -1000000000000000.0,
+                      "maximum": 1000000000000000.0
+                    }
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "point",
+                  "normal"
+                ],
+                "description": "remove the side the normal points to and cap the section"
+              },
+              "camera": {
+                "enum": [
+                  "iso",
+                  "front",
+                  "rear",
+                  "left",
+                  "right",
+                  "top",
+                  "bottom"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "description": "mode iso"
+          },
+          "kymograph": {
+            "type": "object",
+            "properties": {
+              "from": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 3,
+                "items": {
+                  "type": "number",
+                  "minimum": -1000000000000000.0,
+                  "maximum": 1000000000000000.0
+                }
+              },
+              "to": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 3,
+                "items": {
+                  "type": "number",
+                  "minimum": -1000000000000000.0,
+                  "maximum": 1000000000000000.0
+                }
+              },
+              "samples": {
+                "type": "integer",
+                "minimum": 16,
+                "maximum": 1024
+              }
+            },
+            "additionalProperties": false,
+            "description": "mode kymograph: the sampled line in physical coordinates (default: across the middle of the grid along its first axis)"
+          },
+          "phase_bins": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 64,
+            "description": "mode phase_average: bins per period (default 12)"
+          },
+          "width_px": {
+            "type": "integer",
+            "minimum": 96,
+            "maximum": 1600
+          },
+          "height_px": {
+            "type": "integer",
+            "minimum": 96,
+            "maximum": 1200
+          },
+          "background": {
+            "enum": [
+              "dark",
+              "white"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "store",
+          "field"
+        ]
+      }
+    },
+    {
+      "name": "export_animation",
+      "label": "Export animation",
+      "permission": "read",
+      "mutates": false,
+      "requires_model": false,
+      "description": "Export stored dynamic frames as WebP, GIF, MP4, or PNG ZIP. Read the returned file hash. Use max_bytes within its declared limit.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "store": {
+            "type": "string",
+            "minLength": 9,
+            "maxLength": 120,
+            "pattern": "^(service/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,95}|job/[0-9a-f]{12}/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,95})$",
+            "description": "a dynamic result store: service/<store> or job/<job_id>/<store> (from inspect_dynamic_results)"
+          },
+          "cycle": {
+            "oneOf": [
+              {
+                "const": "last"
+              },
+              {
+                "type": "integer",
+                "minimum": -1000000000,
+                "maximum": 1000000000
+              }
+            ],
+            "description": "which retained cycle (default last); transient stores ignore it"
+          },
+          "cycles": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 8
+          },
+          "frames_per_cycle": {
+            "type": "integer",
+            "minimum": 2,
+            "maximum": 96
+          },
+          "fps": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 60
+          },
+          "format": {
+            "enum": [
+              "webp",
+              "gif",
+              "mp4",
+              "png_sequence"
+            ]
+          },
+          "max_bytes": {
+            "type": "integer",
+            "minimum": 65536,
+            "maximum": 50331648
+          },
+          "field": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$",
+            "description": "field to colour: a field of the store manifest, or a field derived from a stored vector field by finite differences: curl:<field> (vorticity-like), q_criterion:<field>, divergence:<field>"
+          },
+          "component": {
+            "enum": [
+              "magnitude",
+              "x",
+              "y",
+              "z"
+            ],
+            "description": "vector fields: magnitude (default) or one component"
+          },
+          "mode": {
+            "enum": [
+              "section",
+              "iso",
+              "kymograph",
+              "phase_average"
+            ],
+            "description": "section (default): the field on its 2-D grid or a planar slice of a 3-D grid; iso: an iso-surface of a 3-D field coloured by `field`; kymograph: space-time plot along a line; phase_average: the field averaged per phase bin over all retained cycles"
+          },
+          "plane": {
+            "enum": [
+              "x",
+              "y",
+              "z"
+            ],
+            "description": "3-D grids: the slice normal (default z)"
+          },
+          "position": {
+            "type": "number",
+            "minimum": 0.0,
+            "maximum": 1.0,
+            "description": "3-D grids: slice position as a fraction of the extent along the normal (default 0.5)"
+          },
+          "colormap": {
+            "enum": [
+              "auto",
+              "viridis",
+              "magma",
+              "inferno",
+              "plasma",
+              "coolwarm",
+              "phase",
+              "gray"
+            ],
+            "description": "perceptually uniform, colour-vision-deficiency safe maps; auto follows the provider's palette hint (sequential viridis, diverging coolwarm, cyclic phase)"
+          },
+          "value_range": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": {
+              "type": "number",
+              "minimum": -1000000000000000.0,
+              "maximum": 1000000000000000.0
+            },
+            "description": "explicit colour range; default: the range over the whole captured run (identical in every frame)"
+          },
+          "range": {
+            "enum": [
+              "run",
+              "frames"
+            ],
+            "description": "run (default): colour range over the whole captured run; frames: over the rendered frames only"
+          },
+          "occupancy": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$",
+            "description": "an occupancy field on the same grid: drawn as the 0.5 contour"
+          },
+          "fill_occupancy": {
+            "type": "boolean",
+            "description": "also shade the occupied region"
+          },
+          "flow": {
+            "type": "object",
+            "properties": {
+              "field": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$",
+                "description": "a vector field on the same grid"
+              },
+              "style": {
+                "enum": [
+                  "streamlines",
+                  "lic"
+                ]
+              },
+              "separation_px": {
+                "type": "number",
+                "minimum": 4.0,
+                "maximum": 80.0,
+                "description": "streamline separation in pixels (default 14)"
+              },
+              "length_px": {
+                "type": "number",
+                "minimum": 2.0,
+                "maximum": 60.0,
+                "description": "LIC kernel half-length in pixels (default 12)"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "field"
+            ],
+            "description": "flow overlay: evenly spaced streamlines with direction arrows, or line integral convolution"
+          },
+          "deformation": {
+            "type": "object",
+            "properties": {
+              "field": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$",
+                "description": "a displacement field (kind displacement): on a reference node grid, or on the nodes of a mesh"
+              },
+              "scale": {
+                "type": "number",
+                "minimum": 0.0,
+                "maximum": 1000000.0,
+                "description": "deformation scale; 1 draws the true deformation (default 1)"
+              },
+              "mask": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$",
+                "description": "an occupancy or scalar (e.g. a reference density) selecting the solid: on the reference grid, on its cell grid (one cell fewer per axis, offset by half a spacing), or on the nodes or cells of the displacement's mesh (fields or static mesh attributes); default: an occupancy on the cell grid or the mesh"
+              },
+              "mask_threshold": {
+                "type": "number",
+                "minimum": -1000000000000.0,
+                "maximum": 1000000000000.0,
+                "description": "cells whose mask value (cell masks) or mean node value (node masks) is below this are void (default 0.5)"
+              },
+              "colour": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$",
+                "description": "a scalar colouring the deformed solid: on the reference grid, its cell grid, or the nodes or cells of the displacement's mesh (e.g. an element stress); default: the view field when it lives there"
+              },
+              "grid_every": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 64,
+                "description": "draw every n-th deformed reference grid line (0: none)"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "field"
+            ],
+            "description": "draw a deformed solid on top: reference cells (grid cells, their Freudenthal-Kuhn simplices, or mesh triangles/tetrahedra) moved by scale x displacement; planar frames show the solid's section with its outline, iso (3-D) frames its deformed boundary surface (clipped with its cut as the cap) over a section plane of the view field"
+          },
+          "iso": {
+            "type": "object",
+            "properties": {
+              "field": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$",
+                "description": "the 3-D field whose iso-surface is drawn (default: the first occupancy field of the grid)"
+              },
+              "value": {
+                "type": "number",
+                "minimum": -1000000000000000.0,
+                "maximum": 1000000000000000.0,
+                "description": "iso value (default 0.5)"
+              },
+              "clip": {
+                "type": "object",
+                "properties": {
+                  "point": {
+                    "type": "array",
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "items": {
+                      "type": "number",
+                      "minimum": -1000000000000000.0,
+                      "maximum": 1000000000000000.0
+                    }
+                  },
+                  "normal": {
+                    "type": "array",
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "items": {
+                      "type": "number",
+                      "minimum": -1000000000000000.0,
+                      "maximum": 1000000000000000.0
+                    }
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "point",
+                  "normal"
+                ],
+                "description": "remove the side the normal points to and cap the section"
+              },
+              "camera": {
+                "enum": [
+                  "iso",
+                  "front",
+                  "rear",
+                  "left",
+                  "right",
+                  "top",
+                  "bottom"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "description": "mode iso"
+          },
+          "kymograph": {
+            "type": "object",
+            "properties": {
+              "from": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 3,
+                "items": {
+                  "type": "number",
+                  "minimum": -1000000000000000.0,
+                  "maximum": 1000000000000000.0
+                }
+              },
+              "to": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 3,
+                "items": {
+                  "type": "number",
+                  "minimum": -1000000000000000.0,
+                  "maximum": 1000000000000000.0
+                }
+              },
+              "samples": {
+                "type": "integer",
+                "minimum": 16,
+                "maximum": 1024
+              }
+            },
+            "additionalProperties": false,
+            "description": "mode kymograph: the sampled line in physical coordinates (default: across the middle of the grid along its first axis)"
+          },
+          "phase_bins": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 64,
+            "description": "mode phase_average: bins per period (default 12)"
+          },
+          "width_px": {
+            "type": "integer",
+            "minimum": 96,
+            "maximum": 1600
+          },
+          "height_px": {
+            "type": "integer",
+            "minimum": 96,
+            "maximum": 1200
+          },
+          "background": {
+            "enum": [
+              "dark",
+              "white"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "store",
+          "field",
+          "format"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "schema": "implexity-field-source-catalog/1",
+  "components": [
+    {
+      "component_id": "native_resolved_electrothermal",
+      "response_units": {
+        "resolved_joule_power_W": "W",
+        "electrical_terminal_power_W": "W"
+      }
+    },
+    {
+      "component_id": "prescribed_real_field_joule_heat",
+      "response_units": {
+        "prescribed_joule_power_W": "W"
+      }
+    },
+    {
+      "component_id": "neutral_transport_deposition",
+      "response_units": {
+        "neutral_local_deposition_W": "W",
+        "neutral_outgoing_particles_per_s": "1/s",
+        "neutral_solid_damage_rate_mean_dpa_s": "dpa/s"
+      }
+    },
+    {
+      "component_id": "prescribed_volumetric_heating",
+      "response_units": {
+        "prescribed_volumetric_heating_final_W": "W",
+        "prescribed_volumetric_heating_energy_J": "J"
+      }
+    },
+    {
+      "component_id": "native_electromagnetic_loads",
+      "response_units": {
+        "electromagnetic_force_peak_N": "N",
+        "electromagnetic_impulse_x_N_s": "N s",
+        "electromagnetic_impulse_y_N_s": "N s",
+        "electromagnetic_impulse_z_N_s": "N s",
+        "electromagnetic_torque_peak_N_m": "N m",
+        "electromagnetic_angular_impulse_x_N_m_s": "N m s",
+        "electromagnetic_angular_impulse_y_N_m_s": "N m s",
+        "electromagnetic_angular_impulse_z_N_m_s": "N m s",
+        "electromagnetic_force_density_pnorm_N_m3": "N/m^3",
+        "electromagnetic_current_density_pnorm_A_m2": "A/m^2",
+        "electromagnetic_joule_energy_J": "J"
+      }
+    }
+  ]
+}

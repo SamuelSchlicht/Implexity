@@ -1,0 +1,255 @@
+{
+ "arrays": {},
+ "doc": "a shelled bracket plate: a rounded plate, a filleted boss, one bore, shelled to a wall",
+ "meta": {
+  "example": "01_bracket",
+  "header": [
+   "A shelled bracket: a rounded plate, a boss blended into it with a fillet, one",
+   "bore through both, and the whole thing shelled to a wall.",
+   "",
+   "READ IT IN THIS ORDER: `parameters` first -- those are the numbers an engineer",
+   "edits -- then `root`, then follow the `children` back down.  Seven nodes.",
+   "",
+   "WHAT IT DEMONSTRATES",
+   "  * a node parameter is a literal, a {\"bind\": ...} to a named parameter, or an",
+   "    {\"expr\": ...} over them.  `rim` is derived: it is always twice the wall",
+   "    plus the print tolerance, which is a RELATIONSHIP, not a coincidence that",
+   "    holds until somebody edits `wall`.",
+   "  * a box's bx_mm is a HALF extent.  Every one here is written plate_x / 2 so",
+   "    the named parameter stays the size you measure.",
+   "  * the field-class chain.  Each leaf is EXACT -- f IS the signed distance --",
+   "    and the first `fillet` makes the result BOUND, because a blend is not a",
+   "    distance to anything.  `implexity model show` prints the class of every node;",
+   "    that column is the difference between geometry that can be offset exactly",
+   "    and geometry that can only be offset conservatively.",
+   "  * `outputs` names subtrees, so `implexity model eval --node blank_body`",
+   "    previews the part before it was drilled, and `--node solid` previews it",
+   "    before it was shelled.",
+   "",
+   "THE ROOT IS A SHELL, SO MOST OF THE BOX IS EMPTY.  That trips everyone once:",
+   "",
+   "  implexity model eval models/01_bracket.json --node solid --at 10,0,0",
+   "      -3.000000 mm  INSIDE   -- three millimetres in from the plate's face,",
+   "                                measured on the SOLID, before the shell",
+   "  implexity model eval models/01_bracket.json --at 16.4,0,0",
+   "      -0.200000 mm  INSIDE   -- in the 1.6 mm WALL, 0.6 mm from the face",
+   "  implexity model eval models/01_bracket.json --at 0,0,0",
+   "      +1.800000 mm  outside  -- correct: the origin is inside the BORE, and",
+   "                                the bore is not part of the part",
+   "",
+   "TRY",
+   "  implexity model show     models/01_bracket.json",
+   "  implexity model eval     models/01_bracket.json --node solid --at 10,0,0",
+   "  implexity model eval     models/01_bracket.json --node blank_body --grid 24",
+   "  implexity model params   models/01_bracket.json",
+   "  implexity model set      models/01_bracket.json wall=2.4 -o /tmp/thicker.json",
+   "  implexity model export   models/01_bracket.json -o /tmp/bracket.stl --spacing 0.4"
+  ],
+  "teaches": "primitives, a boolean, a fillet, a shell, named parameters, one derived expression"
+ },
+ "name": "shelled bracket plate",
+ "nodes": {
+  "blank": {
+   "attrs": {
+    "op": "union"
+   },
+   "children": [
+    {
+     "name": "plate",
+     "node": "plate"
+    },
+    {
+     "name": "boss",
+     "node": "boss_at"
+    }
+   ],
+   "doc": "plate + boss, blended by `rim`.  EXACT -> BOUND: a blend is not the distance to anything",
+   "kind": "fillet",
+   "params": {
+    "radius_mm": {
+     "bind": "rim"
+    }
+   },
+   "units": {
+    "radius_mm": "mm"
+   }
+  },
+  "bore": {
+   "children": [],
+   "doc": "the through bore.  Longer than the part on purpose: a cutting tool that stops flush leaves a zero-thickness face the mesher has to guess at",
+   "kind": "cylinder",
+   "params": {
+    "half_height_mm": {
+     "expr": "boss_h"
+    },
+    "radius_mm": {
+     "expr": "bore_d / 2"
+    }
+   },
+   "units": {
+    "half_height_mm": "mm",
+    "radius_mm": "mm"
+   }
+  },
+  "boss": {
+   "children": [],
+   "doc": "the boss, about the local z axis, centred on the origin until the translate below moves it",
+   "kind": "cylinder",
+   "params": {
+    "half_height_mm": {
+     "expr": "boss_h / 2"
+    },
+    "radius_mm": {
+     "expr": "boss_d / 2"
+    }
+   },
+   "units": {
+    "half_height_mm": "mm",
+    "radius_mm": "mm"
+   }
+  },
+  "boss_at": {
+   "children": [
+    {
+     "name": "shape",
+     "node": "boss"
+    }
+   ],
+   "doc": "stand the boss on the plate's mid-plane",
+   "kind": "translate",
+   "params": {
+    "dx_mm": 0.0,
+    "dy_mm": 0.0,
+    "dz_mm": {
+     "expr": "boss_h / 2 - plate_z / 2"
+    }
+   },
+   "units": {
+    "dx_mm": "mm",
+    "dy_mm": "mm",
+    "dz_mm": "mm"
+   }
+  },
+  "drilled": {
+   "children": [
+    {
+     "name": "blank",
+     "node": "blank"
+    },
+    {
+     "name": "bore",
+     "node": "bore"
+    }
+   ],
+   "doc": "max(blank, -bore): the blank with the bore removed",
+   "kind": "difference",
+   "params": {
+    "k_scale": 1.0
+   },
+   "units": {
+    "k_scale": "-"
+   }
+  },
+  "part": {
+   "children": [
+    {
+     "name": "solid",
+     "node": "drilled"
+    }
+   ],
+   "doc": "|drilled| - wall/2: a wall of `wall` millimetres about the drilled surface.  thickness_mm is the HALF wall",
+   "kind": "shell",
+   "params": {
+    "thickness_mm": {
+     "expr": "wall / 2"
+    }
+   },
+   "units": {
+    "thickness_mm": "mm"
+   }
+  },
+  "plate": {
+   "children": [],
+   "doc": "the plate.  EXACT: f is the signed distance",
+   "kind": "rounded_box",
+   "params": {
+    "bx_mm": {
+     "expr": "plate_x / 2"
+    },
+    "by_mm": {
+     "expr": "plate_y / 2"
+    },
+    "bz_mm": {
+     "expr": "plate_z / 2"
+    },
+    "radius_mm": {
+     "bind": "corner_r"
+    }
+   },
+   "units": {
+    "bx_mm": "mm",
+    "by_mm": "mm",
+    "bz_mm": "mm",
+    "radius_mm": "mm"
+   }
+  }
+ },
+ "outputs": {
+  "blank_body": "blank",
+  "solid": "drilled"
+ },
+ "parameters": {
+  "bore_d": {
+   "doc": "clearance bore for an M5 fastener",
+   "max": 9.0,
+   "min": 3.0,
+   "units": "mm",
+   "value": 5.2
+  },
+  "boss_d": {
+   "doc": "boss diameter",
+   "units": "mm",
+   "value": 12.0
+  },
+  "boss_h": {
+   "doc": "boss height above the plate centre plane",
+   "units": "mm",
+   "value": 9.0
+  },
+  "corner_r": {
+   "doc": "plate corner and edge radius",
+   "units": "mm",
+   "value": 2.0
+  },
+  "plate_x": {
+   "doc": "plate length",
+   "units": "mm",
+   "value": 34.0
+  },
+  "plate_y": {
+   "doc": "plate width",
+   "units": "mm",
+   "value": 20.0
+  },
+  "plate_z": {
+   "doc": "plate thickness",
+   "units": "mm",
+   "value": 6.0
+  },
+  "rim": {
+   "doc": "fillet at the boss root: always two walls plus the printer's 0.4 mm tolerance",
+   "expr": "wall * 2 + 0.4",
+   "units": "mm"
+  },
+  "wall": {
+   "doc": "shell wall thickness",
+   "max": 4.0,
+   "min": 0.8,
+   "units": "mm",
+   "value": 1.6
+  }
+ },
+ "root": "part",
+ "schema": "implexity-model/1",
+ "units": "mm"
+}

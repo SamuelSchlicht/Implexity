@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "implexity://schemas/cae/provider-block-preconditioner/40",
+  "title": "Implexity provider-native block preconditioner V40",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "provider_id",
+    "topology_coordinate",
+    "state_blocks",
+    "primary_block",
+    "secondary_block",
+    "schur_strategy",
+    "exact_operator_actions",
+    "fallback"
+  ],
+  "properties": {
+    "schema": {
+      "const": "implexity-provider-block-preconditioner/40"
+    },
+    "provider_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "topology_coordinate": {
+      "const": "model:control"
+    },
+    "state_blocks": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "degrees_of_freedom"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "degrees_of_freedom": {"type": "integer", "minimum": 1}
+        }
+      }
+    },
+    "primary_block": {"type": "string", "minLength": 1},
+    "secondary_block": {"type": "string", "minLength": 1},
+    "schur_strategy": {
+      "enum": ["provider", "diagonal_primary", "secondary_only"]
+    },
+    "exact_operator_actions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["jvp", "vjp"],
+      "properties": {
+        "jvp": {"type": "boolean"},
+        "vjp": {"type": "boolean"}
+      }
+    },
+    "recycling": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "maximum_vectors": {"type": "integer", "minimum": 0},
+        "design_drift_limit": {"type": "number", "minimum": 0},
+        "benefit_gate_operator_applications": {"type": "integer", "minimum": 0}
+      }
+    },
+    "fallback": {
+      "enum": ["sparse_direct", "fail_closed"]
+    }
+  }
+}

@@ -1,0 +1,60 @@
+{
+ "editor_label": "Resolved electrical heating",
+ "authoring_contract": {
+  "schema": "implexity-component-authoring/1",
+  "selection": "field_sources",
+  "scope": "native_quasistatic_electrothermal",
+  "sampling": "host_time_endpoint_no_interpolation",
+  "required_settings": [
+   "grid",
+   "times_s",
+   "node_order",
+   "electrode_nodes",
+   "voltage_history_V",
+   "conductivity_S_m",
+   "conductivity_slope_S_m_K",
+   "void_conductivity_S_m",
+   "penalty",
+   "potential_scale_V",
+   "current_residual_scale_A",
+   "charge_tolerance_A",
+   "power_tolerance_W",
+   "energy_convention"
+  ],
+  "conductivity_reference": "host solid temperature_initial_K",
+  "energy_convention": "authored_heat_excludes_resolved_joule_heat"
+ },
+ "runtime_support": {
+  "status": "quasistatic_electrothermal_assembly",
+  "history": true,
+  "limitations": [
+   "Isotropic linear-in-temperature conductivity; no displacement current, magnetic induction or contact resistance.",
+   "Native solid grid and node-attached electrodes; no spatial remapping or design-dependent voltage histories."
+  ]
+ },
+ "response_units": {
+  "resolved_joule_power_W": "W",
+  "electrical_terminal_power_W": "W"
+ },
+ "state_contract": "prescribed_zero_state_source_v1",
+ "study_template_text": [
+  {
+   "id": "resolved_electrothermal_zero_voltage_x",
+   "label": "Electrical heating between X-min and X-max",
+   "description": "Zero-voltage starter on X-min/X-max. Enter both face voltages at each time and replace placeholder conductivities with material data. Authoring starter, not a benchmark: element assembly, power identities, derivatives, MMS spatial convergence, multi-step converged coupled histories and full-history adjoints are verified at the numerics tier (tests/physics/electrothermal/); no experimental validation.",
+   "truth_status": "numerics_verified_authoring_starter"
+  },
+  {
+   "id": "resolved_electrothermal_zero_voltage_y",
+   "label": "Electrical heating between Y-min and Y-max",
+   "description": "Zero-voltage starter on Y-min/Y-max. Enter both face voltages at each time and replace placeholder conductivities with material data. Authoring starter, not a benchmark: element assembly, power identities, derivatives, MMS spatial convergence, multi-step converged coupled histories and full-history adjoints are verified at the numerics tier (tests/physics/electrothermal/); no experimental validation.",
+   "truth_status": "numerics_verified_authoring_starter"
+  },
+  {
+   "id": "resolved_electrothermal_zero_voltage_z",
+   "label": "Electrical heating between Z-min and Z-max",
+   "description": "Zero-voltage starter on Z-min/Z-max. Enter both face voltages at each time and replace placeholder conductivities with material data. Authoring starter, not a benchmark: element assembly, power identities, derivatives, MMS spatial convergence, multi-step converged coupled histories and full-history adjoints are verified at the numerics tier (tests/physics/electrothermal/); no experimental validation.",
+   "truth_status": "numerics_verified_authoring_starter"
+  }
+ ]
+}

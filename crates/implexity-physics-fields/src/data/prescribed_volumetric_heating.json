@@ -1,0 +1,126 @@
+{
+ "editor_label": "Prescribed volumetric heating",
+ "authoring_contract": {
+  "schema": "implexity-component-authoring/1",
+  "selection": "field_sources",
+  "scope": "one_way_prescribed_material_resolved_volumetric_heating",
+  "required_settings": [
+   "name",
+   "provenance",
+   "times_s",
+   "time_factor",
+   "solid_endmember_power_W_m3",
+   "fluid_power_W_m3",
+   "attenuation",
+   "phase_interpolation",
+   "occupancy_convention",
+   "energy_convention"
+  ],
+  "sampling": "backward_Euler_endpoint_no_interpolation",
+  "settings": {
+   "name": {
+    "type": "string"
+   },
+   "provenance": {
+    "type": "string"
+   },
+   "times_s": {
+    "units": "s",
+    "matches": "solid.times_s"
+   },
+   "time_factor": {
+    "units": "1",
+    "shape": [
+     "time"
+    ],
+    "minimum": 0,
+    "initial": 0
+   },
+   "solid_endmember_power_W_m3": {
+    "units": "W/m^3",
+    "shape": [
+     2
+    ],
+    "minimum": 0,
+    "order": "solid.materials"
+   },
+   "fluid_power_W_m3": {
+    "units": "W/m^3",
+    "minimum": 0
+   },
+   "attenuation": {
+    "nullable": true,
+    "properties": {
+     "axis": {
+      "enum": [
+       0,
+       1,
+       2
+      ]
+     },
+     "side": {
+      "enum": [
+       "lo",
+       "hi"
+      ]
+     },
+     "e_folding_length_m": {
+      "units": "m",
+      "exclusiveMinimum": 0
+     }
+    }
+   },
+   "phase_interpolation": {
+    "const": "linear_endmember_mixture_as_solid_properties"
+   },
+   "occupancy_convention": {
+    "const": "solid_endmembers_times_occupancy_fluid_times_complementary_fraction"
+   },
+   "energy_convention": {
+    "const": "authored_heat_excludes_prescribed_volumetric_heating"
+   }
+  },
+  "power_law": "time_factor[n] * g(depth) * (rho*(1-c)*q_0 + rho*c*q_1 + (1-rho)*q_fluid)",
+  "attenuation_law": "g = exact cell mean of exp(-depth/L), depth from the declared analysis-domain face (decaying through void and fluid alike); g = 1 without attenuation",
+  "attenuation_face_diagnostic": "attenuation_face_occupancy: mean occupancy of the cell layer on the attenuation face per step; heating that should enter at a material surface is represented only where it is near one",
+  "responses": {
+   "prescribed_volumetric_heating_final_W": "whole-domain power at the final host time",
+   "prescribed_volumetric_heating_energy_J": "sum over post-initial host steps of P_n (t_n - t_{n-1}): the backward-Euler endpoint integral the host thermal history uses"
+  },
+  "limitations": [
+   "Prescribed power densities: no radiation transport, spectrum, secondary-particle or geometry-dependent flux computation; the authored data must already represent the local deposition.",
+   "Optional attenuation is one exponential in depth from one declared analysis-domain face (the box face, not the material surface), integrated exactly over each cell; it decays through void and fluid cells exactly as through solid, and the e-folding length is fixed and not recomputed from the local material mix. It represents a heated material surface only where the face layer is solid: the diagnostics report the occupancy of the cell layer on the attenuation face.",
+   "No temperature, burn-up, activation or decay-heat feedback; any time dependence is the authored time factor.",
+   "Heating is attributed by physical occupancy: solid endmembers by occupancy times their phase fractions, the fluid by the complementary fraction; the numerical fluid-fraction floor carries no heating."
+  ]
+ },
+ "runtime_support": {
+  "status": "prescribed_field_source",
+  "history": true,
+  "limitations": [
+   "Prescribed power densities: no radiation transport, spectrum, secondary-particle or geometry-dependent flux computation; the authored data must already represent the local deposition.",
+   "Optional attenuation is one exponential in depth from one declared analysis-domain face (the box face, not the material surface), integrated exactly over each cell; it decays through void and fluid cells exactly as through solid, and the e-folding length is fixed and not recomputed from the local material mix. It represents a heated material surface only where the face layer is solid: the diagnostics report the occupancy of the cell layer on the attenuation face.",
+   "No temperature, burn-up, activation or decay-heat feedback; any time dependence is the authored time factor.",
+   "Heating is attributed by physical occupancy: solid endmembers by occupancy times their phase fractions, the fluid by the complementary fraction; the numerical fluid-fraction floor carries no heating."
+  ]
+ },
+ "response_units": {
+  "prescribed_volumetric_heating_final_W": "W",
+  "prescribed_volumetric_heating_energy_J": "J"
+ },
+ "state_contract": "prescribed_zero_state_source_v1",
+ "limitations": [
+  "Prescribed power densities: no radiation transport, spectrum, secondary-particle or geometry-dependent flux computation; the authored data must already represent the local deposition.",
+  "Optional attenuation is one exponential in depth from one declared analysis-domain face (the box face, not the material surface), integrated exactly over each cell; it decays through void and fluid cells exactly as through solid, and the e-folding length is fixed and not recomputed from the local material mix. It represents a heated material surface only where the face layer is solid: the diagnostics report the occupancy of the cell layer on the attenuation face.",
+  "No temperature, burn-up, activation or decay-heat feedback; any time dependence is the authored time factor.",
+  "Heating is attributed by physical occupancy: solid endmembers by occupancy times their phase fractions, the fluid by the complementary fraction; the numerical fluid-fraction floor carries no heating."
+ ],
+ "study_template_text": [
+  {
+   "id": "prescribed_volumetric_heating_zero_load_setup",
+   "label": "Configure prescribed volumetric heating (zero-load starter)",
+   "description": "Enter a power density per solid endmember and for the fluid in W/m³, a time factor per time node and optionally an exponential depth attenuation from one domain face. Initial values produce zero heating. Authored bulk heat must exclude this contribution.",
+   "truth_status": "unvalidated_zero_load_authoring_starter"
+  }
+ ]
+}

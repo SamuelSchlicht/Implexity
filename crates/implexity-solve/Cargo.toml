@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: Apache-2.0
+# METAPLEXIS-DISCLAIMER-BEGIN sha256=c7c02258f245d1dcd6db1e8066ef4f6bc1bf36430d91bf9aab026671723c058f
+# Open-access statement and disclaimer: see DISCLAIMER.md.
+# METAPLEXIS-DISCLAIMER-END
+
+[package]
+autotests = false
+name = "implexity-solve"
+description = "Application-neutral nonlinear solves and exact discrete adjoints"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+implexity-core = { workspace = true }
+implexity-linalg = { workspace = true }
+implexity-ad = { workspace = true }
+implexity-io = { workspace = true }
+implexity-geometry = { workspace = true }
+implexity-optim = { workspace = true }
+ndarray = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+rayon = { workspace = true }
+thiserror = { workspace = true }
+faer = { workspace = true }
+
+[lints]
+workspace = true
+
+[lib]
+test = false
+doctest = false

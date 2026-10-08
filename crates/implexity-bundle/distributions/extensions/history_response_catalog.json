@@ -1,0 +1,70 @@
+{
+ "schema": "implexity-history-response-catalog/1",
+ "components": [
+  {
+   "component_id": "phase_region_temperature_extrema",
+   "response_units": {
+    "phase_region_endmember_0_temperature_bound_K": "K",
+    "phase_region_endmember_0_temperature_max_K": "K",
+    "phase_region_endmember_1_temperature_bound_K": "K",
+    "phase_region_endmember_1_temperature_max_K": "K",
+    "phase_region_endmember_interface_temperature_bound_K": "K",
+    "phase_region_endmember_interface_temperature_max_K": "K",
+    "phase_region_wetted_wall_temperature_bound_K": "K",
+    "phase_region_wetted_wall_temperature_max_K": "K",
+    "phase_region_fluid_temperature_bound_K": "K",
+    "phase_region_fluid_temperature_max_K": "K",
+    "phase_region_loaded_surface_temperature_bound_K": "K",
+    "phase_region_loaded_surface_temperature_max_K": "K"
+   },
+   "requires": [
+    "shared_nodal_temperature_K",
+    "shared_nodal_region_fractions"
+   ]
+  },
+  {
+   "component_id": "cyclic_plastic_strain",
+   "response_units": {
+    "cycle_plastic_strain_endmember_0_bound": "1",
+    "cycle_plastic_strain_endmember_0_max": "1",
+    "cycle_plastic_strain_endmember_1_bound": "1",
+    "cycle_plastic_strain_endmember_1_max": "1",
+    "cycle_fatigue_usage_endmember_0_bound": "1",
+    "cycle_fatigue_usage_endmember_0_max": "1",
+    "cycle_fatigue_usage_endmember_1_bound": "1",
+    "cycle_fatigue_usage_endmember_1_max": "1"
+   },
+   "requires": [
+    "solid_cell_equivalent_plastic_strain",
+    "cell_region_fractions"
+   ]
+  },
+  {
+   "component_id": "wall_film_temperature",
+   "response_units": {
+    "wall_film_temperature_rise_bound_K": "K",
+    "wall_film_temperature_rise_max_K": "K",
+    "wall_film_wall_temperature_bound_K": "K",
+    "wall_film_wall_temperature_max_K": "K",
+    "wall_film_endmember_0_temperature_bound_K": "K",
+    "wall_film_endmember_1_temperature_bound_K": "K",
+    "wall_film_loaded_surface_temperature_bound_K": "K"
+   },
+   "requires": [
+    "shared_nodal_temperature_K",
+    "shared_nodal_region_fractions",
+    "shared_nodal_solid_heat_flux_W_m2",
+    "shared_nodal_fluid_speed_m_s"
+   ]
+  },
+  {
+   "component_id": "occupancy_grayness",
+   "response_units": {
+    "occupancy_grayness": "1"
+   },
+   "requires": [
+    "fluid_fraction"
+   ]
+  }
+ ]
+}

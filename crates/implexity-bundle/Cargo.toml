@@ -1,0 +1,42 @@
+# SPDX-License-Identifier: Apache-2.0
+# METAPLEXIS-DISCLAIMER-BEGIN sha256=c7c02258f245d1dcd6db1e8066ef4f6bc1bf36430d91bf9aab026671723c058f
+# Open-access statement and disclaimer: see DISCLAIMER.md.
+# METAPLEXIS-DISCLAIMER-END
+
+[package]
+autotests = false
+name = "implexity-bundle"
+description = "The bundled distributions: links every enabled package (cargo features) and"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+implexity-core = { workspace = true }
+implexity-physics-base = { workspace = true }
+implexity-physics-solid = { workspace = true }
+implexity-physics-cfd = { workspace = true }
+implexity-physics-thermofluid = { workspace = true }
+implexity-physics-compressible = { workspace = true }
+implexity-physics-fields = { workspace = true }
+implexity-physics-lbm = { workspace = true }
+implexity-physics-fsi = { workspace = true, optional = true }
+implexity-jobs = { workspace = true }
+serde_json = { workspace = true }
+
+[features]
+default = ["dynamic"]
+ 
+dynamic = [
+  "dep:implexity-physics-fsi",
+  "implexity-physics-lbm/moving",
+]
+
+[lints]
+workspace = true
+
+[lib]
+test = false
+doctest = false

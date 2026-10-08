@@ -1,0 +1,11 @@
+{
+  "schema": "implexity-package-catalog/1",
+  "packages": [
+    {
+      "package_id": "fluid_structure_dynamics",
+      "label": "Dynamic fluid-structure interaction (soft solids in lattice Boltzmann flow)",
+      "installer": "implexity.addins.fluid_structure_dynamics",
+      "scope": "Two-way coupled fluid-structure interaction on the fixed lattice: moving-occupancy lattice Boltzmann flow (D2Q9/D3Q19/D3Q27, BGK/TRT/MRT/cumulant, laminar/Smagorinsky/WALE, partially saturated cells or Brinkman penalization, ports, sponges) coupled to large-deformation soft solids (soft-matter laws, mixed u-p, AVF midpoint or generalized-alpha, Rayleigh/Prony damping, rigid-plane contact) with subcycling and loose / IQN-ILS / Newton-Krylov coupling; density topology optimization with exact gradients of time-weighted, windowed and cycle-averaged responses over fixed horizons and forced or autonomous periodic orbits, regime screening and refusal of chaotic regimes. Screening physics, not qualified."
+    }
+  ]
+}

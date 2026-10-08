@@ -1,0 +1,11 @@
+{
+  "schema": "implexity-distribution/1",
+  "distribution_id": "implexity_physics",
+  "label": "Bundled physics add-in packages",
+  "catalogues": {
+    "packages": "package_catalog.json",
+    "field_sources": "field_source_catalog.json",
+    "history_responses": "history_response_catalog.json",
+    "agent_workflows": "agent_workflow_catalog.json"
+  }
+}

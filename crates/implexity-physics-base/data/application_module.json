@@ -1,0 +1,15 @@
+{
+  "schema": "implexity-application-module/2",
+  "module_id": "engineering_physics_library",
+  "canonical_python_module": "implexity.physics_library",
+  "python_module": "implexity.physics_library",
+  "default_enabled": false,
+  "activation": "explicit_transactional_package_load",
+  "contract_api": "get_addin_contracts",
+  "register_api": "register_application_module",
+  "design_coordinates": ["model:control"],
+  "compatibility": {
+    "topology_coordinate": "model:control",
+    "contract": "engineering_physics_library_v33_single_array"
+  }
+}

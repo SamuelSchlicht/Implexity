@@ -1,0 +1,56 @@
+{
+ "editor_label": "Neutral transport and energy deposition",
+ "authoring_contract": {
+  "schema": "implexity-component-authoring/1",
+  "selection": "field_sources",
+  "required_settings": [
+   "transport",
+   "drive_material_history",
+   "energy_convention"
+  ],
+  "energy_convention": "authored_heat_excludes_transport_deposition_which_includes_defect_storage",
+  "source_units": "absolute_SI_not_per_source_particle",
+  "cross_sections": "ordered_native_solid_endpoints_and_fluid",
+  "constitutive_forcing": "optional_field_computed_ordered_endpoint_damage_rate",
+  "calibrated_material_data_supplied": false,
+  "limitations": [
+   "No particle momentum load or thermal/Doppler feedback to cross sections; explicit data temperature intervals are enforced.",
+   "Quasistatic nonmultiplying multigroup transport; isotropic scattering, first-order upwind Cartesian cells.",
+   "Fixed group data and geometry during each history; no temperature-dependent nuclear data or depletion.",
+   "Local deposition and dose responses require explicitly processed, compatible material data; none supplied.",
+   "Escaping secondary energy is a ledger, not an explicitly transported secondary species.",
+   "No fission, multiplication, charged particles, implantation, transmutation, gas production or calibrated lifetime.",
+   "Discrete angular ray effects, spatial and energy-group convergence must be demonstrated for the application."
+  ]
+ },
+ "runtime_support": {
+  "status": "field_component",
+  "history": true,
+  "data": "user_required",
+  "limitations": [
+   "No particle momentum load or thermal/Doppler feedback to cross sections; explicit data temperature intervals are enforced.",
+   "Quasistatic nonmultiplying multigroup transport; isotropic scattering, first-order upwind Cartesian cells.",
+   "Fixed group data and geometry during each history; no temperature-dependent nuclear data or depletion.",
+   "Local deposition and dose responses require explicitly processed, compatible material data; none supplied.",
+   "Escaping secondary energy is a ledger, not an explicitly transported secondary species.",
+   "No fission, multiplication, charged particles, implantation, transmutation, gas production or calibrated lifetime.",
+   "Discrete angular ray effects, spatial and energy-group convergence must be demonstrated for the application."
+  ]
+ },
+ "response_units": {
+  "neutral_local_deposition_W": "W",
+  "neutral_outgoing_particles_per_s": "1/s",
+  "neutral_solid_damage_rate_mean_dpa_s": "dpa/s"
+ },
+ "state_contract": null,
+ "transport_limitations": [
+  "No particle momentum load or thermal/Doppler feedback to cross sections; explicit data temperature intervals are enforced.",
+  "Quasistatic nonmultiplying multigroup transport; isotropic scattering, first-order upwind Cartesian cells.",
+  "Fixed group data and geometry during each history; no temperature-dependent nuclear data or depletion.",
+  "Local deposition and dose responses require explicitly processed, compatible material data; none supplied.",
+  "Escaping secondary energy is a ledger, not an explicitly transported secondary species.",
+  "No fission, multiplication, charged particles, implantation, transmutation, gas production or calibrated lifetime.",
+  "Discrete angular ray effects, spatial and energy-group convergence must be demonstrated for the application."
+ ],
+ "study_template_text": []
+}

@@ -1,0 +1,47 @@
+{
+ "notes": [
+  "Experimental low-Mach thermal LBM driving fixed-mesh linear structural dynamics.",
+  "Pressure and viscous link loads are interval constant; stresses derive from supported tetrahedral mechanics.",
+  "Only fluid topology coordinates vary; mesh, supports, material and interface map stay fixed.",
+  "Optional isotropic thermal strain uses fixed-solid temperature interpolation; no damage feedback or moving-wall/two-way mechanics.",
+  "Optional calibrated rainflow usage observes solved structural stress with prescribed or explicitly mapped solved-solid temperature admission; no fatigue adjoint or constitutive damage.",
+  "Requires temporal, spatial and calibrated-material validation; not qualified by admission checks."
+ ],
+ "schema": {
+  "type": "object",
+  "properties": {
+   "fluid": {
+    "title": "Thermal LBM flow and design",
+    "format": "json"
+   },
+   "fatigue": {
+    "title": "Optional calibrated rainflow fatigue observer",
+    "format": "json",
+    "description": "Optional S-N surface: provenance, stress_measure, amplitudes_Pa, mean_stresses_Pa, cycles_to_failure, solid_temperature_K, T_min_K, T_max_K, initial_usage. Prescribed solid temperature; no automatic life extrapolation. Evaluation-only observer, not a differentiable objective. Optional temperature_source=\"solved_solid\" uses the thermal_expansion fixed-solid temperature map and checks every endpoint against calibration limits. No temperature-dependent life law is inferred."
+   },
+   "structure": {
+    "title": "Solid mesh, supports and wall-link interpolation",
+    "format": "json",
+    "description": "One-way fixed-wall loading. Explicit link indices and nonnegative weights must reproduce interface positions. Optional thermal_expansion contains per-element coefficient_per_K and stress_free_temperature_K; centroids interpolate only fixed solid-cell temperatures. Zero initial motion and fixed supports. Requires JAX x64."
+   }
+  }
+ },
+ "title": "Lattice Boltzmann + heat + wall-loaded structure, experimental",
+ "fields": [
+  "fluid_fraction",
+  "density_kg_m3",
+  "velocity_m_s",
+  "temperature_K",
+  "temperature_history_K",
+  "time_s",
+  "wall_link_positions_m",
+  "wall_link_force_N",
+  "solid_displacement_history_m",
+  "solid_stress_history_Pa",
+  "selected_wall_force_history_N",
+  "fatigue_usage_per_element"
+ ],
+ "analyses": [
+  "flow_thermal_structure"
+ ]
+}

@@ -1,0 +1,170 @@
+# SPDX-License-Identifier: Apache-2.0
+# METAPLEXIS-DISCLAIMER-BEGIN sha256=c7c02258f245d1dcd6db1e8066ef4f6bc1bf36430d91bf9aab026671723c058f
+# Open-access statement and disclaimer: see DISCLAIMER.md.
+# METAPLEXIS-DISCLAIMER-END
+
+[workspace]
+resolver = "3"
+members = [
+
+  "crates/implexity-core",
+  "crates/implexity-io",
+  "crates/implexity-linalg",
+  "crates/implexity-ad",
+
+  "crates/implexity-geometry",
+  "crates/implexity-mesh",
+  "crates/implexity-authoring",
+  "crates/implexity-optim",
+  "crates/implexity-solve",
+  "crates/implexity-runtime",
+  "crates/implexity-jobs",
+  "crates/implexity-render",
+  "crates/implexity-render-egl",
+  "crates/implexity-agent",
+  "crates/implexity-server",
+  "crates/implexity-mcp",
+
+  "crates/implexity-physics-base",
+  "crates/implexity-physics-solid",
+  "crates/implexity-physics-cfd",
+  "crates/implexity-physics-thermofluid",
+  "crates/implexity-physics-fields",
+  "crates/implexity-physics-lbm",
+  "crates/implexity-physics-fsi",
+  "crates/implexity-physics-compressible",
+
+  "crates/implexity-bundle",
+  "crates/implexity-cli",
+  "crates/implexity-desktop",
+]
+
+default-members = [
+  "crates/implexity-core",
+  "crates/implexity-io",
+  "crates/implexity-linalg",
+  "crates/implexity-ad",
+  "crates/implexity-geometry",
+  "crates/implexity-mesh",
+  "crates/implexity-authoring",
+  "crates/implexity-optim",
+  "crates/implexity-solve",
+  "crates/implexity-runtime",
+  "crates/implexity-jobs",
+  "crates/implexity-render",
+  "crates/implexity-render-egl",
+  "crates/implexity-agent",
+  "crates/implexity-server",
+  "crates/implexity-mcp",
+  "crates/implexity-physics-base",
+  "crates/implexity-physics-solid",
+  "crates/implexity-physics-cfd",
+  "crates/implexity-physics-thermofluid",
+  "crates/implexity-physics-fields",
+  "crates/implexity-physics-lbm",
+  "crates/implexity-physics-fsi",
+  "crates/implexity-physics-compressible",
+  "crates/implexity-bundle",
+  "crates/implexity-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "Apache-2.0"
+
+[workspace.dependencies]
+
+implexity-core = { path = "crates/implexity-core", version = "0.1.0" }
+implexity-io = { path = "crates/implexity-io", version = "0.1.0" }
+implexity-linalg = { path = "crates/implexity-linalg", version = "0.1.0" }
+implexity-ad = { path = "crates/implexity-ad", version = "0.1.0" }
+implexity-geometry = { path = "crates/implexity-geometry", version = "0.1.0" }
+implexity-mesh = { path = "crates/implexity-mesh", version = "0.1.0" }
+implexity-authoring = { path = "crates/implexity-authoring", version = "0.1.0" }
+implexity-optim = { path = "crates/implexity-optim", version = "0.1.0" }
+implexity-solve = { path = "crates/implexity-solve", version = "0.1.0" }
+implexity-runtime = { path = "crates/implexity-runtime", version = "0.1.0" }
+implexity-jobs = { path = "crates/implexity-jobs", version = "0.1.0" }
+implexity-render = { path = "crates/implexity-render", version = "0.1.0", default-features = false }
+implexity-render-egl = { path = "crates/implexity-render-egl", version = "0.1.0" }
+implexity-agent = { path = "crates/implexity-agent", version = "0.1.0", default-features = false }
+implexity-server = { path = "crates/implexity-server", version = "0.1.0", default-features = false }
+implexity-mcp = { path = "crates/implexity-mcp", version = "0.1.0" }
+implexity-physics-base = { path = "crates/implexity-physics-base", version = "0.1.0" }
+implexity-physics-solid = { path = "crates/implexity-physics-solid", version = "0.1.0" }
+implexity-physics-cfd = { path = "crates/implexity-physics-cfd", version = "0.1.0" }
+implexity-physics-thermofluid = { path = "crates/implexity-physics-thermofluid", version = "0.1.0" }
+implexity-physics-fields = { path = "crates/implexity-physics-fields", version = "0.1.0" }
+implexity-physics-lbm = { path = "crates/implexity-physics-lbm", version = "0.1.0", default-features = false }
+implexity-physics-fsi = { path = "crates/implexity-physics-fsi", version = "0.1.0" }
+implexity-physics-compressible = { path = "crates/implexity-physics-compressible", version = "0.1.0" }
+implexity-bundle = { path = "crates/implexity-bundle", version = "0.1.0", default-features = false }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }
+thiserror = "2"
+sha2 = "0.10"
+hex = "0.4"
+rayon = "1.10"
+faer = { version = "0.24", default-features = false, features = ["std", "rayon", "sparse-linalg"] }
+ndarray = { version = "0.17", features = ["rayon"] }
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+png = "0.18"
+fs4 = { version = "1", features = ["sync"] }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "sync", "time", "macros", "signal", "process", "io-util"] }
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "ws", "query"] }
+ureq = { version = "3", default-features = false }
+base64 = "0.22"
+unicode-normalization = { version = "0.1", default-features = false }
+rustix = { version = "1", default-features = false, features = ["std", "fs", "process", "time"] }
+indexmap = "2"
+wry = { version = "0.57", features = ["devtools"] }
+tao = "0.37"
+libproc = "0.14"
+errno = "0.3"
+nix = { version = "0.31", default-features = false, features = ["resource"] }
+winapi-util = "0.1"
+windows-permissions = "0.2"
+gif = { version = "0.14", default-features = false, features = ["std", "color_quant"] }
+image-webp = "0.2"
+less-avc = "0.1"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+unreachable_pub = "warn"
+unused_qualifications = "warn"
+
+[workspace.lints.clippy]
+
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+many_single_char_names = "allow"
+similar_names = "allow"
+cast_precision_loss = "allow"
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+dbg_macro = "deny"
+todo = "warn"
+print_stdout = "warn"
+float_cmp = "warn"
+
+[profile.dev]
+
+debug = false
+strip = "debuginfo"
+
+[profile.dev.package."*"]
+opt-level = 2
+debug-assertions = false
+overflow-checks = false
+
+[profile.release]
+debug = "line-tables-only"
+lto = "thin"
+codegen-units = 4
+panic = "unwind"
+

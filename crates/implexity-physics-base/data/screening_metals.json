@@ -1,0 +1,345 @@
+{
+  "schema": "implexity-material-cards/1",
+  "collection": "screening_metals",
+  "description": "Nominal room-temperature screening-tier properties of structural and high-conductivity metals: elasticity, thermal expansion and conduction, density, strain-life fatigue constants and Larson-Miller creep-rupture master curves. Data only; physics modules take these values as explicit inputs.",
+  "units": {
+    "youngs_modulus_Pa": "Pa",
+    "thermal_expansion_per_K": "1/K",
+    "poisson_ratio": "1",
+    "thermal_conductivity_W_per_m_K": "W/(m K)",
+    "density_kg_per_m3": "kg/m^3",
+    "basquin_strength_coefficient_Pa": "Pa",
+    "basquin_exponent": "1",
+    "coffin_manson_ductility_coefficient": "1",
+    "coffin_manson_exponent": "1",
+    "larson_miller_constant": "1 (log10 of hours)",
+    "master_curve_stress_Pa": "Pa",
+    "master_curve_parameter": "K (T [log10 t_h + C])",
+    "yield_strength_room_temperature_Pa": "Pa",
+    "yield_strength_1000C_Pa": "Pa",
+    "melting_temperature_K": "K",
+    "recrystallisation_temperature_K": "K",
+    "ductile_brittle_transition_temperature_K": "K",
+    "maximum_service_temperature_K": "K"
+  },
+  "references": {
+    "steinberg1996": "Steinberg, D. J. (1996). Equation of State and Strength Properties of Selected Materials. Lawrence Livermore National Laboratory Report UCRL-MA-106439 Change 1 (nominal room-temperature E, alpha, nu).",
+    "nist_sp960": "NIST Structural Materials Database (SP-960): temperature-dependent moduli for Inconel 718 and tantalum-tungsten alloys.",
+    "simo_halford2001": "Simo, J. J.; Halford, G. R. (2001). NASA/TP-2001-210453, GRCop-84 copper alloy characterization (E, alpha and low-cycle-fatigue constants of the high-conductivity copper-alloy family GRCop-84, CuCrZr and NARloy-Z).",
+    "special_metals_smc045": "Special Metals Corp. (2007). Inconel 718 datasheet, publication SMC-045 (E, alpha, nu, fatigue strength coefficient).",
+    "buckman2000": "Buckman, R. W. Jr. (2000). New Applications for Tantalum and Tantalum Alloys. JOM 52(3): 40-41 (Ta-10W properties).",
+    "larson_miller1952": "Larson, F. R.; Miller, J. (1952). Trans. ASME 74: 765-775 (Larson-Miller constant C ~ 20 for most engineering alloys).",
+    "iter_mddd2013": "ITER Organization (2013). Materials Design Description Document (MDDD), IDM reference 22F2ES (nominal room-temperature E, yield strength, k and alpha of pure tungsten and CuCrZr).",
+    "iaea_tecdoc1668": "IAEA (2011). IAEA-TECDOC-1668, Structural Materials for Liquid Metal Cooled Fast Reactor Fuel Assemblies - Operational Behaviour (316L austenitic stainless steel property compilation).",
+    "iaea_tecdoc1830": "IAEA (2018). IAEA-TECDOC-1830, Advances in Small Modular Reactor Technology Developments (EUROFER-97 property compilation; maximum service temperature set by thermal creep onset).",
+    "tavassoli2002": "Tavassoli, A.-A. F. et al. (2002). Materials Design Data for Reduced Activation Martensitic Steel Type EUROFER. J. Nucl. Mater. 307-311: 300-307 (EUROFER-97 fatigue and creep constants)."
+  },
+  "cards": [
+    {
+      "id": "CuCrZr",
+      "name": "CuCrZr",
+      "aliases": [],
+      "family": "precipitation-hardened copper alloy",
+      "tier": "screening",
+      "elastic_thermal": {
+        "youngs_modulus_Pa": 128000000000.0,
+        "thermal_expansion_per_K": 1.7e-05,
+        "poisson_ratio": 0.34,
+        "thermal_conductivity_W_per_m_K": 320.0,
+        "density_kg_per_m3": 8890.0,
+        "reference_condition": "nominal room temperature"
+      },
+      "fatigue": {
+        "basquin_strength_coefficient_Pa": 1000000000.0,
+        "basquin_exponent": -0.1,
+        "coffin_manson_ductility_coefficient": 0.35,
+        "coffin_manson_exponent": -0.6
+      },
+      "creep_rupture": {
+        "larson_miller_constant": 20.0,
+        "master_curve_stress_Pa": [
+          50000000.0,
+          100000000.0,
+          200000000.0,
+          300000000.0,
+          400000000.0
+        ],
+        "master_curve_parameter": [
+          22500.0,
+          20500.0,
+          18500.0,
+          16800.0,
+          15200.0
+        ],
+        "note": "Illustrative screening-tier master-curve fit; replace with the material's certified rupture data for intermediate or high fidelity."
+      },
+      "characteristic_values": {},
+      "provenance": {
+        "sources": [
+          "steinberg1996",
+          "simo_halford2001",
+          "iter_mddd2013",
+          "larson_miller1952"
+        ],
+        "statement": "Nominal room-temperature screening values from the listed references; temperature dependence is not represented and must be supplied from the cited curves for higher-fidelity use."
+      }
+    },
+    {
+      "id": "Inconel718",
+      "name": "Inconel 718",
+      "aliases": [],
+      "family": "precipitation-hardened nickel superalloy",
+      "tier": "screening",
+      "elastic_thermal": {
+        "youngs_modulus_Pa": 200000000000.0,
+        "thermal_expansion_per_K": 1.3e-05,
+        "poisson_ratio": 0.29,
+        "thermal_conductivity_W_per_m_K": 11.4,
+        "density_kg_per_m3": 8190.0,
+        "reference_condition": "nominal room temperature"
+      },
+      "fatigue": {
+        "basquin_strength_coefficient_Pa": 1650000000.0,
+        "basquin_exponent": -0.08,
+        "coffin_manson_ductility_coefficient": 1.16,
+        "coffin_manson_exponent": -0.68
+      },
+      "creep_rupture": {
+        "larson_miller_constant": 20.0,
+        "master_curve_stress_Pa": [
+          200000000.0,
+          400000000.0,
+          600000000.0,
+          800000000.0,
+          1000000000.0
+        ],
+        "master_curve_parameter": [
+          30000.0,
+          28000.0,
+          26000.0,
+          24000.0,
+          22000.0
+        ],
+        "note": "Illustrative screening-tier master-curve fit; replace with the material's certified rupture data for intermediate or high fidelity."
+      },
+      "characteristic_values": {},
+      "provenance": {
+        "sources": [
+          "nist_sp960",
+          "special_metals_smc045",
+          "larson_miller1952"
+        ],
+        "statement": "Nominal room-temperature screening values from the listed references; temperature dependence is not represented and must be supplied from the cited curves for higher-fidelity use."
+      }
+    },
+    {
+      "id": "Ta10W",
+      "name": "Ta-10W",
+      "aliases": [],
+      "family": "tantalum-tungsten refractory alloy",
+      "tier": "screening",
+      "elastic_thermal": {
+        "youngs_modulus_Pa": 200000000000.0,
+        "thermal_expansion_per_K": 6.5e-06,
+        "poisson_ratio": 0.3,
+        "thermal_conductivity_W_per_m_K": 54.0,
+        "density_kg_per_m3": 16900.0,
+        "reference_condition": "nominal room temperature"
+      },
+      "fatigue": {
+        "basquin_strength_coefficient_Pa": 1400000000.0,
+        "basquin_exponent": -0.07,
+        "coffin_manson_ductility_coefficient": 0.3,
+        "coffin_manson_exponent": -0.55
+      },
+      "creep_rupture": {
+        "larson_miller_constant": 20.0,
+        "master_curve_stress_Pa": [
+          50000000.0,
+          100000000.0,
+          200000000.0,
+          400000000.0,
+          600000000.0
+        ],
+        "master_curve_parameter": [
+          40000.0,
+          37000.0,
+          34000.0,
+          31000.0,
+          28000.0
+        ],
+        "note": "Illustrative screening-tier master-curve fit; replace with the material's certified rupture data for intermediate or high fidelity."
+      },
+      "characteristic_values": {},
+      "provenance": {
+        "sources": [
+          "nist_sp960",
+          "buckman2000",
+          "larson_miller1952"
+        ],
+        "statement": "Nominal room-temperature screening values from the listed references; temperature dependence is not represented and must be supplied from the cited curves for higher-fidelity use."
+      }
+    },
+    {
+      "id": "W",
+      "name": "Tungsten",
+      "aliases": [
+        "Tungsten"
+      ],
+      "family": "refractory metal",
+      "tier": "screening",
+      "elastic_thermal": {
+        "youngs_modulus_Pa": 411000000000.0,
+        "thermal_expansion_per_K": 4.5e-06,
+        "poisson_ratio": 0.28,
+        "thermal_conductivity_W_per_m_K": 173.0,
+        "density_kg_per_m3": 19250.0,
+        "reference_condition": "nominal room temperature"
+      },
+      "fatigue": {
+        "basquin_strength_coefficient_Pa": 800000000.0,
+        "basquin_exponent": -0.1,
+        "coffin_manson_ductility_coefficient": 0.4,
+        "coffin_manson_exponent": -0.5
+      },
+      "creep_rupture": {
+        "larson_miller_constant": 20.0,
+        "master_curve_stress_Pa": [
+          100000000.0,
+          200000000.0,
+          400000000.0,
+          600000000.0,
+          800000000.0
+        ],
+        "master_curve_parameter": [
+          45000.0,
+          42000.0,
+          38000.0,
+          34000.0,
+          30000.0
+        ],
+        "note": "Illustrative screening-tier master-curve fit; replace with the material's certified rupture data for intermediate or high fidelity."
+      },
+      "characteristic_values": {
+        "yield_strength_room_temperature_Pa": 550000000.0,
+        "yield_strength_1000C_Pa": 200000000.0,
+        "melting_temperature_K": 3695.0,
+        "recrystallisation_temperature_K": 1573.0,
+        "ductile_brittle_transition_temperature_K": 573.0
+      },
+      "provenance": {
+        "sources": [
+          "steinberg1996",
+          "iter_mddd2013",
+          "larson_miller1952"
+        ],
+        "statement": "Nominal room-temperature screening values from the listed references; temperature dependence is not represented and must be supplied from the cited curves for higher-fidelity use."
+      }
+    },
+    {
+      "id": "EUROFER-97",
+      "name": "EUROFER-97",
+      "aliases": [
+        "EUROFER97"
+      ],
+      "family": "reduced-activation ferritic-martensitic steel",
+      "tier": "screening",
+      "elastic_thermal": {
+        "youngs_modulus_Pa": 210000000000.0,
+        "thermal_expansion_per_K": 1.1e-05,
+        "poisson_ratio": 0.3,
+        "thermal_conductivity_W_per_m_K": 28.0,
+        "density_kg_per_m3": 7750.0,
+        "reference_condition": "nominal room temperature"
+      },
+      "fatigue": {
+        "basquin_strength_coefficient_Pa": 1000000000.0,
+        "basquin_exponent": -0.1,
+        "coffin_manson_ductility_coefficient": 0.3,
+        "coffin_manson_exponent": -0.55
+      },
+      "creep_rupture": {
+        "larson_miller_constant": 20.0,
+        "master_curve_stress_Pa": [
+          80000000.0,
+          150000000.0,
+          250000000.0,
+          400000000.0,
+          500000000.0
+        ],
+        "master_curve_parameter": [
+          24000.0,
+          22000.0,
+          20000.0,
+          18000.0,
+          16000.0
+        ],
+        "note": "Illustrative screening-tier master-curve fit; replace with the material's certified rupture data for intermediate or high fidelity."
+      },
+      "characteristic_values": {
+        "maximum_service_temperature_K": 823.0,
+        "yield_strength_room_temperature_Pa": 550000000.0
+      },
+      "provenance": {
+        "sources": [
+          "iaea_tecdoc1830",
+          "tavassoli2002",
+          "larson_miller1952"
+        ],
+        "statement": "Nominal room-temperature screening values from the listed references; temperature dependence is not represented and must be supplied from the cited curves for higher-fidelity use."
+      }
+    },
+    {
+      "id": "316L",
+      "name": "316L SS",
+      "aliases": [
+        "SS316L"
+      ],
+      "family": "austenitic stainless steel",
+      "tier": "screening",
+      "elastic_thermal": {
+        "youngs_modulus_Pa": 193000000000.0,
+        "thermal_expansion_per_K": 1.73e-05,
+        "poisson_ratio": 0.3,
+        "thermal_conductivity_W_per_m_K": 15.0,
+        "density_kg_per_m3": 8000.0,
+        "reference_condition": "nominal room temperature"
+      },
+      "fatigue": {
+        "basquin_strength_coefficient_Pa": 800000000.0,
+        "basquin_exponent": -0.1,
+        "coffin_manson_ductility_coefficient": 0.4,
+        "coffin_manson_exponent": -0.55
+      },
+      "creep_rupture": {
+        "larson_miller_constant": 20.0,
+        "master_curve_stress_Pa": [
+          50000000.0,
+          100000000.0,
+          150000000.0,
+          200000000.0,
+          300000000.0
+        ],
+        "master_curve_parameter": [
+          22000.0,
+          20000.0,
+          18000.0,
+          16000.0,
+          14000.0
+        ],
+        "note": "Illustrative screening-tier master-curve fit; replace with the material's certified rupture data for intermediate or high fidelity."
+      },
+      "characteristic_values": {
+        "maximum_service_temperature_K": 800.0,
+        "yield_strength_room_temperature_Pa": 205000000.0
+      },
+      "provenance": {
+        "sources": [
+          "iaea_tecdoc1668",
+          "larson_miller1952"
+        ],
+        "statement": "Nominal room-temperature screening values from the listed references; temperature dependence is not represented and must be supplied from the cited curves for higher-fidelity use."
+      }
+    }
+  ]
+}

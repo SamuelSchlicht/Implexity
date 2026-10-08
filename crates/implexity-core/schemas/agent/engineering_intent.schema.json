@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "implexity://schemas/agent/engineering-intent/2",
+  "title": "Implexity strict engineering intent",
+  "type": "object",
+  "additionalProperties": false,
+  "anyOf": [
+    {"required": ["goals"], "properties": {"goals": {"minItems": 1}}},
+    {"required": ["constraints"], "properties": {"constraints": {"minItems": 1}}}
+  ],
+  "properties": {
+    "contract_version": {
+      "const": 2,
+      "default": 2,
+      "description": "Optional protocol marker. Omission selects the current strict v2 contract; v1 remains available only through the explicit compatibility interface."
+    },
+    "active_design_coordinates": {
+      "description": "Optional explicit limitation. When omitted, every design coordinate declared by the selected differentiable provider graph is active.",
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "goals": {
+      "type": "array", "items": {"$ref": "#/$defs/goal"}
+    },
+    "constraints": {
+      "type": "array", "items": {"$ref": "#/$defs/goal"}
+    },
+    "authoring": {"type": "object"},
+    "application": {
+      "type": "array", "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "fidelity": {"enum": ["screening", "intermediate", "high", "qualification"]},
+    "provider_overrides": {
+      "type": "object",
+      "additionalProperties": {"type": "string", "minLength": 1}
+    },
+    "excluded_addins": {
+      "type": "array", "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "expert_mode": {"type": "boolean"},
+    "strict_fidelity": {
+      "type": "boolean",
+      "default": true,
+      "description": "Planner-layer fidelity firewall. When true (default) an add-in whose contract fidelity ranks below the requested fidelity is not a selection candidate. When false the legacy soft-penalty ranking is retained and every below-intent selection is named in the plan warnings; the plan's delivered_fidelity still reports the weakest selected add-in."
+    },
+    "external_ports": {
+      "type": "array", "items": {"$ref": "#/$defs/externalPort"}
+    }
+  },
+  "$defs": {
+    "goal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["response"],
+      "properties": {
+        "response": {"type": "string", "minLength": 1},
+        "relation": {"enum": ["minimize", "maximize", "less_equal", "greater_equal", "equal"]},
+        "value": {"type": "number"},
+        "weight": {"type": "number"}
+      }
+    },
+    "port": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["quantity", "unit", "domain", "interface", "temporal", "conserved", "port_id", "cardinality", "aggregation"],
+      "properties": {
+        "quantity": {"type": "string", "minLength": 1},
+        "unit": {"type": "string", "minLength": 1},
+        "domain": {"type": "string", "minLength": 1},
+        "interface": {"type": ["string", "null"]},
+        "temporal": {"enum": ["instantaneous", "lagged", "history", "steady"]},
+        "conserved": {"type": "boolean"},
+        "port_id": {"type": "string", "minLength": 1},
+        "cardinality": {"type": "string", "minLength": 1},
+        "aggregation": {"enum": ["single", "sum", "mean", "minimum", "maximum", "concatenate"]}
+      }
+    },
+    "externalPort": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["port", "value", "source_id"],
+      "properties": {
+        "port": {"$ref": "#/$defs/port"},
+        "value": {},
+        "source_id": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

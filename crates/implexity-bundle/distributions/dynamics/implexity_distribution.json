@@ -1,0 +1,8 @@
+{
+  "schema": "implexity-distribution/1",
+  "distribution_id": "implexity_dynamics",
+  "label": "Rust-native dynamic fluid-structure packages (optional plug-and-play modules)",
+  "catalogues": {
+    "packages": "package_catalog.json"
+  }
+}

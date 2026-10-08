@@ -1,0 +1,45 @@
+# SPDX-License-Identifier: Apache-2.0
+# METAPLEXIS-DISCLAIMER-BEGIN sha256=c7c02258f245d1dcd6db1e8066ef4f6bc1bf36430d91bf9aab026671723c058f
+# Open-access statement and disclaimer: see DISCLAIMER.md.
+# METAPLEXIS-DISCLAIMER-END
+
+[package]
+autotests = false
+name = "implexity-physics-lbm"
+description = "Lattice Boltzmann flow (D3Q19 BGK/Guo, porous D3Q27 history, compressible D3Q343),"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+implexity-core = { workspace = true }
+implexity-linalg = { workspace = true }
+implexity-ad = { workspace = true }
+implexity-geometry = { workspace = true }
+implexity-optim = { workspace = true }
+implexity-physics-solid = { workspace = true }
+implexity-solve = { workspace = true }
+serde_json = { workspace = true, features = ["preserve_order"] }
+ndarray = { workspace = true }
+rayon = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+
+[features]
+default = ["moving"]
+ 
+ 
+ 
+ 
+moving = []
+
+
+
+[lints]
+workspace = true
+
+[lib]
+test = false
+doctest = false

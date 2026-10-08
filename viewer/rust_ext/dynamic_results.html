@@ -1,0 +1,105 @@
+<!doctype html>
+<!--
+SPDX-License-Identifier: Apache-2.0
+METAPLEXIS-DISCLAIMER-BEGIN sha256=c7c02258f245d1dcd6db1e8066ef4f6bc1bf36430d91bf9aab026671723c058f
+Open-access statement and disclaimer: see DISCLAIMER.md.
+METAPLEXIS-DISCLAIMER-END
+-->
+
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Implexity: dynamic results</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="native.css">
+<link rel="stylesheet" href="dynamic_results.css">
+</head>
+<body>
+<header class="ixr-topbar dr-header">
+  <h1><span class="ixr-brand-mark" aria-hidden="true"></span>Dynamic results</h1>
+  <span class="ixr-chip" title="Rust-only contract extension implexity-rust-extension/1, served while a physics package that captures dynamic results is active">Rust extension</span>
+  <label class="dr-store">Store <select id="drStore" aria-label="Dynamic result store"></select></label>
+  <button type="button" id="drRefresh" title="Reload the store list">Refresh</button>
+  <span class="ixr-spacer"></span>
+  <span id="drStatus" class="ixr-status dr-status" role="status" aria-live="polite"></span>
+  <a href="../model.html" class="ixr-button dr-back">Workbench</a>
+</header>
+<main class="dr-main">
+  <aside class="ixr-pane dr-controls" aria-label="View">
+    <fieldset class="ixr-section">
+      <legend>Field</legend>
+      <label class="ixr-field">Field <select id="drField"></select></label>
+      <label class="ixr-field">Component <select id="drComponent">
+        <option value="">magnitude / scalar</option><option value="x">x</option><option value="y">y</option><option value="z">z</option>
+      </select></label>
+      <label class="ixr-field">Mode <select id="drMode">
+        <option value="section">section</option><option value="phase_average">phase average</option><option value="iso">iso-surface (3-D)</option>
+      </select></label>
+      <label class="ixr-field">Colour map <select id="drColormap">
+        <option value="auto">auto (provider hint)</option><option value="viridis">viridis</option>
+        <option value="magma">magma</option><option value="inferno">inferno</option><option value="plasma">plasma</option>
+        <option value="coolwarm">coolwarm (diverging)</option><option value="phase">phase (cyclic)</option><option value="gray">gray</option>
+      </select></label>
+      <label class="ixr-field">Range <select id="drRange"><option value="run">whole run</option><option value="frames">shown frames</option></select></label>
+      <label class="ixr-field">Background <select id="drBackground"><option value="white">white</option><option value="dark">dark</option></select></label>
+    </fieldset>
+    <fieldset class="ixr-section" id="drSliceBox" hidden>
+      <legend>3-D</legend>
+      <label class="ixr-field">Plane <select id="drPlane"><option value="z">z</option><option value="y">y</option><option value="x">x</option></select></label>
+      <label class="ixr-field">Position <input id="drPosition" type="range" min="0" max="1" step="0.01" value="0.5"></label>
+      <label class="ixr-field">Iso field <select id="drIsoField"></select></label>
+      <label class="ixr-check"><input id="drClip" type="checkbox"> clip through the centre</label>
+    </fieldset>
+    <fieldset class="ixr-section">
+      <legend>Overlays</legend>
+      <label class="ixr-field">Occupancy <select id="drOccupancy"></select></label>
+      <label class="ixr-check"><input id="drFill" type="checkbox"> shade occupied cells</label>
+      <label class="ixr-field">Flow <select id="drFlowStyle"><option value="">none</option><option value="streamlines">streamlines</option><option value="lic">LIC</option></select></label>
+      <label class="ixr-field">Vector field <select id="drFlowField"></select></label>
+    </fieldset>
+    <fieldset class="ixr-section">
+      <legend>Deformed solid</legend>
+      <label class="ixr-field">Displacement <select id="drDeform"></select></label>
+      <label class="ixr-field">Solid mask <select id="drDeformMask"></select></label>
+      <label class="ixr-field">Solid colour <select id="drDeformColour"></select></label>
+      <label class="ixr-field">Scale
+        <span class="dr-scale"><input id="drScale" type="range" min="0" max="20" step="0.5" value="1"><select id="drScaleMul" title="scale multiplier" aria-label="Scale multiplier"><option value="1">x1</option><option value="10">x10</option><option value="100">x100</option><option value="1000">x1000</option><option value="10000">x10000</option></select><output id="drScaleOut" class="ixr-num">1</output></span>
+      </label>
+    </fieldset>
+    <fieldset class="ixr-section">
+      <legend>Export and compare</legend>
+      <label class="ixr-field">Format <select id="drFormat"><option value="webp">WebP (lossless)</option><option value="gif">GIF</option><option value="mp4">MP4 (PCM H.264)</option><option value="png_sequence">PNG frames (ZIP)</option></select></label>
+      <a id="drExport" class="ixr-button" href="#" download>Download animation</a>
+      <label class="ixr-field">Compare with <select id="drCompare" multiple size="4" aria-label="Stores to compare"></select></label>
+      <button type="button" id="drCompareGo">Compare at this phase</button>
+    </fieldset>
+  </aside>
+  <section class="dr-view" aria-label="Frames">
+    <div class="dr-player">
+      <button type="button" id="drPlay" class="primary" aria-pressed="false">Play</button>
+      <label class="dr-inline">Cycle <select id="drCycle"></select></label>
+      <input id="drScrub" type="range" min="0" max="0" step="1" value="0" aria-label="Frame within the cycle">
+      <label class="dr-inline">fps <input id="drFps" type="number" min="1" max="30" value="8"></label>
+      <span id="drInfo" class="ixr-status dr-info"></span>
+    </div>
+    <div class="ixr-stage dr-image"><img id="drImage" alt="Rendered frame"></div>
+    <div id="drCompareBox" class="ixr-card dr-compare" hidden>
+      <h2 class="ixr-section-head dr-compare-head">Comparison <button type="button" id="drCompareClose">Close</button></h2>
+      <img id="drCompareImage" alt="Side-by-side comparison">
+    </div>
+  </section>
+  <section class="ixr-card dr-plots" aria-label="Series">
+    <h2 class="ixr-section-head">Series</h2>
+    <div class="dr-plot-head">
+      <label class="ixr-field">Series <select id="drSeries" multiple size="3"></select></label>
+      <label class="ixr-field">Plot <select id="drPlotKind"><option value="time">time series</option><option value="spectrum">spectrum</option><option value="portrait">phase portrait</option></select></label>
+    </div>
+    <canvas id="drPlot" width="640" height="300" aria-label="Series plot"></canvas>
+    <div id="drStats" class="dr-stats"></div>
+  </section>
+</main>
+<p id="drUnavailable" class="ixr-empty dr-unavailable" role="status" hidden>Dynamic results are not available in this service now: no active physics package captures them. Activate a dynamic physics package under <b>Physics add-ins</b> in the workbench, then reload.</p>
+<script src="dynamic_results.js"></script>
+</body>
+</html>

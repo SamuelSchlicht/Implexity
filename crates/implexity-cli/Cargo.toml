@@ -1,0 +1,57 @@
+# SPDX-License-Identifier: Apache-2.0
+# METAPLEXIS-DISCLAIMER-BEGIN sha256=c7c02258f245d1dcd6db1e8066ef4f6bc1bf36430d91bf9aab026671723c058f
+# Open-access statement and disclaimer: see DISCLAIMER.md.
+# METAPLEXIS-DISCLAIMER-END
+
+[package]
+autotests = false
+name = "implexity-cli"
+description = "The `implexity` and `implexity-mcp` executables"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+test = false
+name = "implexity"
+path = "src/main.rs"
+
+[[bin]]
+test = false
+name = "implexity-mcp"
+path = "src/bin/implexity-mcp.rs"
+doc = false   
+
+[dependencies]
+implexity-core = { workspace = true }
+implexity-io = { workspace = true }
+implexity-jobs = { workspace = true }
+implexity-bundle = { workspace = true }
+implexity-server = { workspace = true }
+implexity-mcp = { workspace = true }
+implexity-geometry = { workspace = true }
+implexity-optim = { workspace = true }
+implexity-mesh = { workspace = true }
+implexity-ad = { workspace = true }
+implexity-authoring = { workspace = true }
+ndarray = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+ureq = { workspace = true }
+fs4 = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+base64 = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+rustix = { workspace = true }
+
+[features]
+default = ["dynamic"]
+ 
+dynamic = ["implexity-bundle/dynamic", "implexity-server/dynamic-results"]
+
+[lints]
+workspace = true

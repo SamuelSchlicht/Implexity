@@ -1,0 +1,125 @@
+{
+ "editor_label": "Electromagnetic loads (eddy and injected currents)",
+ "authoring_contract": {
+  "schema": "implexity-component-authoring/1",
+  "selection": "field_sources",
+  "scope": "quasistatic_eddy_and_injected_current_lorentz_force_and_joule_heat",
+  "required_settings": [
+   "grid",
+   "times_s",
+   "node_order",
+   "magnetic_flux_density_T",
+   "induction_convention",
+   "induction_gauge_origin_m",
+   "terminals",
+   "conductivity_S_m",
+   "conductivity_slope_S_m_K",
+   "void_conductivity_S_m",
+   "penalty",
+   "joule_heating",
+   "potential_scale_V",
+   "current_residual_scale_A",
+   "charge_tolerance_A",
+   "power_tolerance_W",
+   "response_norm_order",
+   "moment_reference_m",
+   "energy_convention",
+   "provenance"
+  ],
+  "sampling": "host_time_endpoint_backward_difference_induction_no_interpolation",
+  "conductivity_law": "sigma_void + ((1-c) sigma_0(T) + c sigma_1(T) - sigma_void) * occupancy**penalty; sigma_k(T)=sigma_k+slope_k (T - T_initial)",
+  "induced_field": "E_ind = -1/2 (B_n - B_{n-1})/(t_n - t_{n-1}) x (r - r_g); r_g = induction_gauge_origin_m, or the domain centre when it is null (allowed only without terminals or without a changing field, where r_g only shifts the potential gauge)",
+  "induction_gauge_origin": "point to which the external circuit leads run straight from every terminal, so its return path links no further flux; required when terminals and a changing field coexist",
+  "body_force": "f = J x B_n on the native solid momentum rows (element force / 4 per node)",
+  "torque": "M = sum_e (r_e - moment_reference_m) x V_e f_e over native tetrahedron centroids r_e",
+  "coordinate_frame": "native analysis frame in m: origin at the lower-corner node, node (i,j,k) at (i h_x, j h_y, k h_z)",
+  "net_force_without_terminals": "identically zero at convergence: force peak and impulses vanish for insulated conductors; use torque and force-density responses",
+  "terminal_sign": "current_A is the current flowing INTO the domain through the patch; a ground terminal is held at 0 V and returns the net current",
+  "terminal_contact": "mean occupancy of the cells under every terminal patch must reach the host solid_reporting_threshold on the evaluated design",
+  "gauge": "ground terminal, otherwise a zero-mean potential multiplier (exactly zero at convergence)",
+  "response_norms": "normalised p-mean (sum_s w_s |a_s|^p)^(1/p) over the listed samples with equal weights summing to one (every native tetrahedron has the same volume, so equal element weights are volume weights); bounded by the true maximum and at least N^(-1/p) times it for N samples",
+  "exclusive_field_sources": [
+   "native_resolved_electrothermal"
+  ],
+  "exclusive_field_sources_when_joule_heating": [
+   "prescribed_real_field_joule_heat"
+  ],
+  "energy_convention": "authored_heat_excludes_electromagnetic_joule_heat",
+  "calibrated_material_data_supplied": false,
+  "limitations": [
+   "Quasistatic magnetic field: prescribed spatially uniform B(t); the self-field of the solved currents, magnetic diffusion/skin effect, displacement current, motion-induced EMF and magnetisation are neglected. Valid when mu0*sigma*L^2/dt << 1 (reported per step).",
+   "Induced field from the backward difference of B between host times (exact for piecewise-linear B(t)); Lorentz force and Joule heat sampled at the step endpoint, no structural inertia.",
+   "Terminals are ideal equipotential contacts on native box-face patches; no contact resistance, arcing or sheath effects. Each terminal must contact solid material: the mean occupancy of the cells under the patch must reach the host solid reporting threshold on the evaluated design.",
+   "Induced field gauge: with terminals and a changing field the result depends on the authored induction_gauge_origin_m, the point to which the external circuit leads run straight from every terminal (its return path links no further flux); insulated conductors are independent of it.",
+   "Without terminals the net force and its impulses vanish identically (charge conservation); the loads are then the torque and the local force density.",
+   "Isotropic conductivity linear in element-mean temperature per endmember with occupancy interpolation; fixed geometry (small strain).",
+   "Element-centroid quadrature: charge rows, element current integral and net force exact for the linear induced field; torque, local force density and Joule heat density second-order accurate.",
+   "Exclusive with resolved_electrothermal (independent potential solves do not superpose) and, when joule_heating is selected, with prescribed-field Joule heat (double counting)."
+  ]
+ },
+ "runtime_support": {
+  "status": "quasistatic_electromagnetic_body_load",
+  "history": true,
+  "data": "user_required",
+  "limitations": [
+   "Quasistatic magnetic field: prescribed spatially uniform B(t); the self-field of the solved currents, magnetic diffusion/skin effect, displacement current, motion-induced EMF and magnetisation are neglected. Valid when mu0*sigma*L^2/dt << 1 (reported per step).",
+   "Induced field from the backward difference of B between host times (exact for piecewise-linear B(t)); Lorentz force and Joule heat sampled at the step endpoint, no structural inertia.",
+   "Terminals are ideal equipotential contacts on native box-face patches; no contact resistance, arcing or sheath effects. Each terminal must contact solid material: the mean occupancy of the cells under the patch must reach the host solid reporting threshold on the evaluated design.",
+   "Induced field gauge: with terminals and a changing field the result depends on the authored induction_gauge_origin_m, the point to which the external circuit leads run straight from every terminal (its return path links no further flux); insulated conductors are independent of it.",
+   "Without terminals the net force and its impulses vanish identically (charge conservation); the loads are then the torque and the local force density.",
+   "Isotropic conductivity linear in element-mean temperature per endmember with occupancy interpolation; fixed geometry (small strain).",
+   "Element-centroid quadrature: charge rows, element current integral and net force exact for the linear induced field; torque, local force density and Joule heat density second-order accurate.",
+   "Exclusive with resolved_electrothermal (independent potential solves do not superpose) and, when joule_heating is selected, with prescribed-field Joule heat (double counting)."
+  ]
+ },
+ "response_units": {
+  "electromagnetic_force_peak_N": "N",
+  "electromagnetic_impulse_x_N_s": "N s",
+  "electromagnetic_impulse_y_N_s": "N s",
+  "electromagnetic_impulse_z_N_s": "N s",
+  "electromagnetic_torque_peak_N_m": "N m",
+  "electromagnetic_angular_impulse_x_N_m_s": "N m s",
+  "electromagnetic_angular_impulse_y_N_m_s": "N m s",
+  "electromagnetic_angular_impulse_z_N_m_s": "N m s",
+  "electromagnetic_force_density_pnorm_N_m3": "N/m^3",
+  "electromagnetic_current_density_pnorm_A_m2": "A/m^2",
+  "electromagnetic_joule_energy_J": "J"
+ },
+ "state_contract": null,
+ "limitations": [
+  "Quasistatic magnetic field: prescribed spatially uniform B(t); the self-field of the solved currents, magnetic diffusion/skin effect, displacement current, motion-induced EMF and magnetisation are neglected. Valid when mu0*sigma*L^2/dt << 1 (reported per step).",
+  "Induced field from the backward difference of B between host times (exact for piecewise-linear B(t)); Lorentz force and Joule heat sampled at the step endpoint, no structural inertia.",
+  "Terminals are ideal equipotential contacts on native box-face patches; no contact resistance, arcing or sheath effects. Each terminal must contact solid material: the mean occupancy of the cells under the patch must reach the host solid reporting threshold on the evaluated design.",
+  "Induced field gauge: with terminals and a changing field the result depends on the authored induction_gauge_origin_m, the point to which the external circuit leads run straight from every terminal (its return path links no further flux); insulated conductors are independent of it.",
+  "Without terminals the net force and its impulses vanish identically (charge conservation); the loads are then the torque and the local force density.",
+  "Isotropic conductivity linear in element-mean temperature per endmember with occupancy interpolation; fixed geometry (small strain).",
+  "Element-centroid quadrature: charge rows, element current integral and net force exact for the linear induced field; torque, local force density and Joule heat density second-order accurate.",
+  "Exclusive with resolved_electrothermal (independent potential solves do not superpose) and, when joule_heating is selected, with prescribed-field Joule heat (double counting)."
+ ],
+ "study_template_text": [
+  {
+   "id": "electromagnetic_loads_uniform_field",
+   "label": "Eddy-current loads from a uniform magnetic field",
+   "description": "Enter the uniform flux density at every host time; its change between host times induces eddy currents in insulated conductors. The net force and impulses of an insulated conductor are identically zero; its loads are the torque (independent of the moment reference) and the local force density. Zero-load starter with placeholder conductivities; no experimental validation. Authored heat must exclude the Joule contribution.",
+   "truth_status": "unvalidated_zero_load_authoring_starter"
+  },
+  {
+   "id": "electromagnetic_loads_injected_current_x",
+   "label": "Injected current between X-min and X-max",
+   "description": "Ground on the whole X-min face and an equipotential current terminal on the whole X-max face; enter the current into the domain at every host time. Set the torque reference point (lower domain corner in the starter); a changing field additionally requires the induction gauge origin, the point where the external circuit leads meet. Zero-load starter with placeholder conductivities; no experimental validation. Authored heat must exclude the Joule contribution.",
+   "truth_status": "unvalidated_zero_load_authoring_starter"
+  },
+  {
+   "id": "electromagnetic_loads_injected_current_y",
+   "label": "Injected current between Y-min and Y-max",
+   "description": "Ground on the whole Y-min face and an equipotential current terminal on the whole Y-max face; enter the current into the domain at every host time. Set the torque reference point (lower domain corner in the starter); a changing field additionally requires the induction gauge origin, the point where the external circuit leads meet. Zero-load starter with placeholder conductivities; no experimental validation. Authored heat must exclude the Joule contribution.",
+   "truth_status": "unvalidated_zero_load_authoring_starter"
+  },
+  {
+   "id": "electromagnetic_loads_injected_current_z",
+   "label": "Injected current between Z-min and Z-max",
+   "description": "Ground on the whole Z-min face and an equipotential current terminal on the whole Z-max face; enter the current into the domain at every host time. Set the torque reference point (lower domain corner in the starter); a changing field additionally requires the induction gauge origin, the point where the external circuit leads meet. Zero-load starter with placeholder conductivities; no experimental validation. Authored heat must exclude the Joule contribution.",
+   "truth_status": "unvalidated_zero_load_authoring_starter"
+  }
+ ]
+}

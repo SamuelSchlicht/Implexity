@@ -1,0 +1,81 @@
+/*
+SPDX-License-Identifier: Apache-2.0
+METAPLEXIS-DISCLAIMER-BEGIN sha256=c7c02258f245d1dcd6db1e8066ef4f6bc1bf36430d91bf9aab026671723c058f
+Open-access statement and disclaimer: see DISCLAIMER.md.
+METAPLEXIS-DISCLAIMER-END
+*/
+
+ 
+body.implexity-workbench.implexity-editing-active #implexityInspectorPane > :not(#implexityEditingWorkspace){display:none!important}
+body.implexity-workbench #implexityEditingWorkspace[hidden], #implexityEditingWorkspace [hidden], .ux-edit-legend[hidden]{display:none!important}
+body.implexity-workbench #implexityEditingWorkspace{display:flex;flex-direction:column;min-height:100%;width:100%;min-width:0;font-size:12px;color:var(--fg);background:var(--pane)}
+.ux-editor-head{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:1px 0 12px;border-bottom:1px solid var(--line)}
+.ux-editor-head h2{font-size:20px;font-weight:600;line-height:1.25;margin:3px 0 0}
+.ux-eyebrow{font-size:9px;letter-spacing:.13em;font-weight:600;color:var(--dim)}
+.ux-editor-head button{width:auto!important;min-width:54px;margin:0!important}
+.ux-edit-state{display:flex;gap:7px;align-items:center;min-height:38px;line-height:1.35;border-bottom:1px solid var(--line);font-size:11px}
+.ux-edit-state i{width:7px;height:7px;flex:0 0 7px;background:var(--acc)}
+#implexityEditingWorkspace[data-state=ready] .ux-edit-state{color:#24654e}
+#implexityEditingWorkspace[data-state=ready] .ux-edit-state i{background:#287b59}
+#implexityEditingWorkspace[data-state=preparing] .ux-edit-state i,#implexityEditingWorkspace[data-state=committing] .ux-edit-state i{background:#9b6718}
+.ux-edit-body,.ux-config-fields{margin:0;padding:0;border:0;min-width:0;flex:1 0 auto}
+body.implexity-workbench #implexityEditingWorkspace .implexity-options{position:static;inset:auto;min-width:0;max-width:none;width:100%;max-height:none;overflow:visible;padding:0;margin:0;border:0;box-shadow:none;backdrop-filter:none;font:inherit;background:transparent}
+#implexityEditingWorkspace .implexity-options-title{display:none}
+#implexityEditingWorkspace .implexity-option-grid{padding-top:12px;margin:0;gap:6px;grid-template-columns:minmax(0,1fr) 88px}
+#implexityEditingWorkspace .implexity-sculpt-grid{gap:10px;margin-top:12px}
+#implexityEditingWorkspace label{font-size:12px;letter-spacing:0;font-weight:500;line-height:1.4}
+#implexityEditingWorkspace input:not([type=checkbox]),#implexityEditingWorkspace select{min-height:36px;font-size:12px;padding:7px 9px}
+#implexityEditingWorkspace button{min-height:36px;font-size:12px}
+#implexityEditingWorkspace button:disabled{cursor:default;opacity:.48}
+#implexityEditingWorkspace summary{letter-spacing:0;font-size:12px;line-height:1.4;min-height:34px;display:list-item;padding:7px 0;font-weight:600}
+#implexityEditingWorkspace details{padding:5px 0;margin:0;border-top:1px solid var(--line)}
+#implexityEditingWorkspace .implexity-sculpt-grid details label{margin-top:8px}
+#implexityEditingWorkspace .implexity-sculpt-grid>.implexity-sculpt-grid{margin-top:1px}
+#implexityEditingWorkspace .implexity-sculpt-note{font-size:11px;line-height:1.5;margin:7px 0;color:var(--dim)}
+.ux-tool-picker{margin:10px 0}
+.ux-tool-categories{display:grid;grid-template-columns:1fr 1fr 1.25fr;gap:0;border-bottom:1px solid var(--line)}
+.ux-tool-categories button{margin:0!important;border:0!important;padding:7px 3px!important;background:transparent!important;color:var(--dim);white-space:nowrap;font-size:11px!important}
+.ux-tool-categories button[aria-selected=true]{color:var(--acc);box-shadow:inset 0 -2px var(--acc)}
+.ux-tool-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:10px 0 0}
+#implexityEditingWorkspace .ux-tool-tile{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;min-height:64px;padding:8px 4px;margin:0;font-size:11px;background:#fff;border:1px solid var(--line);white-space:normal;line-height:1.2}
+.ux-tool-tile svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.45;stroke-linecap:round;stroke-linejoin:round}
+#implexityEditingWorkspace .ux-tool-tile[aria-pressed=true]{border-color:var(--acc);background:var(--implexity-accent-soft);color:#115e55;box-shadow:inset 0 0 0 1px var(--acc)}
+.ux-edit-instructions{padding:11px 12px;background:#eef4f0;border-left:3px solid var(--acc);margin:10px 0}
+.ux-edit-instructions strong{font-size:12px;font-weight:600}.ux-edit-instructions p{font-size:11px;line-height:1.5;color:var(--dim);margin:4px 0 0}
+.ux-edit-issue{border-left:3px solid #9b6019;padding:9px 10px;background:#fff5e6;color:#754609;line-height:1.45;font-size:11px;margin:10px 0}
+.ux-edit-body [aria-invalid=true]{outline:2px solid #aa6c23;outline-offset:1px}
+.ux-edit-footer{position:sticky;bottom:-12px;z-index:25;border-top:1px solid var(--line);padding:9px 0 12px;margin-top:14px;background:var(--pane);box-shadow:0 -8px 10px var(--pane)}
+.ux-edit-footer .implexity-sculpt-actions{display:flex;margin:0 0 6px;gap:8px}.ux-edit-footer .implexity-sculpt-actions button{margin:0;flex:1;background:#fff}
+.ux-edit-footer output{display:block;font-size:11px;line-height:1.45;color:var(--dim);max-height:65px;overflow:auto}
+.ux-edit-review{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:9px}
+.ux-edit-review button{margin:0!important}.ux-edit-review .primary{font-weight:600}
+.ux-selection-help,.ux-navigation p{font-size:11px;line-height:1.5;color:var(--dim)}
+.ux-selection-limit{display:flex;align-items:center;gap:6px;justify-content:space-between;background:#e4f2eb;border:1px solid #a6cabb;padding:6px;font-size:11px}
+#implexityEditingWorkspace .ux-selection-limit button{width:auto;min-height:28px;font-size:10px;margin:0;padding:3px 6px;white-space:nowrap}
+#implexityEditingWorkspace .ux-use-selection{width:100%;margin:8px 0;background:var(--implexity-accent-soft);color:#115e55;border:1px solid #a6cabb}
+.ux-navigation dl{display:grid;grid-template-columns:1fr 1.2fr;font-size:11px;gap:6px 10px;margin:8px 0}.ux-navigation dd{margin:0;color:var(--dim)}
+.ux-edit-legend{position:absolute;left:12px;bottom:66px;z-index:62;max-width:calc(100% - 24px);display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px;padding:7px 10px;background:rgba(251,252,250,.96);border:1px solid var(--line);font-size:11px;color:var(--dim);pointer-events:none}
+.ux-edit-legend strong{color:var(--acc)}.ux-edit-legend kbd{padding:0 3px;background:#fff;border:1px solid var(--line);margin-right:2px;font:10px Arial,sans-serif}
+body.implexity-editing-active .implexity-toolbar .implexity-tool:not([data-mode=select]):not([data-mode=geometry_sculpt]){display:none!important}
+body.implexity-editing-active #implexity-context{display:none!important}
+body.implexity-workbench.implexity-editing-active .implexity-toolbar{top:12px!important;left:12px!important}
+ 
+body.implexity-workbench .implexity-brush-ring{border-radius:50%!important}
+@media(min-width:1100px){
+ body.implexity-workbench.implexity-editing-active #app{grid-template-columns:224px minmax(0,1fr) 336px}
+ body.implexity-workbench.implexity-editing-active.implexity-left-hidden #app{grid-template-columns:0 minmax(0,1fr) 336px}
+ body.implexity-workbench.implexity-editing-active.implexity-right-hidden #app{grid-template-columns:224px minmax(0,1fr) 0}
+ body.implexity-workbench.implexity-editing-active.implexity-right-hidden.implexity-left-hidden #app{grid-template-columns:0 minmax(0,1fr) 0}
+}
+@media(max-width:1099px){.ux-edit-legend{max-width:calc(100% - 24px);font-size:10px;bottom:94px}.ux-edit-legend span:nth-last-child(-n+2){display:none}}
+@media(forced-colors:active){.ux-tool-tile[aria-pressed=true]{outline:2px solid Highlight}.ux-edit-state i{background:CanvasText}}
+
+body.implexity-workbench #implexityEditingWorkspace .ux-editor-head h2{font-size:20px;letter-spacing:-.025em;text-transform:none;border:0;padding:0;margin:3px 0 0;color:var(--fg);font-weight:600}
+#implexityEditingWorkspace .ux-config-fields>legend{display:none}
+#implexityEditingWorkspace .ux-config-fields{padding:0;margin:0;border:0;min-width:0}
+
+ 
+#implexityEditingWorkspace[data-review=true] .ux-edit-state{color:#80520c}
+#implexityEditingWorkspace[data-review=true] .ux-edit-state i{background:#9b6718}
+#stage[data-geometry-preview=uncommitted] .ux-edit-legend{border-color:#cba468;background:#fff8e9}
+#stage[data-geometry-preview=uncommitted] .ux-edit-legend strong{color:#80520c}

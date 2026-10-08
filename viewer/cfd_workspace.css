@@ -1,0 +1,154 @@
+/*
+SPDX-License-Identifier: Apache-2.0
+METAPLEXIS-DISCLAIMER-BEGIN sha256=c7c02258f245d1dcd6db1e8066ef4f6bc1bf36430d91bf9aab026671723c058f
+Open-access statement and disclaimer: see DISCLAIMER.md.
+METAPLEXIS-DISCLAIMER-END
+*/
+
+.implexity-cfd-shell {
+  position: absolute;
+  inset: 0 0 0 auto;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  width: min(460px, 44vw);
+  min-width: 0;
+  border-left: 1px solid #ccd5df;
+  background: var(--panel, #ffffff);
+  color: var(--text, #192536);
+  box-shadow: -12px 0 36px #0006;
+  container-name: implexity-cfd-workspace;
+  container-type: inline-size;
+}
+.implexity-cfd-shell[hidden] { display: none; }
+.implexity-cfd-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px 14px;
+  border-bottom: 1px solid #ccd5df;
+}
+.implexity-cfd-title {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 700;
+}
+.implexity-cfd-body {
+  min-width: 0;
+  overflow: auto;
+  padding: 12px 14px;
+}
+.implexity-cfd-steps {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  padding-bottom: 8px;
+  scrollbar-width: thin;
+}
+.implexity-cfd-step {
+  flex: 0 0 auto;
+  width: auto;
+  margin: 0;
+  border: 1px solid #b9c7d6;
+  border-radius: 16px;
+  padding: 5px 9px;
+  background: #eef3f8;
+  color: inherit;
+  white-space: nowrap;
+}
+.implexity-cfd-step[aria-current="step"] { background: #d9eafb; }
+.implexity-cfd-card {
+  min-width: 0;
+  margin: 9px 0;
+  border: 1px solid #ccd5df;
+  border-radius: 8px;
+  padding: 11px;
+  background: #ffffff;
+}
+.implexity-cfd-card h3,.implexity-cfd-card p,.implexity-cfd-card label { overflow-wrap: anywhere; }
+.implexity-cfd-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 8px 10px;
+  min-width: 0;
+}
+.implexity-cfd-grid > * { min-width: 0; }
+.implexity-cfd-grid input,.implexity-cfd-grid select {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  border: 1px solid #b9c7d6;
+  border-radius: 5px;
+  padding: 7px;
+  background: #ffffff;
+  color: inherit;
+}
+.implexity-cfd-unit { font-size: 11px; opacity: .72; }
+.implexity-cfd-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px 14px;
+  border-top: 1px solid #ccd5df;
+}
+.implexity-cfd-footer button {
+  flex: 0 1 auto;
+  width: auto;
+  min-width: 0;
+  margin: 0;
+  padding: 8px 11px;
+  white-space: normal;
+}
+.implexity-cfd-primary {
+  margin-left: auto !important;
+  border: 0;
+  border-radius: 5px;
+  background: #23678b;
+  color: white;
+}
+.implexity-cfd-issue {
+  margin: 6px 0;
+  border-left: 3px solid #d49a27;
+  padding: 8px;
+  background: #d49a2718;
+  overflow-wrap: anywhere;
+}
+.implexity-cfd-issue[data-severity="error"] { border-color: #d95050; background: #d9505018; }
+.implexity-cfd-face {
+  display: grid;
+  grid-template-columns: minmax(64px, .72fr) minmax(0, 1.4fr) minmax(64px, .7fr);
+  gap: 5px;
+  min-width: 0;
+  margin: 5px 0;
+}
+.implexity-cfd-face > * {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+}
+.implexity-cfd-badge { flex: 0 0 auto; border-radius: 10px; padding: 2px 6px; background: #e6eef6; font-size: 11px; }
+.implexity-cfd-help { font-size: 12px; line-height: 1.45; opacity: .78; overflow-wrap: anywhere; }
+.implexity-cfd-hidden { display: none !important; }
+
+@container implexity-cfd-workspace (max-width: 340px) {
+  .implexity-cfd-grid { grid-template-columns: minmax(0, 1fr); }
+  .implexity-cfd-face { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .implexity-cfd-face > input { grid-column: 1 / -1; }
+  .implexity-cfd-footer button { flex: 1 1 104px; }
+  .implexity-cfd-primary { margin-left: 0 !important; }
+}
+
+@media (max-width: 600px) {
+  .implexity-cfd-shell { width: min(100%, 460px); }
+  .implexity-cfd-grid { grid-template-columns: minmax(0, 1fr); }
+  .implexity-cfd-face { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .implexity-cfd-face > input { grid-column: 1 / -1; }
+  .implexity-cfd-footer button { flex: 1 1 104px; }
+  .implexity-cfd-primary { margin-left: 0 !important; }
+}

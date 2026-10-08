@@ -1,0 +1,15 @@
+/*
+SPDX-License-Identifier: Apache-2.0
+METAPLEXIS-DISCLAIMER-BEGIN sha256=c7c02258f245d1dcd6db1e8066ef4f6bc1bf36430d91bf9aab026671723c058f
+Open-access statement and disclaimer: see DISCLAIMER.md.
+METAPLEXIS-DISCLAIMER-END
+*/
+
+.implexity-authoring-toolbar{position:absolute;left:12px;top:12px;z-index:70;display:flex;flex-wrap:wrap;gap:6px;align-items:center;max-width:calc(100% - 24px);padding:7px 9px;border-radius:8px;background:rgba(20,24,31,.92);color:#f4f6f8;box-shadow:0 4px 18px rgba(0,0,0,.28);font:12px/1.25 system-ui,sans-serif;backdrop-filter:blur(7px)}
+.implexity-authoring-group{display:flex;gap:3px;padding-right:6px;border-right:1px solid rgba(255,255,255,.16)}
+.implexity-authoring-toolbar button{border:1px solid rgba(255,255,255,.18);border-radius:5px;background:#303743;color:inherit;padding:5px 8px;cursor:pointer}
+.implexity-authoring-toolbar button:hover,.implexity-authoring-toolbar button.active{background:#59687d;border-color:#a8bad1}
+.implexity-authoring-settings{display:flex;gap:6px;align-items:center}.implexity-authoring-field{display:flex;gap:4px;align-items:center}.implexity-authoring-field input{width:68px;background:#11161d;color:#fff;border:1px solid #59616d;border-radius:4px;padding:3px 5px}.implexity-authoring-check{white-space:nowrap}
+.implexity-authoring-hud{min-width:145px;padding:4px 7px;border-radius:4px;background:rgba(0,0,0,.3)}.implexity-authoring-hud.error{background:#762f35}
+body.implexity-authoring-hit canvas{cursor:crosshair}body[data-implexity-authoring-mode="brush"] canvas{cursor:none}
+@media(max-width:900px){.implexity-authoring-settings{display:none}.implexity-authoring-toolbar{right:12px}.implexity-authoring-toolbar button{padding:6px}}

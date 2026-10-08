@@ -1,0 +1,17 @@
+/*
+SPDX-License-Identifier: Apache-2.0
+METAPLEXIS-DISCLAIMER-BEGIN sha256=c7c02258f245d1dcd6db1e8066ef4f6bc1bf36430d91bf9aab026671723c058f
+Open-access statement and disclaimer: see DISCLAIMER.md.
+METAPLEXIS-DISCLAIMER-END
+*/
+
+ 
+
+.implexity-rust-panel-dialog[open] { display: flex; flex-direction: column; gap: 8px; width: min(1480px, 96vw); max-width: 96vw; height: min(960px, 94vh); overflow: hidden; }
+.implexity-rust-panel-dialog header > button { width: auto; flex: 0 0 auto; margin: 0; }
+.implexity-rust-panel-dialog h2 { text-transform: none; letter-spacing: normal; border: 0; padding: 0; }
+.implexity-rust-panel-dialog .advanced-help { margin: 0; }
+.implexity-rust-panel-body { flex: 1 1 auto; min-height: 0; display: flex; }
+.implexity-rust-panel-frame { flex: 1 1 auto; width: 100%; min-height: 0; border: 1px solid var(--line, #ced9d5); background: var(--bg, #f0f2ef); }
+.implexity-rust-panel-unavailable { align-self: flex-start; flex: 1 1 auto; margin: 0; padding: 10px 11px; border: 1px dashed var(--line, #ced9d5); color: var(--dim, #586b6d); font-size: 12px; line-height: 1.55; }
+#implexityTopbarCommands > button[data-implexity-extension-panel] { white-space: nowrap; }

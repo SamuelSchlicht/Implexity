@@ -1,0 +1,334 @@
+{
+  "schema": "implexity-agent-workflow-catalog/1",
+  "workflows": [
+    {
+      "package_id": "lattice_boltzmann",
+      "id": "lattice_boltzmann_managed_lifecycle",
+      "label": "Load LBM, evaluate and optimize native design",
+      "steps": [
+        "inspect_physics_packages",
+        "load_physics_package",
+        "inspect_state",
+        "evaluate_authored_case",
+        "preflight_optimization",
+        "start_optimization",
+        "export_optimization_epoch",
+        "optimization_operation"
+      ],
+      "guidance": "Load lattice_boltzmann with the current expected_generation. Use the explicit-case envelope declared by evaluate_authored_case. Match topology.ref to the model field. Keep design_region, fixed_design, and coordinate masks consistent. Run preflight on the complete request. Submit it once. Export saved epochs without applying them. Accept a result only when intended."
+    },
+    {
+      "package_id": "lattice_boltzmann",
+      "id": "lattice_boltzmann_compressible_flux_objectives",
+      "label": "Optimize compressible inlet/outlet fluxes",
+      "steps": [
+        "inspect_state",
+        "evaluate_authored_case",
+        "preflight_optimization",
+        "start_optimization"
+      ],
+      "guidance": "Set xmin and xmax reservoirs. Select the declared mass, momentum, or total-energy response. Outward flow is positive. Total energy includes flow energy. Momentum flux alone is not net thrust. Set response direction and scale. Check provider boundary limits."
+    },
+    {
+      "package_id": "lattice_boltzmann",
+      "id": "lattice_boltzmann_compressible_solid_environment",
+      "label": "Cool compressible-LBM solid through convection and radiation",
+      "steps": [
+        "inspect_state",
+        "evaluate_authored_case"
+      ],
+      "guidance": "Set solid_thermal.conduction and reservoir_patches from the provider schema. Use unique patch IDs and full-grid masks. Use nonperiodic outer solid faces. Reject same-face overlaps. Read signed convection and radiation energy. The external reservoir is prescribed."
+    },
+    {
+      "package_id": "lattice_boltzmann",
+      "id": "lattice_boltzmann_solid_environment_objectives",
+      "label": "Optimize external solid heat exchange",
+      "steps": [
+        "inspect_state",
+        "evaluate_authored_case",
+        "preflight_optimization",
+        "start_optimization"
+      ],
+      "guidance": "Select solid_convection_energy_J, solid_radiation_energy_J, or solid_environment_energy_J. Positive energy enters the solid. Set response direction and a nonzero scale. Check temperature objectives separately. These responses require the declared solid thermal model."
+    },
+    {
+      "package_id": "lattice_boltzmann",
+      "id": "lattice_boltzmann_external_convection",
+      "label": "Cool an LBM boundary through external convection",
+      "steps": [
+        "inspect_state",
+        "evaluate_authored_case"
+      ],
+      "guidance": "Set thermal.convection_patches from the provider schema. Keep patches separate from flow ports and heat-flux patches. Supply a calibrated coefficient and ambient temperature. Check wall_convection_energy_exchange_J and thermal balance. The external coolant is not solved."
+    },
+    {
+      "package_id": "lattice_boltzmann",
+      "id": "lattice_boltzmann_wall_heat",
+      "label": "Apply a prescribed wall heat flux",
+      "steps": [
+        "inspect_state",
+        "evaluate_authored_case"
+      ],
+      "guidance": "Set thermal.heat_flux_patches from the provider schema. Use unique IDs, declared face names, and full-grid masks. Keep patches on supported closed faces. Check the declared heat-flux sign and energy ledger."
+    },
+    {
+      "package_id": "lattice_boltzmann",
+      "id": "lattice_boltzmann_native_geometry",
+      "label": "Use implicit geometry regions as LBM masks",
+      "steps": [
+        "inspect_state",
+        "evaluate_authored_case"
+      ],
+      "guidance": "Read the provider geometry_source contract. Supply the implicit document and declared node groups. Keep protected fluid and fixed solid regions separate. Read the sampled geometry identity. Check provider design masks before preflight."
+    },
+    {
+      "package_id": "lattice_boltzmann",
+      "id": "lattice_boltzmann_environmental_ageing",
+      "label": "Observe ageing from solved LBM solid temperatures",
+      "steps": [
+        "inspect_state",
+        "evaluate_authored_case"
+      ],
+      "guidance": "Supply calibrated coefficients, temperature limits, exposure data, and initial states. Check whether each ageing response has a design derivative. Do not use a diagnostic observer as an optimization objective."
+    },
+    {
+      "package_id": "lattice_boltzmann",
+      "id": "lattice_boltzmann_low_mach_ageing",
+      "label": "Observe ageing only in fixed low-Mach solid cells",
+      "steps": [
+        "inspect_state",
+        "evaluate_authored_case"
+      ],
+      "guidance": "Set supported exposure histories and calibrated material laws. Check transport and heat-transfer requirements. Use only declared differentiable responses for optimization."
+    },
+    {
+      "package_id": "lattice_boltzmann",
+      "id": "lattice_boltzmann_fatigue",
+      "label": "Observe fatigue from LBM-driven structural stress",
+      "steps": [
+        "inspect_state",
+        "evaluate_authored_case"
+      ],
+      "guidance": "Supply calibrated stress, temperature, cycle, and lifetime data. Check model limits and life ranges. Use the returned usage as a diagnostic unless the provider declares its derivative. Do not infer damage feedback."
+    },
+    {
+      "package_id": "lattice_boltzmann",
+      "id": "lattice_boltzmann_radiation",
+      "label": "Add radiating LBM thermal boundaries",
+      "steps": [
+        "inspect_state",
+        "evaluate_authored_case"
+      ],
+      "guidance": "Set supported surfaces, temperatures, emissivities, and masks. Check geometry registration, validity limits, and energy balance. Use only declared coupled responses."
+    },
+    {
+      "package_id": "lattice_boltzmann",
+      "id": "lattice_boltzmann_thermoelastic",
+      "label": "Couple solved solid temperature to LBM structural stress",
+      "steps": [
+        "inspect_state",
+        "evaluate_authored_case"
+      ],
+      "guidance": "Supply thermal histories, expansion coefficients, stress-free temperatures, and transfer weights. Check structural strain limits. Check whether mechanical work returns to the thermal model."
+    },
+    {
+      "package_id": "lattice_boltzmann",
+      "id": "lattice_boltzmann_structure",
+      "label": "Optimize LBM wall loading and structural stress",
+      "steps": [
+        "inspect_state",
+        "evaluate_authored_case"
+      ],
+      "guidance": "Set the solid mesh, material, supports, interpolation, and load transfer. Check force conservation and structural limits. Fixed-medium loading does not provide moving-interface feedback."
+    },
+    {
+      "package_id": "lattice_boltzmann",
+      "id": "lattice_boltzmann_thermal_ports",
+      "label": "Connect LBM ports to thermal reservoirs",
+      "steps": [
+        "inspect_state",
+        "evaluate_authored_case"
+      ],
+      "guidance": "Set supported flow ports and port_temperatures_K. Match masks and port order. Protect port cells as fluid. Check mass and thermal boundary ledgers."
+    },
+    {
+      "package_id": "lattice_boltzmann",
+      "id": "lattice_boltzmann_thermal",
+      "label": "Evaluate and optimize LBM with heat transport",
+      "steps": [
+        "inspect_state",
+        "evaluate_authored_case"
+      ],
+      "guidance": "Select lattice_boltzmann_thermal_d3q19. Set SI grid spacing, time steps, material data, and thermal boundaries. Match all grids and masks. Check relaxation, Mach, temperature, and stability limits. Run preflight before evaluation or optimization."
+    },
+    {
+      "package_id": "lattice_boltzmann",
+      "id": "lattice_boltzmann_compressible",
+      "label": "Evaluate compressible kinetic flow and design sensitivities",
+      "steps": [
+        "inspect_state",
+        "evaluate_authored_case"
+      ],
+      "guidance": "Select lattice_boltzmann_compressible_d3q343. Set SI initial fields and supported boundaries. Match model:control, design_region, and fixed_design. Check relaxation, temperature, positivity, and conservation limits. Configure optional solid storage, conduction, wall loads, and observers only through their schemas. Check derivative support for each response. Read provider limits before use. This experimental model does not establish shock accuracy or resolved wall traction."
+    },
+    {
+      "package_id": "lattice_boltzmann",
+      "id": "lattice_boltzmann_flow",
+      "label": "Evaluate and optimize low-Mach lattice Boltzmann flow",
+      "steps": [
+        "inspect_state",
+        "evaluate_authored_case"
+      ],
+      "guidance": "Select lattice_boltzmann_d3q19. Set SI grid spacing, time steps, density, viscosity, and flow boundaries. Protect flow-port cells. Match design masks. Use explicit flow objectives and volume constraints. Check relaxation, Mach, and boundary mass balance. Finite porous resistance is not an impermeable wall."
+    },
+    {
+      "package_id": "hyperelastic_field",
+      "id": "thermal_damage_feedback",
+      "label": "Evaluate stiffness damage coupled to heat and drainage",
+      "steps": [
+        "inspect_state",
+        "evaluate_authored_case"
+      ],
+      "guidance": "Select thermo_poroviscoelastic_history from hyperelastic_field. Set thermal.damage through the provider schema. Supply element data, averaging length, material-region labels, and calibration sources. Separate disconnected regions that must not interact. Check irreversible damage and heat ledgers. Use thermal_poroviscoelastic_material_design for supported derivatives. Check time and mesh convergence. This rate law does not provide calibrated fracture energy."
+    },
+    {
+      "package_id": "hyperelastic_field",
+      "id": "thermal_material_design",
+      "label": "Optimize coupled thermal, ageing and damage material histories",
+      "steps": [
+        "inspect_state",
+        "evaluate_authored_case"
+      ],
+      "guidance": "Select thermal_poroviscoelastic_material_design. Select an explicitly authored supported material path. Supply model:material_control in physical units with bounds and masks. Check coupled derivative support and calibration. Keep initial states, mesh, and schedule fixed."
+    },
+    {
+      "package_id": "hyperelastic_field",
+      "id": "hydrogel_material_design",
+      "label": "Optimize neutral-hydrogel material fields",
+      "steps": [
+        "inspect_state",
+        "evaluate_authored_case"
+      ],
+      "guidance": "Select hydrogel_material_design from hyperelastic_field. Supply model:material_control in the selected physical units. Check coupled derivatives, calibration, and volume-penalty error. Keep initial state, mesh, temperature, and schedule fixed. This provider does not model ionic chemistry."
+    },
+    {
+      "package_id": "hyperelastic_field",
+      "id": "thermal_poro_history",
+      "label": "Couple heat, drainage, relaxation and ageing",
+      "steps": [
+        "inspect_state",
+        "evaluate_authored_case"
+      ],
+      "guidance": "Select thermo_poroviscoelastic_history from hyperelastic_field. Set the poromechanics and thermal inputs from its template. Supply calibration sources and temperature bounds. Use nodal heat sources in watts. Set optional ageing only through its schema. Check dissipation, heat balance, and time convergence. Use an empty design. This provider is evaluation-only."
+    },
+    {
+      "package_id": "hyperelastic_field",
+      "id": "neutral_hydrogel_history",
+      "label": "Evaluate chemical swelling of a neutral hydrogel",
+      "steps": [
+        "inspect_state",
+        "evaluate_authored_case"
+      ],
+      "guidance": "Select neutral_hydrogel_swelling_history. Use dry reference geometry and the declared swollen initial state. Supply solvent volume and chemical-potential boundaries. Chemical potential uses pascals. Check solvent conservation and volume-constraint error. Use an empty design. The model is neutral and isothermal. No history-design adjoint is registered."
+    },
+    {
+      "package_id": "hyperelastic_field",
+      "id": "poro_material_design",
+      "label": "Optimize a poroviscoelastic material field",
+      "steps": [
+        "inspect_state",
+        "evaluate_authored_case"
+      ],
+      "guidance": "Select poroviscoelastic_material_design. Choose a supported material array. Supply model:material_control in physical units, bounds, masks, and filter radius. Check complete-history derivatives and material calibration. Mechanical work is signed path work. It is not automatically irreversible dissipation."
+    },
+    {
+      "package_id": "hyperelastic_field",
+      "id": "finite_deformation_poroviscoelastic_history",
+      "label": "Couple drainage and pore pressure to nonlinear viscoelasticity",
+      "steps": [
+        "inspect_state",
+        "evaluate_authored_case"
+      ],
+      "guidance": "Select finite_deformation_poroviscoelastic_history. Set the mesh, material, mechanical history, reservoirs, and fluid sources from its template. Reference mobility uses square meters per pascal-second. Positive source rates inject fluid. Check fluid balance, stress, and dissipation. Use an empty design. No history-topology adjoint is registered."
+    },
+    {
+      "package_id": "hyperelastic_field",
+      "id": "finite_deformation_viscoelastic_history",
+      "label": "Evaluate nonlinear relaxation and loading\u2013unloading histories",
+      "steps": [
+        "inspect_state",
+        "evaluate_authored_case"
+      ],
+      "guidance": "Select finite_deformation_viscoelastic_history. Supply the reference mesh, supports, loading schedule, Maxwell branches, initial states, and calibration sources. Branch coefficients weight the Green-strain tensor norm. Use an empty design. Run preflight before evaluation. Check stress, displacement, memory, and dissipation histories. This quasistatic provider has no registered history-topology adjoint."
+    },
+    {
+      "package_id": "hyperelastic_field",
+      "id": "finite_deformation_solid",
+      "label": "Evaluate a finite-deformation solid mesh",
+      "steps": [
+        "inspect_state",
+        "evaluate_authored_case"
+      ],
+      "guidance": "Load hyperelastic_field. Select finite_deformation_tetrahedra. Supply positively oriented tetrahedra, SI material data, supports, prescribed displacements, nodal forces, and material sources. Lame lambda is not bulk modulus. Nodal forces are fixed-direction loads. Use an empty design. Check equilibrium and deformation limits. No optimization adjoint is registered."
+    },
+    {
+      "package_id": "solid_mechanics",
+      "id": "native_latent_thermal_storage",
+      "label": "Author equilibrium latent heat in a solid",
+      "steps": [
+        "inspect_state",
+        "set_engineering_problem",
+        "preflight_optimization"
+      ],
+      "guidance": "Set components.material to phase_transition_caloric_solid. Supply both material endpoints, transition_temperature_K, transition_width_K, and latent_heat_J_kg. Keep the transition temperature inside T_min and T_max. Do not add another latent heat source. This model excludes liquid flow and phase kinetics."
+    },
+    {
+      "package_id": "cfd_stokes",
+      "id": "align_resolved_cfd_grid",
+      "label": "Align the resolved CFD domain with the geometry grid",
+      "steps": [
+        "inspect_state",
+        "set_engineering_problem",
+        "preflight_optimization"
+      ],
+      "guidance": "Use a root cell_grid_field for resolved Stokes topology. Match domain origin, extent, and cells to its grid registration. Convert model millimeters to provider meters. Domain edits do not translate the geometry. Run preflight after changes."
+    },
+    {
+      "package_id": "solid_mechanics",
+      "id": "native_reversible_thermoelasticity",
+      "label": "Author constant-coefficient reversible thermoelasticity",
+      "steps": [
+        "inspect_physics_plan",
+        "preflight_optimization"
+      ],
+      "guidance": "Set components.material to constant_strain_thermoelastic_solid. Replace cp with constant_strain_heat_capacity_J_m3_K in both endpoints. Use the stress-free initial temperature and zero temperature_slopes. This capacity is volumetric at fixed strain. Do not combine this model with incompatible inelastic laws. Read thermoelastic_numerical_energy_defect_J_m3 separately from physical heating."
+    },
+    {
+      "package_id": "thermal_exchange",
+      "id": "integrate_local_physical_responses",
+      "label": "Integrate local heat and energy responses with explicit measures",
+      "steps": [
+        "set_intent",
+        "inspect_physics_plan",
+        "preflight_optimization"
+      ],
+      "guidance": "Set authoring.addins.<addin_id>.response_measures.<response>. Match positive finite weights to the scalar field shape. Use square meters for surface measures and cubic meters for volume measures. Set fixed_geometry=true. Check reported units. These measures exclude moving-quadrature derivatives.",
+      "example_authoring": {
+        "addins": {
+          "external_convection_interface": {
+            "response_measures": {
+              "convective_heat_loss": {
+                "weights": [
+                  0.002,
+                  0.003
+                ],
+                "unit": "m^2",
+                "fixed_geometry": true
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

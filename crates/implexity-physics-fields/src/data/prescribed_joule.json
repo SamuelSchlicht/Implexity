@@ -1,0 +1,107 @@
+{
+ "editor_label": "Prescribed electrical heating",
+ "authoring_contract": {
+  "schema": "implexity-component-authoring/1",
+  "selection": "field_sources",
+  "scope": "one_way_prescribed_real_field_joule_heat",
+  "required_settings": [
+   "grid",
+   "cell_order",
+   "field_binding",
+   "times_s",
+   "electric_field_V_m",
+   "solid_conductivity_S_m",
+   "void_conductivity_S_m",
+   "penalty",
+   "occupancy_convention",
+   "energy_convention"
+  ],
+  "sampling": "backward_Euler_endpoint_no_interpolation",
+  "settings": {
+   "grid": {
+    "type": "integer_array",
+    "shape": [
+     3
+    ],
+    "matches": "solid.grid"
+   },
+   "cell_order": {
+    "const": "native_C_order"
+   },
+   "field_binding": {
+    "const": "native_cell_attached_values_no_spatial_remapping"
+   },
+   "times_s": {
+    "units": "s",
+    "matches": "solid.times_s"
+   },
+   "electric_field_V_m": {
+    "units": "V/m",
+    "shape": [
+     "time",
+     "cell",
+     3
+    ],
+    "values": "finite instantaneous real components; not phasors",
+    "compact_alternative": {
+     "layout": "uniform_per_time",
+     "values_shape": [
+      "time",
+      3
+     ],
+     "meaning": "the same vector in every native cell, independently specified at every host time node"
+    }
+   },
+   "solid_conductivity_S_m": {
+    "units": "S/m",
+    "minimum": 0
+   },
+   "void_conductivity_S_m": {
+    "units": "S/m",
+    "minimum": 0,
+    "maximum_field": "solid_conductivity_S_m"
+   },
+   "penalty": {
+    "minimum": 1
+   },
+   "occupancy_convention": {
+    "const": "whole_cell_effective_conductivity_no_extra_occupancy"
+   },
+   "energy_convention": {
+    "const": "authored_heat_excludes_prescribed_joule_heat"
+   }
+  },
+  "conductivity_law": "sigma_void + (sigma_solid - sigma_void) * occupancy**penalty",
+  "limitations": [
+   "Prescribed instantaneous real laboratory-frame electric field, not a potential/Maxwell or charge-conservation solve.",
+   "Topology-interpolated whole-cell conductivity; no temperature feedback, phasors, moving fields or nonmatching-grid mapping.",
+   "Nonzero solid, void and contrast power coefficients must lie in the finite normal floating-point range; subnormal coefficients are refused, not treated as zero."
+  ]
+ },
+ "runtime_support": {
+  "status": "prescribed_field_source",
+  "history": true,
+  "limitations": [
+   "Prescribed instantaneous real laboratory-frame electric field, not a potential/Maxwell or charge-conservation solve.",
+   "Topology-interpolated whole-cell conductivity; no temperature feedback, phasors, moving fields or nonmatching-grid mapping.",
+   "Nonzero solid, void and contrast power coefficients must lie in the finite normal floating-point range; subnormal coefficients are refused, not treated as zero."
+  ]
+ },
+ "response_units": {
+  "prescribed_joule_power_W": "W"
+ },
+ "state_contract": "prescribed_zero_state_source_v1",
+ "limitations": [
+  "Prescribed instantaneous real laboratory-frame electric field, not a potential/Maxwell or charge-conservation solve.",
+  "Topology-interpolated whole-cell conductivity; no temperature feedback, phasors, moving fields or nonmatching-grid mapping.",
+  "Nonzero solid, void and contrast power coefficients must lie in the finite normal floating-point range; subnormal coefficients are refused, not treated as zero."
+ ],
+ "study_template_text": [
+  {
+   "id": "prescribed_joule_zero_load_setup",
+   "label": "Configure prescribed electrical heating (zero-load starter)",
+   "description": "Enter conductivities in S/m and one field vector in V/m per time node, uniform across cells. A full [time,cell,3] array can replace the compact declaration for spatial variation. Initial values produce zero heating. No electrical field equation is solved. Authored heat must exclude this contribution.",
+   "truth_status": "unvalidated_zero_load_authoring_starter"
+  }
+ ]
+}

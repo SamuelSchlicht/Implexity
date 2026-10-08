@@ -1,0 +1,142 @@
+{
+ "notes": [
+  "Experimental numerical-equilibrium compressible LBM; not physically qualified.",
+  "Calorically perfect gas; fixed lattice and either fixed tau or authored viscosity law; local stability checks are not shock or mesh qualification.",
+  "Periodic or stationary adiabatic specular box faces; these are slip walls, not no-slip walls.",
+  "Optional experimental slab bounce-back reverses full velocity at exact planes; conservative transverse remapping adds error and resolved no-slip accuracy is unqualified.",
+  "Optional two kinetic reservoirs open x faces with periodic y/z. These prescribe incoming populations, not characteristic or prescribed-mass-flow boundaries.",
+  "Explicit grid or implicit geometry-defined porous design; finite resistance is not impermeable geometry. Without solid_thermal all drag heat returns to gas.",
+  "Optional solid heat storage/conduction, one-way porous-reaction mechanics and calibrated fatigue observer; no resolved compressible wall traction or constitutive ageing feedback.",
+  "A conservative positivity cap may further increase collision relaxation; limiter activity is reported. This is not an entropy guarantee.",
+  "Fixed-horizon derivatives are admitted only away from kinetic-sensor and positivity active-set switches. Requires JAX x64."
+ ],
+ "properties": {
+  "shape": {
+   "title": "shape",
+   "format": "json"
+  },
+  "origin_m": {
+   "title": "origin_m",
+   "format": "json"
+  },
+  "spacing_m": {
+   "title": "spacing_m",
+   "format": "json"
+  },
+  "step_s": {
+   "title": "step_s",
+   "format": "json"
+  },
+  "step_count": {
+   "title": "step_count",
+   "format": "json"
+  },
+  "density_unit_kg_m3": {
+   "title": "density_unit_kg_m3",
+   "format": "json"
+  },
+  "gas_constant_J_kg_K": {
+   "title": "gas_constant_J_kg_K",
+   "format": "json"
+  },
+  "gamma": {
+   "title": "gamma",
+   "format": "json"
+  },
+  "tau": {
+   "title": "tau",
+   "format": "json"
+  },
+  "initial_density_kg_m3": {
+   "title": "initial_density_kg_m3",
+   "format": "json"
+  },
+  "initial_velocity_m_s": {
+   "title": "initial_velocity_m_s",
+   "format": "json"
+  },
+  "initial_fields": {
+   "title": "initial_fields",
+   "format": "json",
+   "description": "null for uniform initial values, or density_kg_m3 and temperature_K grids plus velocity_m_s grid-by-XYZ. Set all three initial_density_kg_m3/initial_temperature_K/initial_velocity_m_s values to null when using these fields. Every distinct local equilibrium is checked. Fields follow the same registered cell grid; they are fixed initial data, not design coordinates."
+  },
+  "wall_heat_flux_patches": {
+   "title": "wall_heat_flux_patches",
+   "format": "json",
+   "description": "Prescribed stationary-wall heat input: list of id, face (x-/x+/y-/y+/z-/z+), nonempty grid-shaped boolean mask and inward_flux_W_m2. Positive heats gas. Masks must lie on closed faces and not overlap on the same face. Different corner faces add their areas. Fixed during optimization; applied after transport, before gas-solid exchange. This is imposed Neumann heat, not a wall temperature/accommodation or heat-transfer correlation."
+  },
+  "environmental_ageing": {
+   "title": "environmental_ageing",
+   "format": "json",
+   "description": "null or an observer of solved stationary solid temperatures; requires solid_thermal. Supply settings for the environmental_ageing law (name, provenance, mechanisms, activities [step_count+1,cell,2], units), two ordered materials with density kg/m³, T_min/T_max K, fixed grid-shaped endmember composition [0,1], and history_byte_budget. Times are actual LBM seconds. Returns extents, stored chemical energy J/m³ and interval heat-release power W/m³ in diagnostics.environmental_ageing. Does not apply heat/property feedback, repeat history, or expose an ageing optimization objective."
+  },
+  "initial_temperature_K": {
+   "title": "initial_temperature_K",
+   "format": "json"
+  },
+  "periodic_axes": {
+   "title": "periodic_axes",
+   "format": "json"
+  },
+  "reservoirs": {
+   "title": "reservoirs",
+   "format": "json",
+   "description": "null, or density_kg_m3 [2], velocity_m_s [2,3], temperature_K [2], ordered x-minus then x-plus. Requires periodic_axes [false,true,true]. Absolute static thermodynamic data define incoming equilibrium populations, including backflow."
+  },
+  "solid_thermal": {
+   "title": "solid_thermal",
+   "format": "json",
+   "description": "null, or grid arrays initial_temperature_K, capacity_J_K, conductance_W_K and scalar gas_heat_fraction [0,1]. Constant per-cell stationary storage/conductance, independent of topology. Optional conduction has conductivity_W_m_K grid and positive integer substeps; periodicity follows the grid, other solid faces insulated. Gas heat fraction partitions porous dissipation; the remainder heats the solid. Optional reservoir_patches requires conduction and specifies id, face (x-/x+/y-/y+/z-/z+), full-grid boolean mask, ambient_temperature_K, coefficient_W_m2K and emissivity. Nonperiodic solid outer faces only; positive conductivity on patches; same-face overlaps rejected, distinct corner faces add. Half-cell conduction and gray-surface radiation/convection feed an implicit end-of-interval solid-temperature update. Positive diagnostic energy enters the solid; convection and radiation are separately recorded in solid_reservoir_exchange. Parameters remain fixed during topology optimization, whose derivatives include the evolving solid temperatures. This prescribes an external thermal environment, not solved external flow or participating-gas radiation."
+  },
+  "viscosity": {
+   "title": "viscosity",
+   "format": "json",
+   "description": "null for fixed tau, or reference_m2_s, reference_temperature_K, exponent, minimum_temperature_K, maximum_temperature_K. User-calibrated kinematic viscosity nu=nu_ref*(T/T_ref)^exponent replaces base tau; sensor stabilization may add dissipation. Entire interval must retain admitted relaxation times."
+  },
+  "porous_structure": {
+   "title": "porous_structure",
+   "format": "json",
+   "description": "null, or nodes_m, tetrahedra, per-element density_kg_m3/young_Pa/poisson, boolean fixed_dofs, trace_weights [cell,node], mass_damping_per_s, stiffness_damping_s, maximum_strain <=0.05, maximum_motion_cells <=0.01, history_byte_budget and provenance. Weights must reproduce every cell centre with nonnegative coefficients summing to one. Zero initial motion, fixed supports, dense 4–256-node receiver. Optional wall_loads supplies maximum_events, history_byte_budget and faces (unique x-/x+/y-/y+/z-/z+ names) for automatic tetrahedral interpolation of localized specular impacts. The structural mesh must contain every selected impact; no extrapolation. Alternatively supply event_indices and trace_weights [selected event,node] instead of faces. Indices follow box_wall_events order; weights reproduce impact positions. These add absolute slip-wall normal loads, not no-slip shear. The stress response includes all selected loads. For a separate wall-only receiver set receive_porous_reaction=false, trace_weights=null and drag_max_per_s=0, and supply wall_loads. The solid mesh may then lie outside the gas, provided selected wall points lie inside/on it. Nonzero porous drag is refused so reaction loads cannot be silently lost. Optional thermal_expansion requires solid_thermal and per-element coefficient_per_K, stress_free_temperature_K, temperature_weights [element,cell] reproducing element centroids, minimum_temperature_K and maximum_temperature_K. Actual solid temperatures drive interval-start equivalent forces and endpoint elastic-stress subtraction; both elastic and total strain are admitted. Gradients include this path. No two-way mechanical energy exchange."
+  },
+  "fatigue": {
+   "title": "fatigue",
+   "format": "json",
+   "description": "null or calibrated rainflow settings: provenance, stress_measure, amplitudes_Pa, mean_stresses_Pa, cycles_to_failure, solid_temperature_K, T_min_K, T_max_K, initial_usage. Requires porous_structure. Prescribed solid temperature, actual physical structural stress; no gas-temperature substitution. Evaluation-only Miner usage, no extrapolation, repetitions, damage feedback or fatigue gradient. Optional temperature_source=\"solved_solid\" consumes mapped element temperatures from porous_structure.thermal_expansion and checks the entire history against the S-N calibration interval. Default is prescribed. No temperature-dependent life law is inferred."
+  },
+  "slab_bounceback_axis": {
+   "title": "slab_bounceback_axis",
+   "format": "json",
+   "description": "null for existing box transport, or 0/1/2 for experimental stationary exact-intersection slab bounce-back normal to x/y/z. Both other axes must be periodic. Conservative bilinear transverse return interpolation; no resolved no-slip accuracy qualification. Incompatible with reservoirs. Optional wall_loads uses slab-specific normal/tangential impact events. Porous/thermal couplings remain available."
+  },
+  "design_region": {
+   "title": "design_region",
+   "format": "json"
+  },
+  "fixed_design": {
+   "title": "fixed_design",
+   "format": "json"
+  },
+  "geometry_source": {
+   "title": "geometry_source",
+   "format": "json",
+   "description": "null or inline native document plus porous_obstacle_nodes, design_nodes and protected_fluid_nodes lists. Set design_region and fixed_design to null. Cell-centre sampling uses native millimetres. Obstacles are fixed zero-fluid-fraction porous resistance, not impermeable or bounce-back solids. Protected fluid is fixed to one; both are excluded from design gradients. Geometry stays fixed during optimization."
+  },
+  "drag_max_per_s": {
+   "title": "drag_max_per_s",
+   "format": "json"
+  },
+  "drag_shape": {
+   "title": "drag_shape",
+   "format": "json"
+  },
+  "history_byte_budget": {
+   "title": "history_byte_budget",
+   "format": "json"
+  },
+  "topology_map": {
+   "title": "topology_map",
+   "format": "json"
+  }
+ },
+ "title": "Lattice Boltzmann, compressible gas (experimental)"
+}

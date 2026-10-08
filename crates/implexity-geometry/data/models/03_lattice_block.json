@@ -1,0 +1,249 @@
+{
+ "arrays": {},
+ "doc": "a cooled block: a solid skin with a gyroid sheet lattice filling the core",
+ "meta": {
+  "example": "03_lattice_block",
+  "header": [
+   "A cooled block: a solid skin with a gyroid sheet lattice filling the core.",
+   "",
+   "    part = skin  U  ( core  n  sheet )",
+   "",
+   "    hull   the outside shape",
+   "    core   hull shrunk by the skin thickness       offset(hull, -skin_t)",
+   "    skin   hull with the core removed              difference(hull, core)",
+   "    sheet  the gyroid, walled to `wall`            shell(tpms, wall/2)",
+   "    infill the sheet, CONFINED to the core         intersect(core, sheet)",
+   "",
+   "WHY `intersect` AND NOT A MASK.  A TPMS fills all of R^3 -- `tpms.aabb()`",
+   "returns None, and it means it.  `intersect` (a max) is what confines it, and",
+   "because max of two BOUND fields is BOUND, the result can still be offset,",
+   "sphere-traced and pruned during meshing.  The `mask` node would also work and",
+   "is honestly declared IMPLICIT, which costs all of that.",
+   "",
+   "WHY THE TPMS IS `normalise: \"proven\"`.  The literature's gyroid formula",
+   "sin x cos y + sin y cos z + sin z cos x is IMPLICIT: right sign, right zero",
+   "set, no distance.  Dividing it by the family's PROVEN bound on |grad g| makes",
+   "it 1-Lipschitz, and a 1-Lipschitz field is a BOUND -- |f| <= dist(x, surface)",
+   "everywhere, with no measurement.  Set `normalise` to \"none\" and you get the",
+   "literature's function and IMPLICIT with it; `implexity model show` will say so.",
+   "",
+   "THE WALL IS A FRACTION OF THE CELL.  `wall = period * wall_frac` states the",
+   "relationship an engineer actually holds: a lattice at 30 % of its cell is the",
+   "same lattice at 4 mm and at 8 mm.  Edit `period` alone and the wall follows.",
+   "",
+   "A WARNING YOU WILL SEE, AND WHY IT IS LEFT IN",
+   "  `implexity model validate` reports",
+   "      parameter(s) wall_frac are declared and nothing binds to them",
+   "  It is wrong.  `wall_frac` is read by the derived parameter `wall`, which a",
+   "  node does bind; document.py's unused check (`_bound_names`) walks NODE",
+   "  bindings only and does not follow one named parameter into another's",
+   "  expression.  The check is one line from being right.  The model is not",
+   "  restructured to dodge it, and the warning is not suppressed, because a",
+   "  diagnostic you have quietly routed around is worse than one that is wrong",
+   "  out loud.",
+   "",
+   "TRY",
+   "  implexity model show    models/03_lattice_block.json",
+   "  implexity model eval    models/03_lattice_block.json --node cells --grid 24",
+   "  implexity model set     models/03_lattice_block.json period=6.0 -o /tmp/coarse.json",
+   "  implexity model export  models/03_lattice_block.json -o /tmp/block.stl --spacing 0.35",
+   "      -- a lattice needs a fine grid: the sampling has to resolve the wall, and",
+   "         the wall here is 1.5 mm.  0.35 mm gives four samples across it."
+  ],
+  "teaches": "a TPMS sheet lattice confined inside a part, with the field class preserved throughout"
+ },
+ "name": "cooled block: solid skin, gyroid sheet core",
+ "nodes": {
+  "cells": {
+   "children": [
+    {
+     "name": "phase",
+     "node": "gyroid"
+    }
+   ],
+   "doc": "|gyroid| - wall/2: the sheet lattice, walls of `wall`",
+   "kind": "shell",
+   "params": {
+    "thickness_mm": {
+     "expr": "wall / 2"
+    }
+   },
+   "units": {
+    "thickness_mm": "mm"
+   }
+  },
+  "core": {
+   "children": [
+    {
+     "name": "hull",
+     "node": "hull"
+    }
+   ],
+   "doc": "hull - skin_t.  `offset` is the one operation that preserves EXACT, which is what an exact distance field is FOR",
+   "kind": "offset",
+   "params": {
+    "distance_mm": {
+     "expr": "-skin_t"
+    }
+   },
+   "units": {
+    "distance_mm": "mm"
+   }
+  },
+  "gyroid": {
+   "attrs": {
+    "family": "gyroid",
+    "normalise": "proven"
+   },
+   "children": [],
+   "doc": "the nodal function, divided by the family's proven |grad g| bound -- which is what makes it BOUND",
+   "kind": "tpms",
+   "params": {
+    "level": 0.0,
+    "period_mm": {
+     "bind": "period"
+    }
+   },
+   "units": {
+    "level": "-",
+    "period_mm": "mm"
+   }
+  },
+  "hull": {
+   "children": [],
+   "doc": "the outside shape.  EXACT",
+   "kind": "rounded_box",
+   "params": {
+    "bx_mm": {
+     "expr": "bx / 2"
+    },
+    "by_mm": {
+     "expr": "by / 2"
+    },
+    "bz_mm": {
+     "expr": "bz / 2"
+    },
+    "radius_mm": {
+     "bind": "corner_r"
+    }
+   },
+   "units": {
+    "bx_mm": "mm",
+    "by_mm": "mm",
+    "bz_mm": "mm",
+    "radius_mm": "mm"
+   }
+  },
+  "infill": {
+   "children": [
+    {
+     "name": "core",
+     "node": "core"
+    },
+    {
+     "name": "cells",
+     "node": "cells"
+    }
+   ],
+   "doc": "the lattice, confined to the core.  max of two BOUND fields is BOUND",
+   "kind": "intersect",
+   "params": {
+    "k_scale": 1.0
+   },
+   "units": {
+    "k_scale": "-"
+   }
+  },
+  "part": {
+   "children": [
+    {
+     "name": "skin",
+     "node": "skin"
+    },
+    {
+     "name": "infill",
+     "node": "infill"
+    }
+   ],
+   "doc": "skin + infill: the cooled block",
+   "kind": "union",
+   "params": {
+    "k_scale": 1.0
+   },
+   "units": {
+    "k_scale": "-"
+   }
+  },
+  "skin": {
+   "children": [
+    {
+     "name": "hull",
+     "node": "hull"
+    },
+    {
+     "name": "core",
+     "node": "core"
+    }
+   ],
+   "doc": "the solid outer wall: hull with the core removed",
+   "kind": "difference",
+   "params": {
+    "k_scale": 1.0
+   },
+   "units": {
+    "k_scale": "-"
+   }
+  }
+ },
+ "outputs": {
+  "lattice_only": "infill",
+  "shell_only": "skin"
+ },
+ "parameters": {
+  "bx": {
+   "units": "mm",
+   "value": 24.0
+  },
+  "by": {
+   "units": "mm",
+   "value": 24.0
+  },
+  "bz": {
+   "units": "mm",
+   "value": 14.0
+  },
+  "corner_r": {
+   "units": "mm",
+   "value": 2.0
+  },
+  "period": {
+   "doc": "gyroid unit cell",
+   "max": 12.0,
+   "min": 2.0,
+   "units": "mm",
+   "value": 5.0
+  },
+  "skin_t": {
+   "doc": "solid skin thickness",
+   "max": 4.0,
+   "min": 0.4,
+   "units": "mm",
+   "value": 1.2
+  },
+  "wall": {
+   "doc": "the sheet wall, derived -- edit `period` and it follows",
+   "expr": "period * wall_frac",
+   "units": "mm"
+  },
+  "wall_frac": {
+   "doc": "sheet wall as a fraction of the cell",
+   "max": 0.6,
+   "min": 0.05,
+   "units": "-",
+   "value": 0.3
+  }
+ },
+ "root": "part",
+ "schema": "implexity-model/1",
+ "units": "mm"
+}

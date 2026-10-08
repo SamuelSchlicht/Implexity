@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "implexity://schemas/problem/1",
+  "title": "Implexity implicit optimisation problem (Optimize node job spec)",
+  "type": "object",
+  "required": ["document"],
+  "properties": {
+    "document": {"type": "object", "description": "The implicit model document (implexity.implicit.document.build)."},
+    "node": {"type": "string", "description": "Name of the node to optimise; defaults to the document's root."},
+    "base_dir": {"type": "string"},
+    "free": {"type": "array", "items": {"$ref": "#/$defs/free_entry"}},
+    "objective": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/objective_term"}},
+    "constraints": {"type": "array", "items": {"$ref": "#/$defs/constraint"}},
+    "case": {"type": "object", "description": "An implexity-case/1 document."},
+    "settings": {"$ref": "#/$defs/settings"}
+  },
+  "$defs": {
+    "param_ref": {
+      "type": "string",
+      "pattern": "^[^:]+:[^:]+$",
+      "description": "A parameter reference 'a/b:name' rooted at the Optimize node (the child is reached through 'model/')."
+    },
+    "free_entry": {
+      "oneOf": [
+        {"$ref": "#/$defs/param_ref"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ref"],
+          "properties": {
+            "ref": {"$ref": "#/$defs/param_ref"},
+            "lo": {"type": ["number", "null"]},
+            "hi": {"type": ["number", "null"]},
+            "scale": {"type": ["number", "null"], "description": "Required when a bound is missing; reported as inferred. The MMA driver needs both bounds."}
+          }
+        }
+      ]
+    },
+    "objective_term": {
+      "oneOf": [
+        {"type": "string"},
+        {
+          "type": "object",
+          "required": ["term"],
+          "properties": {
+            "term": {"type": "string"},
+            "weight": {"type": "number"}
+          }
+        }
+      ]
+    },
+    "constraint": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": {
+            "kind": {"const": "volume_fraction"},
+            "target": {"oneOf": [{"type": "number", "exclusiveMinimum": 0, "maximum": 1}, {"const": "start"}, {"type": "null"}]},
+            "weight": {"type": "number", "minimum": 0, "description": "Penalty weight under the Adam driver; the MMA driver holds the budget as the inequality V/target - 1 <= 0 and ignores it."}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "ref"],
+          "properties": {
+            "kind": {"const": "bound"},
+            "ref": {"$ref": "#/$defs/param_ref"},
+            "lo": {"type": "number"},
+            "hi": {"type": "number"}
+          }
+        }
+      ]
+    },
+    "settings": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "grid": {"type": ["integer", "null"]},
+        "iters": {"type": "integer", "minimum": 1},
+        "lr": {"type": "number", "exclusiveMinimum": 0, "description": "Adam only: at most this fraction of each parameter's declared range per step (scaling = unit_range)."},
+        "band_h": {"type": "number"},
+        "model_units": {"type": "string"},
+        "eval_mode": {"type": "string"},
+        "smooth_r": {"type": ["number", "null"]},
+        "lattice_volfrac": {"type": ["number", "null"]},
+        "scaling": {"enum": ["unit_range", "raw"]},
+        "steerable": {"type": "boolean"},
+        "live_every": {"type": "integer", "minimum": 0},
+        "momentum": {"enum": ["keep", "reset"]},
+        "cg_tol": {"type": ["number", "null"]},
+        "optimizer": {"enum": ["adam", "mma", null], "default": null, "description": "null: 'mma' when constraints are declared, 'adam' otherwise. 'adam' forces the penalty path (Level-0 rollback)."},
+        "mma": {"$ref": "#/$defs/mma_options"}
+      }
+    },
+    "mma_options": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "globalize": {"type": "boolean", "default": true, "description": "GCMMA (Svanberg 2002) when true, plain MMA when false."},
+        "move_limit": {"type": "number", "exclusiveMinimum": 0, "maximum": 1, "default": 0.2, "description": "At most this fraction of each parameter's declared range per outer iteration."},
+        "epsimin": {"type": "number", "exclusiveMinimum": 0, "default": 1e-7},
+        "max_inner": {"type": "integer", "minimum": 1, "default": 200},
+        "c": {"type": ["number", "null"], "exclusiveMinimum": 0, "default": null, "description": "Elastic penalty per unit of constraint violation; null lets the driver set it from the first iterate's gradients."},
+        "asymptote_init": {"type": "number", "exclusiveMinimum": 0, "default": 0.5},
+        "asymptote_lo": {"type": "number", "exclusiveMinimum": 0, "default": 0.01},
+        "asymptote_hi": {"type": "number", "exclusiveMinimum": 0, "default": 10.0},
+        "max_conservative": {"type": "integer", "minimum": 0, "default": 15},
+        "kkt_tol": {"type": ["number", "null"], "exclusiveMinimum": 0, "default": null, "description": "Stop early once the outer KKT residual is below this; null runs every scheduled iteration."},
+        "feas_tol": {"type": "number", "minimum": 0, "default": 0.001, "description": "A row counts as feasible for 'best' when every constraint residual is at or below this."}
+      }
+    }
+  }
+}

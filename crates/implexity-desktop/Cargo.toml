@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: Apache-2.0
+# METAPLEXIS-DISCLAIMER-BEGIN sha256=c7c02258f245d1dcd6db1e8066ef4f6bc1bf36430d91bf9aab026671723c058f
+# Open-access statement and disclaimer: see DISCLAIMER.md.
+# METAPLEXIS-DISCLAIMER-END
+
+[package]
+autotests = false
+name = "implexity-desktop"
+description = "Optional desktop workbench window (replaces the pywebview wrapper): connect and managed modes"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+test = false
+name = "implexity-workbench"
+path = "src/main.rs"
+
+[dependencies]
+serde_json = { workspace = true }
+ureq = { workspace = true }
+wry = { workspace = true }
+tao = { workspace = true }
+
+[lints]
+workspace = true

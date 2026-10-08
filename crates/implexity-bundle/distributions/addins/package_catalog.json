@@ -1,0 +1,137 @@
+{
+  "schema": "implexity-package-catalog/1",
+  "packages": [
+    {
+      "package_id": "lattice_boltzmann",
+      "label": "Lattice Boltzmann flow and coupled transport",
+      "installer": "implexity.lbm",
+      "scope": "Independent 3-D low-Mach and compressible numerical-equilibrium flow; porous topology gradients, thermal exchange and supported one-way mechanics. Explicit provider validity limits apply; not reacting flow or universal supersonic qualification."
+    },
+    {
+      "package_id": "hyperelastic_field",
+      "label": "Finite-deformation solid mechanics",
+      "installer": "implexity.addins.hyperelastic_field",
+      "scope": "Neo-Hookean, Maxwell and saturated poroviscoelastic histories; fixed-mesh material-field optimization with implicit derivatives. Thermal/Arrhenius/ageing and neutral chemical-swelling history evaluation. No contact, moving-boundary adjoint or mixed incompressibility."
+    },
+    {
+      "package_id": "resolved_electrothermal",
+      "label": "Resolved quasistatic electrical heating",
+      "installer": "implexity.addins.resolved_electrothermal",
+      "scope": "Native potential/temperature coupling with charge conservation, temperature-dependent conductivity and Joule heat. Requires native host and electrode data; element assembly, power identities, derivatives, MMS spatial convergence, multi-step converged coupled histories and full-history adjoints are verified at the numerics tier; no experimental validation. No induction, phasors or contact resistance."
+    },
+    {
+      "package_id": "cyclic_plasticity",
+      "label": "Nonlinear kinematic plasticity",
+      "installer": "implexity.addins.cyclic_plasticity",
+      "scope": "Native J2 multi-backstress Chaboche; user-authored material data, not calibrated fatigue life."
+    },
+    {
+      "package_id": "neutral_particle_transport",
+      "label": "Nonmultiplying multigroup neutral transport and deposition",
+      "installer": "implexity.addins.neutral_particle_transport",
+      "scope": "Monolithic fixed-group isotropic transport, conservative local heating and optional material-state drive; processed user data required, no multiplication/depletion."
+    },
+    {
+      "package_id": "prescribed_joule_heat",
+      "label": "Prescribed real electric-field thermal loading",
+      "installer": "implexity.addins.prescribed_joule_heat",
+      "scope": "One-way native-cell Joule heating from prescribed real endpoint fields and topology-interpolated whole-cell conductivity; no electrical field solve or temperature feedback."
+    },
+    {
+      "package_id": "prescribed_volumetric_heating",
+      "label": "Prescribed material-resolved volumetric heating",
+      "installer": "implexity.addins.prescribed_volumetric_heating",
+      "scope": "One-way volumetric heating with power densities per solid endmember and fluid, occupancy/phase mixing, optional exponential depth attenuation from one face and a time factor; exact design derivatives. No radiation transport or temperature feedback."
+    },
+    {
+      "package_id": "electromagnetic_loads",
+      "label": "Quasistatic electromagnetic body loads",
+      "installer": "implexity.addins.electromagnetic_loads",
+      "scope": "Native potential solve for eddy currents from a prescribed uniform dB/dt and current injected through equipotential face terminals; Lorentz body force J x B on the solid and optional Joule heat in the same history residual and adjoint. Quasistatic: no self-field, skin effect or motion EMF; user data required."
+    },
+    {
+      "package_id": "material_evolution",
+      "label": "Material history: environmental ageing and defect kinetics",
+      "installer": "implexity.addins.material_evolution",
+      "scope": "Thermal, oxidative and hydrolytic extents plus prescribed-dose defect production/recovery; coupled conductivity, strength, creep and energy. User-calibrated local kinetics, not solved species transport, corrosion geometry or neutronics."
+    },
+    {
+      "package_id": "tabulated_materials",
+      "label": "Nonlinear tabulated solid material laws",
+      "installer": "implexity.addins.tabulated_materials",
+      "scope": "User-supplied temperature tables, shape-preserving interpolation, exact enthalpy and thermal-strain integrals; no built-in material calibration."
+    },
+    {
+      "package_id": "phase_equilibria",
+      "label": "Liquid/vapour saturation and native liquid-history validity",
+      "installer": "implexity.addins.phase_equilibria",
+      "scope": "IAPWS-IF97 water saturation line and complete-history liquid-only margins; not two-phase flow or CHF/DNBR."
+    },
+    {
+      "package_id": "unified_heat_mechanics",
+      "label": "Shared-domain thermofluid and inelastic topology",
+      "installer": "implexity.addins.unified_heat_mechanics",
+      "scope": "Native common occupancy, shared thermal history and density-jump fluid stress. Laminar diffuse formulation, no production qualification."
+    },
+    {
+      "package_id": "conjugate_heat_mechanics",
+      "label": "Native conjugate flow/heat/inelastic histories",
+      "installer": "implexity.addins.conjugate_heat_mechanics",
+      "scope": "Shared field/history solve with separately loaded solid, fluid and conservative interface components; fixed region partition."
+    },
+    {
+      "package_id": "incompressible_transport",
+      "label": "Resolved incompressible transport",
+      "installer": "implexity.addins.incompressible_transport",
+      "scope": "Cartesian MAC laminar momentum, continuity, enthalpy and temperature-dependent Newtonian material; no boiling/turbulence."
+    },
+    {
+      "package_id": "conservative_interfaces",
+      "label": "Conservative field interfaces",
+      "installer": "implexity.addins.conservative_interfaces",
+      "scope": "Conservative thermal-contact and fluid traction components; require host field integration."
+    },
+    {
+      "package_id": "thermal_exchange",
+      "label": "Reciprocal thermal boundary exchange",
+      "installer": "implexity.addins.thermal_exchange",
+      "scope": "Newton heat-transfer and diffuse-gray radiation components with conservative finite-reservoir coupling; no forced-convection or view-factor closure."
+    },
+    {
+      "package_id": "inelastic_materials",
+      "label": "Native inelastic material components",
+      "installer": "implexity.addins.inelastic_materials",
+      "scope": "Temperature-dependent solid properties, J2 mixed hardening and Norton creep. User material data required; no rupture calibration."
+    },
+    {
+      "package_id": "solid_mechanics",
+      "label": "Native coupled thermal/inelastic solids",
+      "installer": "implexity.addins.solid_mechanics",
+      "scope": "3-D small-strain thermal, plastic and creep history with discrete adjoints; separate material components required. Reference tetrahedral discretisation."
+    },
+    {
+      "package_id": "cfd_stokes",
+      "label": "Resolved Stokes\u2013Brinkman flow",
+      "installer": "implexity.addins.cfd_stokes",
+      "scope": "Isothermal, incompressible viscous flow; no turbulence, thermal or ageing model."
+    },
+    {
+      "package_id": "engineering_library",
+      "label": "Engineering reference physics library",
+      "installer": "implexity.addins.engineering_library",
+      "scope": "Declared reference fields, networks, interfaces and constitutive add-ins."
+    },
+    {
+      "package_id": "moving_material_interfaces",
+      "label": "Moving material interface operators",
+      "installer": "implexity.addins.moving_material_interfaces",
+      "scope": "Finite-motion ALE material-cut geometry, extensive transport, reciprocal pressure/viscous total-energy sources and finite-strain cut-material support. Component-only, no autonomous FSI field solve, contact or remeshing qualification."
+    },
+    {
+      "package_id": "compressible_transport",
+      "label": "Compressible Euler transport and mechanics",
+      "installer": "implexity.addins.compressible_transport",
+      "scope": "Quasi-one-dimensional and Cartesian Euler transport, first-order and MUSCL topology derivatives, and one-way flow-to-solid loading. Provider validity limits apply."
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "implexity://schemas/physics-addin-v32",
+  "title": "Implexity Physics Add-in Contract V32",
+  "type": "object",
+  "required": ["addin_id", "category"],
+  "properties": {
+    "addin_id": {"type": "string", "minLength": 1},
+    "category": {"enum": ["field", "constitutive", "interface", "evolution", "network", "process", "material"]},
+    "fidelity": {"enum": ["screening", "intermediate", "high", "qualification"]},
+    "scope": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+    "runtime_route": {"enum": ["composite", "array", "mature_job", "job_extension"]},
+    "lifecycle": {"type": ["string", "null"]},
+    "topology_coordinate": {"const": "model:control"},
+    "exact_design_derivatives": {"type": "boolean"},
+    "exact_state_transpose": {"type": "boolean"},
+    "provides": {"type": "array", "items": {"$ref": "#/$defs/port"}},
+    "consumes": {"type": "array", "items": {"$ref": "#/$defs/port"}},
+    "responses": {"type": "array", "items": {"$ref": "#/$defs/response"}},
+    "authoring": {"type": "array", "items": {"$ref": "#/$defs/authoring"}}
+  },
+  "$defs": {
+    "port": {
+      "type": "object",
+      "required": ["quantity"],
+      "properties": {
+        "quantity": {"type": "string", "minLength": 1},
+        "unit": {"type": "string"},
+        "domain": {"type": "string"},
+        "interface": {"type": ["string", "null"]},
+        "temporal": {"enum": ["instantaneous", "lagged", "history", "steady"]},
+        "conserved": {"type": "boolean"}
+      }
+    },
+    "response": {
+      "type": "object",
+      "required": ["response"],
+      "properties": {
+        "response": {"type": "string", "minLength": 1},
+        "unit": {"type": "string"},
+        "differentiable": {"type": "boolean"},
+        "topology_reachable": {"type": "boolean"}
+      }
+    },
+    "authoring": {
+      "type": "object",
+      "required": ["key"],
+      "properties": {
+        "key": {"type": "string", "minLength": 1},
+        "description": {"type": "string"},
+        "optional": {"type": "boolean"}
+      }
+    }
+  }
+}
