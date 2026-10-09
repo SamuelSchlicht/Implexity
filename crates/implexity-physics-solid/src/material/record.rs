@@ -3,7 +3,6 @@
 // Open-access statement and disclaimer: see DISCLAIMER.md.
 // METAPLEXIS-DISCLAIMER-END
 
-
 use std::sync::Arc;
 
 use serde_json::{Map, Value};
@@ -79,7 +78,9 @@ pub mod idx {
 
 #[must_use]
 pub fn temperature_slot(key_index: usize) -> Option<usize> {
-    TEMPERATURE_KEYS.iter().position(|k| MATERIAL_KEYS[key_index] == *k)
+    TEMPERATURE_KEYS
+        .iter()
+        .position(|k| MATERIAL_KEYS[key_index] == *k)
 }
 
 fn contract<T>(message: impl Into<String>) -> Result<T, CaeError> {
@@ -100,24 +101,51 @@ fn sorted_keys<'a>(keys: impl Iterator<Item = &'a String>) -> String {
     list_repr(&v)
 }
 
-
 pub fn validate_material(raw: &Value) -> Result<Map<String, Value>, CaeError> {
-    let Some(m) = raw.as_object() else { return contract("material data must be an object") };
+    let Some(m) = raw.as_object() else {
+        return contract("material data must be an object");
+    };
     let mut required: Vec<&str> = MATERIAL_KEYS.to_vec();
-    required.extend(["name", "provenance", "T_ref", "T_min", "T_max", "temperature_slopes"]);
-    let missing: Vec<String> =
-        required.iter().filter(|k| !m.contains_key(**k)).map(|k| (*k).to_string()).collect();
+    required.extend([
+        "name",
+        "provenance",
+        "T_ref",
+        "T_min",
+        "T_max",
+        "temperature_slopes",
+    ]);
+    let missing: Vec<String> = required
+        .iter()
+        .filter(|k| !m.contains_key(**k))
+        .map(|k| (*k).to_string())
+        .collect();
     if !missing.is_empty() {
-        return contract(format!("material missing explicit data: {}", sorted_keys(missing.iter())));
+        return contract(format!(
+            "material missing explicit data: {}",
+            sorted_keys(missing.iter())
+        ));
     }
-    let extra: Vec<&String> = m.keys().filter(|k| !required.contains(&k.as_str())).collect();
+    let extra: Vec<&String> = m
+        .keys()
+        .filter(|k| !required.contains(&k.as_str()))
+        .collect();
     if !extra.is_empty() {
-        return contract(format!("unknown material keys: {}", sorted_keys(extra.into_iter())));
+        return contract(format!(
+            "unknown material keys: {}",
+            sorted_keys(extra.into_iter())
+        ));
     }
-    if implexity_core::pyobj::py_str(&m["provenance"]).trim().is_empty() {
+    if implexity_core::pyobj::py_str(&m["provenance"])
+        .trim()
+        .is_empty()
+    {
         return contract("material provenance required");
     }
-    let keys: Vec<&str> = MATERIAL_KEYS.iter().copied().chain(["T_ref", "T_min", "T_max"]).collect();
+    let keys: Vec<&str> = MATERIAL_KEYS
+        .iter()
+        .copied()
+        .chain(["T_ref", "T_min", "T_max"])
+        .collect();
     if !keys.iter().all(|k| finite_number(&m[*k]).is_some()) {
         return contract("material parameters must be finite scalars");
     }
@@ -128,13 +156,24 @@ pub fn validate_material(raw: &Value) -> Result<Map<String, Value>, CaeError> {
     if !(-1.0 < f("nu") && f("nu") < 0.5) {
         return contract("invalid Poisson ratio");
     }
-    if ["E", "yield_stress", "k", "cp", "density", "creep_stress_ref", "creep_T_ref"]
-        .iter()
-        .any(|k| f(k) <= 0.0)
+    if [
+        "E",
+        "yield_stress",
+        "k",
+        "cp",
+        "density",
+        "creep_stress_ref",
+        "creep_T_ref",
+    ]
+    .iter()
+    .any(|k| f(k) <= 0.0)
     {
         return contract("elastic, thermal and reference coefficients must be positive");
     }
-    if ["H_iso", "H_kin", "creep_rate_ref", "creep_activation_J_mol"].iter().any(|k| f(k) < 0.0) {
+    if ["H_iso", "H_kin", "creep_rate_ref", "creep_activation_J_mol"]
+        .iter()
+        .any(|k| f(k) < 0.0)
+    {
         return contract("hardening/creep coefficients cannot be negative");
     }
     if f("creep_exponent") < 1.0 {
@@ -150,17 +189,25 @@ pub fn validate_material(raw: &Value) -> Result<Map<String, Value>, CaeError> {
             && s.values().all(|v| finite_number(v).is_some())
     });
     let Some(slopes) = slopes.filter(|_| slopes_ok) else {
-        return contract("explicit finite temperature slopes required for E, yield_stress, alpha, k, cp");
+        return contract(
+            "explicit finite temperature slopes required for E, yield_stress, alpha, k, cp",
+        );
     };
     for key in TEMPERATURE_KEYS {
         let slope = finite_number(&slopes[key]).unwrap_or(f64::NAN);
-        let endpoints: Vec<f64> =
-            [f("T_min"), f("T_max")].iter().map(|t| f(key) + slope * (t - f("T_ref"))).collect();
+        let endpoints: Vec<f64> = [f("T_min"), f("T_max")]
+            .iter()
+            .map(|t| f(key) + slope * (t - f("T_ref")))
+            .collect();
         if !endpoints.iter().all(Scalar::is_finite) {
-            return contract(format!("{key} becomes nonfinite within the authored temperature range"));
+            return contract(format!(
+                "{key} becomes nonfinite within the authored temperature range"
+            ));
         }
         if key != "alpha" && endpoints.iter().copied().fold(f64::INFINITY, f64::min) <= 0.0 {
-            return contract(format!("{key} becomes nonpositive within the authored temperature range"));
+            return contract(format!(
+                "{key} becomes nonpositive within the authored temperature range"
+            ));
         }
     }
     Ok(m.clone())
@@ -179,6 +226,8 @@ pub type TableCurves = [PropertyCurve; 5];
 pub struct SolidMaterial {
     pub raw: Map<String, Value>,
     pub values: [f64; 15],
+    pub creep_curve: Option<[f64; 11]>,
+    pub creep_validity: Option<[f64; 5]>,
     pub slopes: [f64; 5],
     pub t_ref: f64,
     pub t_min: f64,
@@ -194,10 +243,15 @@ impl SolidMaterial {
         let num = |k: &str| raw.get(k).and_then(finite_number).unwrap_or(f64::NAN);
         let values = MATERIAL_KEYS.map(num);
         let slopes = TEMPERATURE_KEYS.map(|k| {
-            raw.get("temperature_slopes").and_then(|s| s.get(k)).and_then(finite_number).unwrap_or(0.0)
+            raw.get("temperature_slopes")
+                .and_then(|s| s.get(k))
+                .and_then(finite_number)
+                .unwrap_or(0.0)
         });
         Self {
             values,
+            creep_curve: None,
+            creep_validity: None,
             slopes,
             t_ref: num("T_ref"),
             t_min: num("T_min"),
@@ -222,7 +276,10 @@ impl SolidMaterial {
 
     #[must_use]
     pub fn name(&self) -> String {
-        self.raw.get("name").map(implexity_core::pyobj::py_str).unwrap_or_default()
+        self.raw
+            .get("name")
+            .map(implexity_core::pyobj::py_str)
+            .unwrap_or_default()
     }
 
     #[must_use]
@@ -233,8 +290,15 @@ impl SolidMaterial {
     #[must_use]
     pub fn minimum_yield(&self) -> f64 {
         if let Some(t) = self.raw.get("temperature_table") {
-            let values = t.get("yield_stress").and_then(Value::as_array).cloned().unwrap_or_default();
-            return values.iter().filter_map(Value::as_f64).fold(f64::INFINITY, f64::min);
+            let values = t
+                .get("yield_stress")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            return values
+                .iter()
+                .filter_map(Value::as_f64)
+                .fold(f64::INFINITY, f64::min);
         }
         let slope = self.slopes[1];
         [self.t_min, self.t_max]
@@ -247,6 +311,9 @@ impl SolidMaterial {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Props<S> {
     pub values: [S; 15],
+    pub creep_curve: Option<[S; 11]>,
+    pub creep_validity: Option<[f64; 5]>,
+    pub creep_multiplier: S,
     pub temperature: S,
     pub kin_c: Vec<S>,
     pub kin_gamma: Vec<S>,
@@ -254,7 +321,15 @@ pub struct Props<S> {
 
 impl<S: Scalar> Props<S> {
     pub fn new(values: [S; 15], temperature: S) -> Self {
-        Self { values, temperature, kin_c: Vec::new(), kin_gamma: Vec::new() }
+        Self {
+            values,
+            creep_curve: None,
+            creep_validity: None,
+            creep_multiplier: S::one(),
+            temperature,
+            kin_c: Vec::new(),
+            kin_gamma: Vec::new(),
+        }
     }
 
     #[must_use]
@@ -268,9 +343,34 @@ impl<S: Scalar> Props<S> {
         let m = |x: S, y: S| w * x + c * y;
         Self {
             values: std::array::from_fn(|i| m(a.values[i], b.values[i])),
+            creep_multiplier: m(a.creep_multiplier, b.creep_multiplier),
+            creep_validity: match (a.creep_validity, b.creep_validity) {
+                (Some(x), Some(y)) => Some([
+                    x[0].max(y[0]),
+                    x[1].min(y[1]),
+                    x[2].min(y[2]),
+                    x[3].max(y[3]),
+                    x[4].min(y[4]),
+                ]),
+                _ => None,
+            },
+            creep_curve: match (a.creep_curve, b.creep_curve) {
+                (Some(x), Some(y)) => Some(std::array::from_fn(|i| m(x[i], y[i]))),
+                _ => None,
+            },
             temperature,
-            kin_c: a.kin_c.iter().zip(&b.kin_c).map(|(x, y)| m(*x, *y)).collect(),
-            kin_gamma: a.kin_gamma.iter().zip(&b.kin_gamma).map(|(x, y)| m(*x, *y)).collect(),
+            kin_c: a
+                .kin_c
+                .iter()
+                .zip(&b.kin_c)
+                .map(|(x, y)| m(*x, *y))
+                .collect(),
+            kin_gamma: a
+                .kin_gamma
+                .iter()
+                .zip(&b.kin_gamma)
+                .map(|(x, y)| m(*x, *y))
+                .collect(),
         }
     }
 }

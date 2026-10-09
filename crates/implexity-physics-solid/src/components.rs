@@ -3,8 +3,6 @@
 // Open-access statement and disclaimer: see DISCLAIMER.md.
 // METAPLEXIS-DISCLAIMER-END
 
-
-
 use std::any::Any;
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -79,10 +77,10 @@ impl SolidComponent {
             Self::Monitor => monitor::runtime_support(),
             Self::Maxwell => crate::polymer::runtime_support(),
             Self::Fatigue => crate::fatigue::runtime_support(),
-            Self::HistoryBlock => {
-                crate::util::obj(serde_json::json!({"status": "field_component", "history": true,
-                "data": "user_required", "limitations": crate::solid_history::LIMITATIONS}))
-            }
+            Self::HistoryBlock => crate::util::obj(
+                serde_json::json!({"status": "field_component", "history": true,
+                "data": "user_required", "limitations": crate::solid_history::LIMITATIONS}),
+            ),
             Self::MovingMaterial => crate::moving_interface::runtime_support(),
         }
     }
@@ -95,7 +93,13 @@ impl SolidComponent {
             Self::History(h) => Some(h.authoring_contract()),
             Self::Maxwell => Some(crate::polymer::authoring_contract()),
             Self::Fatigue => Some(crate::fatigue::authoring_contract()),
-            Self::Creep(_) | Self::Monitor | Self::HistoryBlock | Self::MovingMaterial => None,
+            Self::Creep(CreepLaw::StrainHardening) => {
+                Some(crate::three_stage_creep::authoring_contract())
+            }
+            Self::Creep(CreepLaw::Norton)
+            | Self::Monitor
+            | Self::HistoryBlock
+            | Self::MovingMaterial => None,
         }
     }
 
@@ -118,15 +122,18 @@ impl SolidComponent {
     #[must_use]
     pub fn editor(self, settings: &Value, context: &Value) -> Option<(String, Value)> {
         match self {
-            Self::History(h) => {
-                h.editor_schema(settings, context).ok().map(|s| (h.editor_label().to_string(), s))
-            }
-            Self::Maxwell => {
-                Some((crate::polymer::EDITOR_LABEL.into(), crate::polymer::editor_schema(settings, context)))
-            }
-            Self::Fatigue => {
-                Some((crate::fatigue::EDITOR_LABEL.into(), crate::fatigue::editor_schema(settings, context)))
-            }
+            Self::History(h) => h
+                .editor_schema(settings, context)
+                .ok()
+                .map(|s| (h.editor_label().to_string(), s)),
+            Self::Maxwell => Some((
+                crate::polymer::EDITOR_LABEL.into(),
+                crate::polymer::editor_schema(settings, context),
+            )),
+            Self::Fatigue => Some((
+                crate::fatigue::EDITOR_LABEL.into(),
+                crate::fatigue::editor_schema(settings, context),
+            )),
             _ => None,
         }
     }
@@ -187,30 +194,34 @@ pub fn component_of(adapter: &dyn AddInAdapter) -> Option<SolidComponent> {
         return Some(a.0);
     }
     let strict = any.downcast_ref::<StrictComponentAdapter>()?;
-    strict.delegate.as_any().downcast_ref::<SolidComponentHandle>().map(|h| h.0)
+    strict
+        .delegate
+        .as_any()
+        .downcast_ref::<SolidComponentHandle>()
+        .map(|h| h.0)
 }
-
 
 pub fn registered(name: &str) -> Result<Option<SolidComponent>, CaeError> {
     let row = implexity_core::registries::global().addins.get(name)?;
     Ok(row.adapter.as_deref().and_then(component_of))
 }
 
-
 pub fn selected_component(name: &str, kind: &str) -> Result<SolidComponent, CaeError> {
     match registered(name)? {
         Some(c) if c.component_kind() == kind => Ok(c),
-        _ => {
-            contract(format!("{} is not an active {kind} component", implexity_core::py_repr::repr_str(name)))
-        }
+        _ => contract(format!(
+            "{} is not an active {kind} component",
+            implexity_core::py_repr::repr_str(name)
+        )),
     }
 }
-
 
 pub fn selected_history(name: &str) -> Result<HistoryComponent, CaeError> {
     match registered(name)? {
         Some(SolidComponent::History(h)) => Ok(h),
-        _ => contract(format!("{name}: not an active material-state evolution component")),
+        _ => contract(format!(
+            "{name}: not an active material-state evolution component"
+        )),
     }
 }
 
@@ -237,7 +248,8 @@ pub fn study_template_components() -> Vec<(String, SolidComponent)> {
         .iter()
         .filter_map(|row| {
             let c = row.adapter.as_deref().and_then(component_of)?;
-            c.solid_study_templates(&Value::Null).map(|_| (row.contract.addin_id.clone(), c))
+            c.solid_study_templates(&Value::Null)
+                .map(|_| (row.contract.addin_id.clone(), c))
         })
         .collect();
     out.sort_by(|a, b| a.0.cmp(&b.0));
@@ -245,9 +257,12 @@ pub fn study_template_components() -> Vec<(String, SolidComponent)> {
 }
 
 fn notes(items: &[&str], extra: &[&str]) -> Vec<String> {
-    items.iter().chain(extra).map(|s| (*s).to_string()).collect()
+    items
+        .iter()
+        .chain(extra)
+        .map(|s| (*s).to_string())
+        .collect()
 }
-
 
 pub fn register_strict(
     ctx: &InstallContext<'_>,
@@ -258,11 +273,20 @@ pub fn register_strict(
     domain: &str,
     notes: Vec<String>,
 ) -> Result<AddInContract, CaeError> {
-    let options =
-        ComponentOptions { category, domain: domain.into(), fidelity: Fidelity::Intermediate, notes };
-    register_strict_component(ctx, name, Arc::new(SolidComponentHandle(component)), quantity, &options)
+    let options = ComponentOptions {
+        category,
+        domain: domain.into(),
+        fidelity: Fidelity::Intermediate,
+        notes,
+    };
+    register_strict_component(
+        ctx,
+        name,
+        Arc::new(SolidComponentHandle(component)),
+        quantity,
+        &options,
+    )
 }
-
 
 pub fn register_legacy(
     ctx: &InstallContext<'_>,
@@ -278,12 +302,14 @@ pub fn register_legacy(
     c.fidelity = Fidelity::Intermediate;
     c.direct_topology_dependence = direct_topology_dependence;
     c.notes = notes;
-    ctx.register_addin(ContractInput::Typed(Box::new(c)), Some(Arc::new(SolidAddin(component))))
+    ctx.register_addin(
+        ContractInput::Typed(Box::new(c)),
+        Some(Arc::new(SolidAddin(component))),
+    )
 }
 
-
 pub fn register_inelastic_components(ctx: &InstallContext<'_>) -> Result<(), CaeError> {
-    let rows: [(&str, SolidComponent, &str); 5] = [
+    let rows: [(&str, SolidComponent, &str); 6] = [
         (
             "phase_transition_caloric_solid",
             SolidComponent::Material(MaterialLaw::PhaseTransition),
@@ -299,7 +325,16 @@ pub fn register_inelastic_components(ctx: &InstallContext<'_>) -> Result<(), Cae
             SolidComponent::Plastic(PlasticLaw::J2LinearHardening),
             "plastic_state_update",
         ),
-        ("norton_creep", SolidComponent::Creep(CreepLaw::Norton), "creep_state_update"),
+        (
+            "norton_creep",
+            SolidComponent::Creep(CreepLaw::Norton),
+            "creep_state_update",
+        ),
+        (
+            "strain_hardening_creep",
+            SolidComponent::Creep(CreepLaw::StrainHardening),
+            "creep_state_update",
+        ),
         (
             "constant_strain_thermoelastic_solid",
             SolidComponent::Material(MaterialLaw::ConstantStrainThermoelastic),
@@ -313,7 +348,8 @@ pub fn register_inelastic_components(ctx: &InstallContext<'_>) -> Result<(), Cae
             SolidComponent::Creep(c) => c.limitations(),
             _ => &[],
         };
-        let reversible = matches!(component, SolidComponent::Material(m) if m.reversible_thermoelastic());
+        let reversible =
+            matches!(component, SolidComponent::Material(m) if m.reversible_thermoelastic());
         let caloric = if reversible {
             "Explicit Helmholtz entropy storage replaces enthalpy capacity."
         } else {
@@ -326,12 +362,17 @@ pub fn register_inelastic_components(ctx: &InstallContext<'_>) -> Result<(), Cae
             quantity,
             AddInCategory::Constitutive,
             "solid",
-            notes(limitations, &["Field-solver component, not an algebraic response.", caloric]),
+            notes(
+                limitations,
+                &[
+                    "Field-solver component, not an algebraic response.",
+                    caloric,
+                ],
+            ),
         )?;
     }
     Ok(())
 }
-
 
 pub fn register_tabulated(ctx: &InstallContext<'_>) -> Result<(), CaeError> {
     let law = MaterialLaw::TemperatureTable;
@@ -349,10 +390,10 @@ pub fn register_tabulated(ctx: &InstallContext<'_>) -> Result<(), CaeError> {
     Ok(())
 }
 
-
 pub fn register_chaboche(ctx: &InstallContext<'_>) -> Result<(), CaeError> {
-    let extra =
-        ["Native variable plastic state contract revision57; no legacy linear coefficient substitution."];
+    let extra = [
+        "Native variable plastic state contract revision57; no legacy linear coefficient substitution.",
+    ];
     let material = MaterialLaw::ChabocheTable;
     register_legacy(
         ctx,
@@ -374,7 +415,6 @@ pub fn register_chaboche(ctx: &InstallContext<'_>) -> Result<(), CaeError> {
     Ok(())
 }
 
-
 pub fn register_material_evolution(ctx: &InstallContext<'_>) -> Result<(), CaeError> {
     let history = |h: HistoryComponent, extra: &[&str]| {
         register_legacy(
@@ -386,8 +426,13 @@ pub fn register_material_evolution(ctx: &InstallContext<'_>) -> Result<(), CaeEr
             notes(h.limitations(), extra),
         )
     };
-    history(HistoryComponent::Defect, &["Native general constitutive-history revision55."])?;
+    history(
+        HistoryComponent::Defect,
+        &["Native general constitutive-history revision55."],
+    )?;
     history(HistoryComponent::Ageing, &[])?;
+    history(HistoryComponent::Rupture, &[])?;
+    history(HistoryComponent::Oxidation, &[])?;
     register_legacy(
         ctx,
         "material_history_monitor",
@@ -400,7 +445,6 @@ pub fn register_material_evolution(ctx: &InstallContext<'_>) -> Result<(), CaeEr
     history(HistoryComponent::Composite, &[])?;
     Ok(())
 }
-
 
 pub fn register_moving_material(ctx: &InstallContext<'_>) -> Result<(), CaeError> {
     register_strict(

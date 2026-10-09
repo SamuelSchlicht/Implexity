@@ -3,14 +3,12 @@
 // Open-access statement and disclaimer: see DISCLAIMER.md.
 // METAPLEXIS-DISCLAIMER-END
 
-
-
-
 pub mod ageing;
-pub mod local_advance;
-pub mod local_snapshot;
 pub mod composite;
 pub mod defect;
+pub mod local_advance;
+pub mod local_snapshot;
+pub mod mechanical_ageing;
 pub mod monitor;
 pub mod species;
 
@@ -38,7 +36,11 @@ pub struct HistoryEnergy<S> {
 impl<S: Scalar> HistoryEnergy<S> {
     #[must_use]
     pub fn zero() -> Self {
-        Self { stored: S::zero(), sensible_heat: S::zero(), external: S::zero() }
+        Self {
+            stored: S::zero(),
+            sensible_heat: S::zero(),
+            external: S::zero(),
+        }
     }
 }
 
@@ -46,18 +48,29 @@ impl<S: Scalar> HistoryEnergy<S> {
 pub enum HistoryComponent {
     Defect,
     Ageing,
+    Rupture,
+    Oxidation,
     Species,
     Composite,
 }
 
 impl HistoryComponent {
-    pub const ALL: [Self; 4] = [Self::Defect, Self::Ageing, Self::Species, Self::Composite];
+    pub const ALL: [Self; 6] = [
+        Self::Defect,
+        Self::Ageing,
+        Self::Species,
+        Self::Composite,
+        Self::Rupture,
+        Self::Oxidation,
+    ];
 
     #[must_use]
     pub fn component_id(self) -> &'static str {
         match self {
             Self::Defect => "saturating_defect_kinetics",
             Self::Ageing => "environmental_ageing",
+            Self::Rupture => "creep_rupture_history",
+            Self::Oxidation => "parabolic_oxidation_history",
             Self::Species => "saturating_species_retention",
             Self::Composite => "composite_material_history",
         }
@@ -68,7 +81,13 @@ impl HistoryComponent {
         match self {
             Self::Defect => "implexity.physics_library.defect_kinetics.SaturatingDefectKinetics",
             Self::Ageing => "implexity.physics_library.environmental_ageing.EnvironmentalAgeing",
-            Self::Species => "implexity.physics_library.species_retention.SaturatingSpeciesRetention",
+            Self::Rupture => "implexity.physics_library.mechanical_ageing.CreepRuptureHistory",
+            Self::Oxidation => {
+                "implexity.physics_library.mechanical_ageing.ParabolicOxidationHistory"
+            }
+            Self::Species => {
+                "implexity.physics_library.species_retention.SaturatingSpeciesRetention"
+            }
             Self::Composite => {
                 "implexity.physics_library.composite_material_history.CompositeMaterialHistory"
             }
@@ -80,6 +99,7 @@ impl HistoryComponent {
         match self {
             Self::Defect => &defect::LIMITATIONS,
             Self::Ageing => &ageing::LIMITATIONS,
+            Self::Rupture | Self::Oxidation => &mechanical_ageing::LIMITATIONS,
             Self::Species => &species::LIMITATIONS,
             Self::Composite => &composite::LIMITATIONS,
         }
@@ -87,8 +107,10 @@ impl HistoryComponent {
 
     #[must_use]
     pub fn runtime_support(self) -> Map<String, Value> {
-        obj(json!({"status": "field_component", "history": true, "data": "user_required",
-            "limitations": self.limitations()}))
+        obj(
+            json!({"status": "field_component", "history": true, "data": "user_required",
+            "limitations": self.limitations()}),
+        )
     }
 
     #[must_use]
@@ -96,6 +118,8 @@ impl HistoryComponent {
         obj(match self {
             Self::Defect => defect::authoring_contract(),
             Self::Ageing => ageing::authoring_contract(),
+            Self::Rupture => mechanical_ageing::Kind::Rupture.authoring(),
+            Self::Oxidation => mechanical_ageing::Kind::Oxidation.authoring(),
             Self::Species => species::authoring_contract(),
             Self::Composite => composite::authoring_contract(),
         })
@@ -106,16 +130,19 @@ impl HistoryComponent {
         match self {
             Self::Defect => "Defect production and recovery",
             Self::Ageing => "Thermal and environmental ageing",
+            Self::Rupture => "Creep rupture life",
+            Self::Oxidation => "Surface oxidation",
             Self::Species => "Local species retention and thermal release",
             Self::Composite => "Simultaneous independent material histories",
         }
     }
 
-
     pub fn editor_schema(self, settings: &Value, context: &Value) -> Result<Value, CaeError> {
         Ok(match self {
             Self::Defect => defect::editor_schema(settings, context),
             Self::Ageing => ageing::editor_schema(settings, context),
+            Self::Rupture => mechanical_ageing::Kind::Rupture.editor(),
+            Self::Oxidation => mechanical_ageing::Kind::Oxidation.editor(),
             Self::Species => species::editor_schema(settings, context),
             Self::Composite => composite::editor_schema(settings, context)?,
         })
@@ -137,7 +164,7 @@ impl HistoryComponent {
     #[must_use]
     pub fn numerical_extension_contract_id(self) -> Option<&'static str> {
         match self {
-            Self::Ageing => None,
+            Self::Ageing | Self::Rupture | Self::Oxidation => None,
             _ => Some(EXTENSION_CONTRACT),
         }
     }
@@ -150,34 +177,45 @@ impl HistoryComponent {
     #[must_use]
     pub fn state_dependencies(self) -> &'static [&'static str] {
         match self {
-            Self::Composite => &["temperature", "stress"],
+            Self::Composite | Self::Rupture => &["temperature", "stress"],
             _ => &["temperature"],
         }
     }
 
-
     pub fn state_dependencies_for(self, settings: &Value) -> Result<Vec<String>, CaeError> {
         match self {
             Self::Composite => composite::state_dependencies_for(settings),
-            _ => Ok(self.state_dependencies().iter().map(|s| (*s).to_string()).collect()),
+            _ => Ok(self
+                .state_dependencies()
+                .iter()
+                .map(|s| (*s).to_string())
+                .collect()),
         }
     }
-
 
     pub fn validate(self, settings: &Value, context: &Value) -> Result<Value, CaeError> {
         match self {
             Self::Defect => defect::validate(settings, context),
             Self::Ageing => ageing::validate(settings, context),
+            Self::Rupture => mechanical_ageing::Kind::Rupture.validate(settings, context),
+            Self::Oxidation => mechanical_ageing::Kind::Oxidation.validate(settings, context),
             Self::Species => species::validate(settings, context),
             Self::Composite => composite::validate(settings, context),
         }
     }
 
-
     pub fn bind_law(self, settings: &Value) -> Result<HistoryLaw, CaeError> {
         Ok(match self {
             Self::Defect => HistoryLaw::Defect(defect::DefectKinetics::bind(settings)),
             Self::Ageing => HistoryLaw::Ageing(ageing::EnvironmentalAgeing::bind(settings)),
+            Self::Rupture => HistoryLaw::Mechanical(mechanical_ageing::MechanicalAgeing::bind(
+                mechanical_ageing::Kind::Rupture,
+                settings,
+            )),
+            Self::Oxidation => HistoryLaw::Mechanical(mechanical_ageing::MechanicalAgeing::bind(
+                mechanical_ageing::Kind::Oxidation,
+                settings,
+            )),
             Self::Species => HistoryLaw::Species(species::SpeciesRetention::bind(settings)),
             Self::Composite => HistoryLaw::Composite(composite::bind(settings)?),
         })
@@ -197,10 +235,15 @@ impl EndpointNumericalExtension for HistoryComponent {
         self.numerical_extension_contract_id()
     }
     fn declares_endpoint_continuation(&self) -> bool {
-        *self != Self::Ageing
+        !matches!(self, Self::Ageing | Self::Rupture | Self::Oxidation)
     }
-    fn validate_numerical_extension(&self, settings: &Value, context: &Value) -> Result<(), CaeError> {
-        self.bind_law(settings)?.validate_numerical_extension(settings, context)
+    fn validate_numerical_extension(
+        &self,
+        settings: &Value,
+        context: &Value,
+    ) -> Result<(), CaeError> {
+        self.bind_law(settings)?
+            .validate_numerical_extension(settings, context)
     }
 }
 
@@ -208,6 +251,7 @@ impl EndpointNumericalExtension for HistoryComponent {
 pub enum HistoryLaw {
     Defect(defect::DefectKinetics),
     Ageing(ageing::EnvironmentalAgeing),
+    Mechanical(mechanical_ageing::MechanicalAgeing),
     Species(species::SpeciesRetention),
     Composite(Vec<Member>),
 }
@@ -218,6 +262,7 @@ impl HistoryLaw {
         match self {
             Self::Defect(l) => l.state_metadata(),
             Self::Ageing(l) => l.state_metadata(),
+            Self::Mechanical(l) => l.state_metadata(),
             Self::Species(l) => l.state_metadata(),
             Self::Composite(members) => composite::state_metadata(members),
         }
@@ -228,7 +273,10 @@ impl HistoryLaw {
         match self {
             Self::Defect(_) => real_array(&settings["dose_rate_dpa_s"]).unwrap_or_default(),
             Self::Ageing(_) => real_array(&settings["activities"]).unwrap_or_default(),
-            Self::Species(_) => real_array(&settings["source_atomic_fraction_s_inv"]).unwrap_or_default(),
+            Self::Mechanical(_) => real_array(&settings["exposure"]).unwrap_or_default(),
+            Self::Species(_) => {
+                real_array(&settings["source_atomic_fraction_s_inv"]).unwrap_or_default()
+            }
             Self::Composite(members) => composite::forcing(members, settings),
         }
     }
@@ -236,7 +284,7 @@ impl HistoryLaw {
     #[must_use]
     pub fn state_endpoints(&self) -> Option<Vec<usize>> {
         match self {
-            Self::Defect(_) | Self::Species(_) => Some(vec![0, 1]),
+            Self::Defect(_) | Self::Species(_) | Self::Mechanical(_) => Some(vec![0, 1]),
             Self::Ageing(_) => None,
             Self::Composite(members) => {
                 let mut out = Vec::new();
@@ -248,18 +296,29 @@ impl HistoryLaw {
         }
     }
 
-
-    pub fn validate_numerical_extension(&self, settings: &Value, context: &Value) -> Result<(), CaeError> {
+    pub fn validate_numerical_extension(
+        &self,
+        settings: &Value,
+        context: &Value,
+    ) -> Result<(), CaeError> {
         match self {
             Self::Defect(l) => l.validate_numerical_extension(settings, context),
             Self::Species(l) => l.validate_numerical_extension(settings, context),
-            Self::Ageing(_) => contract("environmental ageing declares no endpoint numerical extension"),
+            Self::Ageing(_) | Self::Mechanical(_) => {
+                contract("this history declares no endpoint numerical extension")
+            }
             Self::Composite(members) => {
-                for (m, row) in members.iter().zip(settings["members"].as_array().into_iter().flatten()) {
+                for (m, row) in members
+                    .iter()
+                    .zip(settings["members"].as_array().into_iter().flatten())
+                {
                     if m.component.numerical_extension_contract_id() != Some(EXTENSION_CONTRACT) {
-                        return contract("composite member lacks endpoint-local numerical extension");
+                        return contract(
+                            "composite member lacks endpoint-local numerical extension",
+                        );
                     }
-                    m.law.validate_numerical_extension(&row["settings"], context)?;
+                    m.law
+                        .validate_numerical_extension(&row["settings"], context)?;
                 }
                 Ok(())
             }
@@ -269,19 +328,38 @@ impl HistoryLaw {
     pub fn supports_closed_inventory_step(&self) -> bool {
         match self {
             Self::Defect(_) | Self::Species(_) => true,
-            Self::Composite(members) => members.iter().all(|member| member.law.supports_closed_inventory_step()),
-            Self::Ageing(_) => false,
+            Self::Composite(members) => members
+                .iter()
+                .all(|member| member.law.supports_closed_inventory_step()),
+            Self::Ageing(_) | Self::Mechanical(_) => false,
         }
     }
 
-    pub fn properties_at_temperature<S: Scalar>(&self, endpoint: usize, state: &[S], base: [S; 3], temperature: S) -> [S; 3] {
+    pub fn properties_at_temperature<S: Scalar>(
+        &self,
+        endpoint: usize,
+        state: &[S],
+        base: [S; 3],
+        temperature: S,
+    ) -> [S; 3] {
         match self {
             Self::Defect(law) => law.properties_at_temperature(endpoint, state, base, temperature),
             Self::Composite(members) => {
                 let mut out = base;
                 for member in members {
-                    let values = member.law.properties_at_temperature(endpoint, &state[member.state.clone()], base, temperature);
-                    for i in 0..3 { out[i] *= if base[i].value() == 0.0 { S::one() } else { values[i] / base[i] }; }
+                    let values = member.law.properties_at_temperature(
+                        endpoint,
+                        &state[member.state.clone()],
+                        base,
+                        temperature,
+                    );
+                    for i in 0..3 {
+                        out[i] *= if base[i].value() == 0.0 {
+                            S::one()
+                        } else {
+                            values[i] / base[i]
+                        };
+                    }
                 }
                 out
             }
@@ -293,6 +371,7 @@ impl HistoryLaw {
         match self {
             Self::Defect(l) => l.properties(endpoint, state, base),
             Self::Ageing(l) => l.properties(endpoint, state, base),
+            Self::Mechanical(l) => l.properties(endpoint, state, base),
             Self::Species(l) => l.properties(endpoint, state, base),
             Self::Composite(members) => composite::properties(members, endpoint, state, base),
         }
@@ -312,6 +391,7 @@ impl HistoryLaw {
         match self {
             Self::Defect(l) => l.residual(state, previous, temps, dt, forcing, out),
             Self::Ageing(l) => l.residual(state, previous, temps[0], dt, forcing, out),
+            Self::Mechanical(l) => l.residual(state, previous, temps, stress, dt, forcing, out),
             Self::Species(l) => l.residual(state, previous, temps, dt, forcing, out),
             Self::Composite(members) => {
                 composite::residual(members, state, previous, temps, stress, dt, forcing, out);
@@ -330,16 +410,19 @@ impl HistoryLaw {
         match self {
             Self::Defect(l) => l.energy(state, temps, forcing, c, densities),
             Self::Ageing(l) => l.energy(state, temps[0], forcing, c, densities),
+            Self::Mechanical(l) => l.energy(),
             Self::Species(l) => l.energy(),
-            Self::Composite(members) => composite::energy(members, state, temps, forcing, c, densities),
+            Self::Composite(members) => {
+                composite::energy(members, state, temps, forcing, c, densities)
+            }
         }
     }
-
 
     pub fn check_state(&self, state: &[f64], width: usize) -> Result<(), CaeError> {
         match self {
             Self::Defect(l) => l.check_state(state, width),
             Self::Ageing(l) => l.check_state(state, width),
+            Self::Mechanical(l) => l.check_state(state, width),
             Self::Species(l) => l.check_state(state, width),
             Self::Composite(members) => composite::check_state(members, state, width),
         }
@@ -366,13 +449,11 @@ pub struct MaterialHistoryBinding {
     pub densities: [f64; 2],
 }
 
-
 pub fn selected(name: &str) -> Result<HistoryComponent, CaeError> {
     crate::components::selected_history(name)
 }
 
 impl MaterialHistoryBinding {
-
     pub fn new(
         name: &str,
         component: HistoryComponent,
@@ -384,7 +465,9 @@ impl MaterialHistoryBinding {
         unique.sort();
         unique.dedup();
         if unique.len() != dependencies.len()
-            || dependencies.iter().any(|d| d != "temperature" && d != "stress")
+            || dependencies
+                .iter()
+                .any(|d| d != "temperature" && d != "stress")
         {
             return contract("material history declares unsupported driving state");
         }
@@ -412,8 +495,14 @@ impl MaterialHistoryBinding {
                 return contract("invalid material state scale/initial value");
             }
         }
-        let scales: Vec<f64> = rows.iter().map(|r| r["scale"].as_f64().unwrap_or(1.0)).collect();
-        let initial: Vec<f64> = rows.iter().map(|r| r["initial"].as_f64().unwrap_or(0.0)).collect();
+        let scales: Vec<f64> = rows
+            .iter()
+            .map(|r| r["scale"].as_f64().unwrap_or(1.0))
+            .collect();
+        let initial: Vec<f64> = rows
+            .iter()
+            .map(|r| r["initial"].as_f64().unwrap_or(0.0))
+            .collect();
         law.check_state(&initial, initial.len())?;
         let nt = crate::util::time_count(context);
         let nc = crate::util::grid_cells(context);
@@ -426,15 +515,21 @@ impl MaterialHistoryBinding {
         {
             return contract("constitutive forcing must have finite shape (times,cells,channels)");
         }
-        let policy = context.get("material_history_numerical_extension").filter(|v| !v.is_null());
-        let inactive = context.get("inactive_phase_numerical_material").is_some_and(|v| !v.is_null());
+        let policy = context
+            .get("material_history_numerical_extension")
+            .filter(|v| !v.is_null());
+        let inactive = context
+            .get("inactive_phase_numerical_material")
+            .is_some_and(|v| !v.is_null());
         if inactive && policy.is_none() {
             return contract(
                 "material history with inactive-phase material requires explicit material_history_numerical_extension",
             );
         }
         let numerical_extension = match policy {
-            Some(p) => Some(extension::validate_policy(p, context, &component, &settings)?),
+            Some(p) => Some(extension::validate_policy(
+                p, context, &component, &settings,
+            )?),
             None => None,
         };
         let endpoints = law.state_endpoints();
@@ -444,8 +539,12 @@ impl MaterialHistoryBinding {
             return contract("invalid endpoint ownership for material-history state");
         }
         let materials = &context["materials"];
-        let interval =
-            |i: usize| (crate::util::f(&materials[i], "T_min"), crate::util::f(&materials[i], "T_max"));
+        let interval = |i: usize| {
+            (
+                crate::util::f(&materials[i], "T_min"),
+                crate::util::f(&materials[i], "T_max"),
+            )
+        };
         let density = |i: usize| crate::util::f(&materials[i], "density");
         Ok(Self {
             name: name.to_string(),
@@ -496,7 +595,15 @@ impl MaterialHistoryBinding {
         forcing: &[S],
         out: &mut [S],
     ) {
-        self.law.residual(state, previous, self.temps(temperature), stress, dt, forcing, out);
+        self.law.residual(
+            state,
+            previous,
+            self.temps(temperature),
+            stress,
+            dt,
+            forcing,
+            out,
+        );
     }
 
     pub fn energy<S: Scalar>(
@@ -506,19 +613,37 @@ impl MaterialHistoryBinding {
         forcing: &[S],
         composition: S,
     ) -> HistoryEnergy<S> {
-        self.law.energy(state, self.temps(temperature), forcing, composition, self.densities)
+        self.law.energy(
+            state,
+            self.temps(temperature),
+            forcing,
+            composition,
+            self.densities,
+        )
     }
 
     pub fn properties<S: Scalar>(&self, endpoint: usize, state: &[S], base: &Props<S>) -> Props<S> {
-        let values = [base.get(idx::K), base.get(idx::YIELD), base.get(idx::CREEP_RATE)];
-        let [k, y, c] = self.law.properties_at_temperature(endpoint, state, values, base.temperature);
+        let values = [
+            base.get(idx::K),
+            base.get(idx::YIELD),
+            base.get(idx::CREEP_RATE),
+        ];
+        let [k, y, c] =
+            self.law
+                .properties_at_temperature(endpoint, state, values, base.temperature);
         let mut out = base.clone();
         out.values[idx::K] = k;
         out.values[idx::YIELD] = y;
         out.values[idx::CREEP_RATE] = c;
+        let factor = self.law.properties_at_temperature(
+            endpoint,
+            state,
+            [base.get(idx::K), base.get(idx::YIELD), S::one()],
+            base.temperature,
+        )[2];
+        out.creep_multiplier *= factor;
         out
     }
-
 
     pub fn physical_support(&self, density: f64, composition: f64) -> Result<Vec<f64>, CaeError> {
         let Some(endpoints) = &self.endpoints else {
@@ -526,7 +651,14 @@ impl MaterialHistoryBinding {
         };
         Ok(endpoints
             .iter()
-            .map(|i| density * if *i == 0 { 1.0 - composition } else { composition })
+            .map(|i| {
+                density
+                    * if *i == 0 {
+                        1.0 - composition
+                    } else {
+                        composition
+                    }
+            })
             .collect())
     }
 
@@ -541,12 +673,10 @@ impl MaterialHistoryBinding {
             "energy_assembly": "endpoint_fraction_in_law; physical_solid_fraction_in_host_once"})
     }
 
-
     pub fn check_state(&self, state: &[f64]) -> Result<(), CaeError> {
         self.law.check_state(state, self.size)
     }
 }
-
 
 pub fn declaration(row: &Value, context: &Value) -> Result<Option<Value>, CaeError> {
     if row.is_null() {
@@ -559,15 +689,23 @@ pub fn declaration(row: &Value, context: &Value) -> Result<Option<Value>, CaeErr
     let component = selected(name)?;
     let config = component.validate(&row["settings"], context)?;
     let binding = MaterialHistoryBinding::new(name, component, config, context)?;
-    Ok(Some(json!({"component": name, "settings": binding.settings})))
+    Ok(Some(
+        json!({"component": name, "settings": binding.settings}),
+    ))
 }
 
-
 pub fn bind(row: &Value, context: &Value) -> Result<Option<MaterialHistoryBinding>, CaeError> {
-    let Some(row) = declaration(row, context)? else { return Ok(None) };
+    let Some(row) = declaration(row, context)? else {
+        return Ok(None);
+    };
     let name = row["component"].as_str().unwrap_or_default();
     let component = selected(name)?;
-    Ok(Some(MaterialHistoryBinding::new(name, component, row["settings"].clone(), context)?))
+    Ok(Some(MaterialHistoryBinding::new(
+        name,
+        component,
+        row["settings"].clone(),
+        context,
+    )?))
 }
 
 #[must_use]
@@ -577,12 +715,28 @@ pub fn editor_schema(context: &Value) -> Value {
     }
     let mut properties = Map::new();
     for (field, kind, label) in [
-        ("material_history", "material_state_evolution", "Material-state component"),
-        ("viscoelasticity", "viscoelastic_solid", "Viscoelastic component"),
-        ("fatigue_observer", "fatigue_history_observer", "Fatigue observer"),
+        (
+            "material_history",
+            "material_state_evolution",
+            "Material-state component",
+        ),
+        (
+            "viscoelasticity",
+            "viscoelastic_solid",
+            "Viscoelastic component",
+        ),
+        (
+            "fatigue_observer",
+            "fatigue_history_observer",
+            "Fatigue observer",
+        ),
     ] {
-        let Some(row) = context.get(field).filter(|r| r.is_object()) else { continue };
-        let Some(name) = row.get("component").and_then(Value::as_str) else { continue };
+        let Some(row) = context.get(field).filter(|r| r.is_object()) else {
+            continue;
+        };
+        let Some(name) = row.get("component").and_then(Value::as_str) else {
+            continue;
+        };
         let Some((title, schema)) =
             crate::components::editor_schema_hook(name, kind, &row["settings"], context)
         else {
@@ -595,7 +749,10 @@ pub fn editor_schema(context: &Value) -> Value {
             );
         }
     }
-    if context.get("material_history").is_some_and(|v| !v.is_null()) {
+    if context
+        .get("material_history")
+        .is_some_and(|v| !v.is_null())
+    {
         properties.insert("material_history_numerical_extension".into(), json!({
             "title": "Absent-material kinetic continuation (explicit opt-in)",
             "description": "Requires phase-aware material validity. No physical temperature extrapolation; virtual inventories require exact support fields.",
@@ -605,7 +762,11 @@ pub fn editor_schema(context: &Value) -> Value {
                 "provenance": {"title": "Numerical extension justification", "type": "string", "minLength": 1}},
             "required": ["schema", "method", "state_semantics", "energy_semantics", "provenance"]}));
     }
-    if properties.is_empty() { json!({}) } else { json!({"properties": properties}) }
+    if properties.is_empty() {
+        json!({})
+    } else {
+        json!({"properties": properties})
+    }
 }
 
 pub mod aged_condition;

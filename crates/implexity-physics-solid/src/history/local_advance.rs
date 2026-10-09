@@ -94,7 +94,7 @@ pub fn advance_local_history(r: &LocalAdvanceRequest<'_>, options: &LocalAdvance
     if r.driving.len()!=w || r.previous.len()!=w || n==0 || r.design.len()!=5 || !options.tolerance.is_finite() || options.tolerance<=0. || options.maximum_iterations==0 || !options.condition_limit.is_finite() || options.condition_limit<=1. {
         return Err(CaeError::contract("invalid local history advancement shape or numerical options"));
     }
-    if r.model.plastic.is_some() || r.model.viscoelastic.is_some() || r.model.history.as_ref().is_some_and(|h| !matches!(&h.law, HistoryLaw::Species(_))) { return Err(CaeError::contract("local history split advancement currently supports creep and saturating-species history components only")); }
+    if r.model.creep.is_some_and(|c| c != crate::inelastic::CreepLaw::Norton) || r.model.plastic.is_some() || r.model.viscoelastic.is_some() || r.model.history.as_ref().is_some_and(|h| !matches!(&h.law, HistoryLaw::Species(_))) { return Err(CaeError::contract("local history split advancement currently supports creep and saturating-species history components only")); }
     let input:Vec<f64>=r.driving.iter().chain(r.previous).chain(r.design).copied().collect();
     if input.iter().any(|v|!v.is_finite()) || r.driving[..4].iter().chain(&r.previous[..4]).any(|t|r.model.t0+r.model.ts*t<=0.) || r.driving[ls]<0. || r.design[0]<0. || r.design[0]>1. || r.design[4]<0. || r.design[4]>1. || r.design[1..4].iter().any(|h|*h<=0.) { return Err(CaeError::contract("local history advancement requires finite inputs, positive temperatures and nonnegative interval")); }
     if let Some(history)=&r.model.history {

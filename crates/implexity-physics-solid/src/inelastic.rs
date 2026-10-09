@@ -3,8 +3,6 @@
 // Open-access statement and disclaimer: see DISCLAIMER.md.
 // METAPLEXIS-DISCLAIMER-END
 
-
-
 use serde_json::{Map, Value, json};
 
 use implexity_ad::Scalar;
@@ -36,6 +34,7 @@ pub enum PlasticLaw {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CreepLaw {
     Norton,
+    StrainHardening,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -80,7 +79,9 @@ impl PlasticLaw {
     #[must_use]
     pub fn implementation(self) -> &'static str {
         match self {
-            Self::J2LinearHardening => "implexity.physics_library.inelastic_components.J2LinearHardening",
+            Self::J2LinearHardening => {
+                "implexity.physics_library.inelastic_components.J2LinearHardening"
+            }
             Self::J2Chaboche => "implexity.physics_library.chaboche.J2Chaboche",
         }
     }
@@ -102,8 +103,10 @@ impl PlasticLaw {
 
     #[must_use]
     pub fn runtime_support(self) -> Map<String, Value> {
-        obj(json!({"status": "field_component", "history": true, "data": "user_required",
-            "limitations": self.limitations()}))
+        obj(
+            json!({"status": "field_component", "history": true, "data": "user_required",
+            "limitations": self.limitations()}),
+        )
     }
 
     #[must_use]
@@ -125,7 +128,6 @@ impl PlasticLaw {
             "coefficient_storage_exchange": self == Self::J2Chaboche})
     }
 
-
     pub fn state_size(self, materials: &[SolidMaterial]) -> Result<usize, CaeError> {
         match self {
             Self::J2LinearHardening => Ok(7),
@@ -136,7 +138,6 @@ impl PlasticLaw {
         }
     }
 
-
     pub fn validate_models(self, materials: &[SolidMaterial]) -> Result<(), CaeError> {
         if self == Self::J2LinearHardening {
             return Ok(());
@@ -146,11 +147,12 @@ impl PlasticLaw {
         }
         let first = materials.first().map_or(0, branch_count);
         if materials.iter().any(|m| branch_count(m) != first) {
-            return contract("all mixed endpoints must declare the same ordered hardening branches");
+            return contract(
+                "all mixed endpoints must declare the same ordered hardening branches",
+            );
         }
         Ok(())
     }
-
 
     pub fn state_metadata(self, materials: &[SolidMaterial]) -> Result<Vec<Value>, CaeError> {
         if self == Self::J2LinearHardening {
@@ -228,8 +230,8 @@ impl PlasticLaw {
                     let o = 7 + 6 * j;
                     for i in 0..6 {
                         let dep = current[i] - previous[i];
-                        out[o + i] =
-                            current[o + i] - previous[o + i] - dep + prop.kin_gamma[j] * current[o + i] * dp;
+                        out[o + i] = current[o + i] - previous[o + i] - dep
+                            + prop.kin_gamma[j] * current[o + i] * dp;
                     }
                 }
             }
@@ -259,7 +261,12 @@ impl PlasticLaw {
         })
     }
 
-    pub fn dissipated_increment<S: Scalar>(self, current: &[S], previous: &[S], prop: &Props<S>) -> S {
+    pub fn dissipated_increment<S: Scalar>(
+        self,
+        current: &[S],
+        previous: &[S],
+        prop: &Props<S>,
+    ) -> S {
         let dp = current[6] - previous[6];
         match self {
             Self::J2LinearHardening => prop.get(idx::YIELD) * dp,
@@ -303,8 +310,8 @@ impl PlasticLaw {
         match self {
             Self::J2LinearHardening => tq,
             Self::J2Chaboche => {
-                let exchange =
-                    self.stored_energy(previous, prop) - self.stored_energy(previous, previous_prop);
+                let exchange = self.stored_energy(previous, prop)
+                    - self.stored_energy(previous, previous_prop);
                 tq - exchange
             }
         }
@@ -377,23 +384,41 @@ fn chaboche_backstress<S: Scalar>(state: &[S], prop: &Props<S>) -> Mandel<S> {
 impl CreepLaw {
     #[must_use]
     pub fn component_id(self) -> &'static str {
-        "norton_creep"
+        match self {
+            Self::Norton => "norton_creep",
+            Self::StrainHardening => "strain_hardening_creep",
+        }
     }
 
     #[must_use]
     pub fn implementation(self) -> &'static str {
-        "implexity.physics_library.inelastic_components.NortonCreep"
+        match self {
+            Self::Norton => "implexity.physics_library.inelastic_components.NortonCreep",
+            Self::StrainHardening => {
+                "implexity.physics_library.inelastic_components.StrainHardeningCreep"
+            }
+        }
     }
 
     #[must_use]
     pub fn limitations(self) -> &'static [&'static str] {
-        &["Isotropic secondary Norton creep; no primary/tertiary creep or rupture law."]
+        match self {
+            Self::Norton => {
+                &["Isotropic secondary Norton creep; no primary/tertiary creep or rupture law."]
+            }
+            Self::StrainHardening => &[
+                "Small-strain isotropic strain-dependent primary, secondary and tertiary creep; no geometric necking, damage or rupture law.",
+                "A and B require explicit SI calibration at the authored temperature; no temperature interpolation.",
+            ],
+        }
     }
 
     #[must_use]
     pub fn runtime_support(self) -> Map<String, Value> {
-        obj(json!({"status": "field_component", "history": true, "data": "user_required",
-            "limitations": self.limitations()}))
+        obj(
+            json!({"status": "field_component", "history": true, "data": "user_required",
+            "limitations": self.limitations()}),
+        )
     }
 
     #[must_use]
@@ -402,6 +427,10 @@ impl CreepLaw {
     }
 
     pub fn increment<S: Scalar>(self, stress: &Mandel<S>, prop: &Props<S>, dt: S) -> S {
+        assert!(
+            self == Self::Norton,
+            "strain-hardening creep requires its accumulated strain state"
+        );
         let q = equivalent(stress);
         let arrhenius = (-prop.get(idx::CREEP_ACTIVATION) / R_GAS
             * (S::one() / prop.temperature - S::one() / prop.get(idx::CREEP_T_REF)))
@@ -421,7 +450,33 @@ impl CreepLaw {
         dt: S,
         out: &mut [S],
     ) {
-        let increment = self.increment(stress, prop, dt);
+        let increment = match self {
+            Self::Norton => self.increment(stress, prop, dt),
+            Self::StrainHardening => {
+                let q = equivalent(stress);
+                let d = prop
+                    .creep_validity
+                    .expect("validated creep calibration interval");
+                if q.value() < d[0]
+                    || q.value() > d[1]
+                    || current[6].value() < 0.
+                    || current[6].value() > d[2]
+                    || prop.temperature.value() < d[3]
+                    || prop.temperature.value() > d[4]
+                {
+                    S::from_f64(f64::NAN)
+                } else {
+                    dt * prop.creep_multiplier
+                        * crate::three_stage_creep::rate(
+                            q,
+                            current[6],
+                            &prop
+                                .creep_curve
+                                .expect("validated strain-hardening creep coefficients"),
+                        )
+                }
+            }
+        };
         let q = equivalent(stress);
         let d = dev(stress);
         for i in 0..6 {
@@ -431,7 +486,12 @@ impl CreepLaw {
         out[6] = current[6] - previous[6] - increment;
     }
 
-    pub fn dissipated_increment<S: Scalar>(self, stress: &Mandel<S>, current: &[S], previous: &[S]) -> S {
+    pub fn dissipated_increment<S: Scalar>(
+        self,
+        stress: &Mandel<S>,
+        current: &[S],
+        previous: &[S],
+    ) -> S {
         let mut out = S::zero();
         for i in 0..6 {
             out += stress[i] * (current[i] - previous[i]);
@@ -461,7 +521,12 @@ impl CreepLaw {
 
     #[must_use]
     pub fn solid_study_templates(self, solid: &Value) -> Vec<Value> {
-        let Some(components) = solid.get("components").and_then(Value::as_object) else { return Vec::new() };
+        if self != Self::Norton {
+            return Vec::new();
+        }
+        let Some(components) = solid.get("components").and_then(Value::as_object) else {
+            return Vec::new();
+        };
         if components.get("creep").is_some_and(|v| !v.is_null()) {
             return Vec::new();
         }
@@ -472,9 +537,16 @@ impl CreepLaw {
             ("creep_activation_J_mol", "Creep activation energy", "J/mol"),
             ("creep_T_ref", "Reference creep temperature", "K"),
         ];
-        let zero = solid.get("materials").and_then(Value::as_array).is_some_and(|ms| {
-            ms.iter().any(|m| m.get("creep_rate_ref").and_then(Value::as_f64).is_some_and(|v| v == 0.0))
-        });
+        let zero = solid
+            .get("materials")
+            .and_then(Value::as_array)
+            .is_some_and(|ms| {
+                ms.iter().any(|m| {
+                    m.get("creep_rate_ref")
+                        .and_then(Value::as_f64)
+                        .is_some_and(|v| v == 0.0)
+                })
+            });
         let mut properties = Map::new();
         for (key, title, unit) in keys {
             properties.insert(
@@ -490,12 +562,14 @@ impl CreepLaw {
                 "."
             }
         );
-        vec![json!({"id": "norton_creep_setup", "label": "Add Norton secondary creep",
+        vec![
+            json!({"id": "norton_creep_setup", "label": "Add Norton secondary creep",
             "description": description,
             "truth_status": "unvalidated_user_coefficient_authoring_starter",
             "problem_requirements": [{"path": ["components", "creep"], "value": null, "missing_equals_null": true}],
             "problem_patch": {"components": {"creep": "norton_creep"}},
-            "editor_schema_patch": {"properties": {"materials": {"items": {"properties": properties}}}}})]
+            "editor_schema_patch": {"properties": {"materials": {"items": {"properties": properties}}}}}),
+        ]
     }
 }
 
@@ -508,7 +582,11 @@ pub struct InelasticLayout {
 
 impl Default for InelasticLayout {
     fn default() -> Self {
-        Self { plastic_size: 7, creep_size: 7, viscoelastic_size: 0 }
+        Self {
+            plastic_size: 7,
+            creep_size: 7,
+            viscoelastic_size: 0,
+        }
     }
 }
 
@@ -547,7 +625,6 @@ impl InelasticLayout {
     }
 }
 
-
 pub fn layout_for(
     plastic: Option<PlasticLaw>,
     creep: Option<CreepLaw>,
@@ -559,7 +636,9 @@ pub fn layout_for(
         Some(p) => {
             let size = p.state_size(materials)?;
             if !(7..=103).contains(&size) {
-                return contract("plastic component must declare 7..103 strain-like native coordinates");
+                return contract(
+                    "plastic component must declare 7..103 strain-like native coordinates",
+                );
             }
             if size > 7 && !p.has_yield_function() {
                 return contract(

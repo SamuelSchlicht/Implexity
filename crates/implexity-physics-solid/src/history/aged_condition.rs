@@ -31,7 +31,7 @@ fn evaluate<S:Scalar>(r:&LocalAdvanceRequest<'_>,input:&[S],enabled:bool)->(Vec<
 
 pub fn frozen_reference_age_condition(r:&LocalAdvanceRequest<'_>,enabled:bool)->CaeResult<LocalAdvanceResult> {
  let m=r.model;let w=m.local_width();let n=m.internal_size;let ls=m.local_size();
- if r.driving.len()!=w || r.previous.len()!=w || r.design.len()!=5 || n==0 || m.plastic.is_some() || m.viscoelastic.is_some() || m.history.as_ref().is_some_and(|h|!h.law.supports_closed_inventory_step()) {return Err(CaeError::contract("frozen reference age condition requires native creep and closed inventory history and exact local layout"));}
+ if r.driving.len()!=w || r.previous.len()!=w || r.design.len()!=5 || n==0 || m.creep.is_some_and(|c| c != crate::inelastic::CreepLaw::Norton) || m.plastic.is_some() || m.viscoelastic.is_some() || m.history.as_ref().is_some_and(|h|!h.law.supports_closed_inventory_step()) {return Err(CaeError::contract("frozen reference age condition requires native creep and closed inventory history and exact local layout"));}
  let input:Vec<f64>=r.driving.iter().chain(r.previous).chain(r.design).copied().collect();
  if input.iter().any(|v|!v.is_finite()) || r.driving[..4].iter().chain(&r.previous[..4]).any(|t|m.t0+m.ts*t<=0.) || r.driving[ls]<0. || !(0.0..=1.0).contains(&r.design[0]) || !(0.0..=1.0).contains(&r.design[4]) || r.design[1..4].iter().any(|v|*v<=0.) {return Err(CaeError::contract("frozen reference age condition requires finite inputs, positive temperatures/dimensions and nonnegative age"));}
  let (state,heat)=evaluate(r,&input,enabled);let mut frame=r.driving.to_vec();frame[16..16+n].copy_from_slice(&state);

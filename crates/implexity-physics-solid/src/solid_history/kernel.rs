@@ -3,7 +3,6 @@
 // Open-access statement and disclaimer: see DISCLAIMER.md.
 // METAPLEXIS-DISCLAIMER-END
 
-
 use std::sync::{Arc, Mutex};
 
 use serde_json::{Value, json};
@@ -35,18 +34,24 @@ pub struct SolidMesh {
     pub gradients: Vec<[[f64; 3]; 4]>,
 }
 
-const PERMUTATIONS: [[usize; 3]; 6] = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]];
+const PERMUTATIONS: [[usize; 3]; 6] = [
+    [0, 1, 2],
+    [0, 2, 1],
+    [1, 0, 2],
+    [1, 2, 0],
+    [2, 0, 1],
+    [2, 1, 0],
+];
 
 fn det3(m: [[f64; 3]; 3]) -> f64 {
-    m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
+    m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
+        - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
         + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0])
 }
 
 fn node_id(v: [usize; 3], shape: [usize; 3]) -> usize {
     (v[0] * shape[1] + v[1]) * shape[2] + v[2]
 }
-
-
 
 pub fn mesh(grid: [usize; 3]) -> Result<SolidMesh, CaeError> {
     let shape = [grid[0] + 1, grid[1] + 1, grid[2] + 1];
@@ -67,7 +72,8 @@ pub fn mesh(grid: [usize; 3]) -> Result<SolidMesh, CaeError> {
                 let parity = cell.map(|c| c % 2);
                 let anchor: [i64; 3] =
                     std::array::from_fn(|a| i64::try_from(cell[a] + parity[a]).unwrap_or(i64::MAX));
-                let direction: [i64; 3] = std::array::from_fn(|a| if parity[a] == 1 { -1 } else { 1 });
+                let direction: [i64; 3] =
+                    std::array::from_fn(|a| if parity[a] == 1 { -1 } else { 1 });
                 for perm in PERMUTATIONS {
                     let mut v = anchor;
                     let to_u = |v: [i64; 3]| v.map(|x| usize::try_from(x).unwrap_or(0));
@@ -76,7 +82,8 @@ pub fn mesh(grid: [usize; 3]) -> Result<SolidMesh, CaeError> {
                         v[ax] += direction[ax];
                         verts.push(node_id(to_u(v), shape));
                     }
-                    let xyz: Vec<[f64; 3]> = verts.iter().map(|n| ijk[*n].map(|x| x as f64)).collect();
+                    let xyz: Vec<[f64; 3]> =
+                        verts.iter().map(|n| ijk[*n].map(|x| x as f64)).collect();
                     let m: [[f64; 3]; 3] =
                         std::array::from_fn(|r| std::array::from_fn(|c| xyz[c + 1][r] - xyz[0][r]));
                     if det3(m) < 0.0 {
@@ -91,7 +98,8 @@ pub fn mesh(grid: [usize; 3]) -> Result<SolidMesh, CaeError> {
     let mut gradients = Vec::with_capacity(tets.len());
     for t in &tets {
         let p: Vec<[f64; 3]> = t.iter().map(|n| ijk[*n].map(|x| x as f64)).collect();
-        let m: [[f64; 3]; 3] = std::array::from_fn(|r| std::array::from_fn(|c| p[r + 1][c] - p[0][c]));
+        let m: [[f64; 3]; 3] =
+            std::array::from_fn(|r| std::array::from_fn(|c| p[r + 1][c] - p[0][c]));
         let det = det3(m);
         if (det - 1.0).abs() > 1e-8 + 1e-5 {
             return contract("parity-Kuhn mesh requires positive unit reference tetrahedra");
@@ -107,35 +115,62 @@ pub fn mesh(grid: [usize; 3]) -> Result<SolidMesh, CaeError> {
         }
         gradients.push(g);
     }
-    Ok(SolidMesh { ijk, tets, owners, gradients })
+    Ok(SolidMesh {
+        ijk,
+        tets,
+        owners,
+        gradients,
+    })
 }
 
 fn inverse3(m: [[f64; 3]; 3], det: f64) -> [[f64; 3]; 3] {
-    let c = |r0: usize, c0: usize, r1: usize, c1: usize| m[r0][c0] * m[r1][c1] - m[r0][c1] * m[r1][c0];
+    let c =
+        |r0: usize, c0: usize, r1: usize, c1: usize| m[r0][c0] * m[r1][c1] - m[r0][c1] * m[r1][c0];
     [
-        [c(1, 1, 2, 2) / det, -c(0, 1, 2, 2) / det, c(0, 1, 1, 2) / det],
-        [-c(1, 0, 2, 2) / det, c(0, 0, 2, 2) / det, -c(0, 0, 1, 2) / det],
-        [c(1, 0, 2, 1) / det, -c(0, 0, 2, 1) / det, c(0, 0, 1, 1) / det],
+        [
+            c(1, 1, 2, 2) / det,
+            -c(0, 1, 2, 2) / det,
+            c(0, 1, 1, 2) / det,
+        ],
+        [
+            -c(1, 0, 2, 2) / det,
+            c(0, 0, 2, 2) / det,
+            -c(0, 0, 1, 2) / det,
+        ],
+        [
+            c(1, 0, 2, 1) / det,
+            -c(0, 0, 2, 1) / det,
+            c(0, 0, 1, 1) / det,
+        ],
     ]
 }
 
 fn face_nodes_of(mesh: &SolidMesh, grid: [usize; 3], axis: usize, hi: bool) -> Vec<usize> {
     let target = if hi { grid[axis] } else { 0 };
-    (0..mesh.ijk.len()).filter(|n| mesh.ijk[*n][axis] == target).collect()
+    (0..mesh.ijk.len())
+        .filter(|n| mesh.ijk[*n][axis] == target)
+        .collect()
 }
 
 fn triangle_counts(mesh: &SolidMesh, grid: [usize; 3], axis: usize, hi: bool) -> Vec<f64> {
     let target = if hi { grid[axis] } else { 0 };
     let mut counts = vec![0usize; mesh.ijk.len()];
     for tet in &mesh.tets {
-        let on: Vec<usize> = tet.iter().copied().filter(|n| mesh.ijk[*n][axis] == target).collect();
+        let on: Vec<usize> = tet
+            .iter()
+            .copied()
+            .filter(|n| mesh.ijk[*n][axis] == target)
+            .collect();
         if on.len() == 3 {
             for n in on {
                 counts[n] += 1;
             }
         }
     }
-    face_nodes_of(mesh, grid, axis, hi).iter().map(|n| counts[*n] as f64).collect()
+    face_nodes_of(mesh, grid, axis, hi)
+        .iter()
+        .map(|n| counts[*n] as f64)
+        .collect()
 }
 
 pub struct SolidKernel {
@@ -187,7 +222,10 @@ fn selected_law(p: &Value, key: &str) -> Result<Option<SolidComponent>, CaeError
     if v.is_null() {
         return Ok(None);
     }
-    let kind = COMPONENT_KINDS.iter().find(|(k, _)| *k == key).map_or("", |(_, k)| *k);
+    let kind = COMPONENT_KINDS
+        .iter()
+        .find(|(k, _)| *k == key)
+        .map_or("", |(_, k)| *k);
     selected_component(&implexity_core::pyobj::py_str(v), kind).map(Some)
 }
 
@@ -196,14 +234,25 @@ fn usize_of(v: &Value) -> usize {
 }
 
 impl SolidKernel {
-    pub fn local_elimination_partition(&self, size: usize) -> Result<Option<Arc<implexity_solve::local_condensation::LocalEliminationPartition>>, CaeError> {
-        if self.internal_size == 0 { return Ok(None); }
+    pub fn local_elimination_partition(
+        &self,
+        size: usize,
+    ) -> Result<Option<Arc<implexity_solve::local_condensation::LocalEliminationPartition>>, CaeError>
+    {
+        if self.internal_size == 0 {
+            return Ok(None);
+        }
         let start = self.n_t() + self.n_u();
-        let groups = (0..self.ne).map(|e| (start + e * self.internal_size..start + (e + 1) * self.internal_size).collect()).collect();
-        let partition = implexity_solve::local_condensation::LocalEliminationPartition::new(size, groups).map_err(|e| CaeError::contract(e.to_string()))?;
+        let groups = (0..self.ne)
+            .map(|e| {
+                (start + e * self.internal_size..start + (e + 1) * self.internal_size).collect()
+            })
+            .collect();
+        let partition =
+            implexity_solve::local_condensation::LocalEliminationPartition::new(size, groups)
+                .map_err(|e| CaeError::contract(e.to_string()))?;
         Ok(Some(Arc::new(partition)))
     }
-
 
     #[allow(clippy::too_many_lines)]
     pub fn new(p: Value) -> Result<Self, CaeError> {
@@ -224,15 +273,36 @@ impl SolidKernel {
             Some(SolidComponent::Creep(l)) => Some(l),
             _ => None,
         };
-        let materials = [law.validate(&p["materials"][0])?, law.validate(&p["materials"][1])?];
-        let numerical = p.get("inactive_phase_numerical_material").is_some_and(|v| !v.is_null());
+        let mut materials = [
+            law.validate(&p["materials"][0])?,
+            law.validate(&p["materials"][1])?,
+        ];
+        if creep == Some(crate::inelastic::CreepLaw::StrainHardening) {
+            for i in 0..2 {
+                materials[i].creep_curve = Some(crate::three_stage_creep::coefficients(
+                    &p["creep_parameters"][i],
+                )?);
+                materials[i].creep_validity = Some(crate::three_stage_creep::validity(
+                    &p["creep_parameters"][i],
+                )?);
+            }
+        }
+        let numerical = p
+            .get("inactive_phase_numerical_material")
+            .is_some_and(|v| !v.is_null());
         super::refuse_chaboche_continuation(law, numerical)?;
-        let viscoelastic: Option<BoundMaxwell> =
-            crate::polymer::bind_viscoelastic(p.get("viscoelasticity").unwrap_or(&Value::Null), &p)?;
+        let viscoelastic: Option<BoundMaxwell> = crate::polymer::bind_viscoelastic(
+            p.get("viscoelasticity").unwrap_or(&Value::Null),
+            &p,
+        )?;
         let history: Option<MaterialHistoryBinding> =
             crate::history::bind(p.get("material_history").unwrap_or(&Value::Null), &p)?;
-        let layout: InelasticLayout =
-            layout_for(plastic, creep, viscoelastic.as_ref().map(BoundMaxwell::size), &materials)?;
+        let layout: InelasticLayout = layout_for(
+            plastic,
+            creep,
+            viscoelastic.as_ref().map(BoundMaxwell::size),
+            &materials,
+        )?;
         let internal_size = layout.material_start() + history.as_ref().map_or(0, |m| m.size);
         let mut fixed_u = vec![vec![0.0; nn * 3]; nt];
         let mut umask = vec![false; nn * 3];
@@ -281,7 +351,10 @@ impl SolidKernel {
         let free_t: Vec<usize> = (0..nn).filter(|n| !tmask[*n]).collect();
         let (n_u, n_t) = (free_u.len(), free_t.len());
         let internal_stop = n_t + n_u + internal_size * ne;
-        let dynamics_json = p.get("structural_dynamics").filter(|v| !v.is_null()).cloned();
+        let dynamics_json = p
+            .get("structural_dynamics")
+            .filter(|v| !v.is_null())
+            .cloned();
         let dynamics = dynamics_json.as_ref().map(Dynamics::from_json);
         let velocity = internal_stop..internal_stop + if dynamics.is_some() { n_u } else { 0 };
         let acceleration = velocity.end..velocity.end + if dynamics.is_some() { n_u } else { 0 };
@@ -316,8 +389,14 @@ impl SolidKernel {
             Some(w) => (w[0].as_f64().unwrap_or(0.0), w[1].as_f64().unwrap_or(0.0)),
             None => (times[0], times[nt - 1]),
         };
-        let t_min = materials.iter().map(|m| m.t_min).fold(f64::NEG_INFINITY, f64::max);
-        let t_max = materials.iter().map(|m| m.t_max).fold(f64::INFINITY, f64::min);
+        let t_min = materials
+            .iter()
+            .map(|m| m.t_min)
+            .fold(f64::NEG_INFINITY, f64::max);
+        let t_max = materials
+            .iter()
+            .map(|m| m.t_max)
+            .fold(f64::INFINITY, f64::min);
         if t_min > t_max {
             return contract("material temperature intervals do not overlap");
         }
@@ -378,10 +457,16 @@ impl SolidKernel {
             xmap.extend_from_slice(&[owner, nci, nci + 1, nci + 2, nci + 3 + owner]);
         }
         let batch = usize_of(&p["assembly"]["batch_size"]);
-        let options = |b: usize| AssemblyOptions { batch_size: b, ..AssemblyOptions::default() };
+        let options = |b: usize| AssemblyOptions {
+            batch_size: b,
+            ..AssemblyOptions::default()
+        };
         let design_size = 2 * nc + 3;
         let grad0 = Arc::new(mesh.gradients.clone());
-        let element = SolidElement { model: Arc::clone(&model), grad0: Arc::clone(&grad0) };
+        let element = SolidElement {
+            model: Arc::clone(&model),
+            grad0: Arc::clone(&grad0),
+        };
         let local = LocalResidualAssembly::new(
             element,
             Incidence::new(ne, local_size, rows)?,
@@ -403,7 +488,10 @@ impl SolidKernel {
             let mut irows = Vec::with_capacity(ne * 12);
             let mut icols = Vec::with_capacity(ne * 40);
             for tet in &mesh.tets {
-                let dofs: Vec<usize> = tet.iter().flat_map(|n| (0..3).map(move |c| 3 * n + c)).collect();
+                let dofs: Vec<usize> = tet
+                    .iter()
+                    .flat_map(|n| (0..3).map(move |c| 3 * n + c))
+                    .collect();
                 irows.extend(dofs.iter().map(|d| umap[*d]));
                 icols.extend(tet.iter().map(|n| tmap[*n]));
                 icols.extend(dofs.iter().map(|d| umap[*d]));
@@ -411,7 +499,11 @@ impl SolidKernel {
                 icols.extend(dofs.iter().map(|d| amap[*d]));
             }
             inertia = Some(LocalResidualAssembly::new(
-                InertiaElement { model: Arc::clone(&model), dynamics: d, grad0: Arc::clone(&grad0) },
+                InertiaElement {
+                    model: Arc::clone(&model),
+                    dynamics: d,
+                    grad0: Arc::clone(&grad0),
+                },
                 Incidence::new(ne, 12, irows)?,
                 Incidence::new(ne, 40, icols.clone())?,
                 Incidence::new(ne, 40, icols)?,
@@ -427,7 +519,10 @@ impl SolidKernel {
                 kcols.extend_from_slice(&[to_i(n_t + k), vmap[*dof], amap[*dof], -1]);
             }
             kinematics = Some(LocalResidualAssembly::new(
-                KinematicElement { us: model.us, dynamics: d },
+                KinematicElement {
+                    us: model.us,
+                    dynamics: d,
+                },
                 Incidence::new(n_u, 2, krows)?,
                 Incidence::new(n_u, 4, kcols.clone())?,
                 Incidence::new(n_u, 4, kcols)?,
@@ -450,7 +545,10 @@ impl SolidKernel {
         };
         let weights = |axis: usize, hi: bool| -> (Vec<usize>, Vec<f64>) {
             let counts = triangle_counts(&mesh, grid, axis, hi);
-            (face_nodes_of(&mesh, grid, axis, hi), counts.iter().map(|c| c / 6.0).collect())
+            (
+                face_nodes_of(&mesh, grid, axis, hi),
+                counts.iter().map(|c| c / 6.0).collect(),
+            )
         };
         let boundary = SolidBoundaryHistory::new(host, &p, &tmap, &weights)?;
         Ok(Self {
@@ -535,14 +633,25 @@ impl SolidKernel {
 
     #[must_use]
     pub fn face_weights(&self, axis: usize, hi: bool) -> Vec<f64> {
-        self.face_triangle_counts(axis, hi).iter().map(|c| c / 6.0).collect()
+        self.face_triangle_counts(axis, hi)
+            .iter()
+            .map(|c| c / 6.0)
+            .collect()
     }
 
-    pub fn boundary_weights<S: Scalar>(&self, axis: usize, hi: bool, h: &[S; 3]) -> (Vec<usize>, Vec<S>) {
+    pub fn boundary_weights<S: Scalar>(
+        &self,
+        axis: usize,
+        hi: bool,
+        h: &[S; 3],
+    ) -> (Vec<usize>, Vec<S>) {
         let other: Vec<usize> = (0..3).filter(|i| *i != axis).collect();
         let face = self.face_nodes(axis, hi);
         let w = self.face_weights(axis, hi);
-        (face, w.iter().map(|x| h[other[0]] * h[other[1]] * *x).collect())
+        (
+            face,
+            w.iter().map(|x| h[other[0]] * h[other[1]] * *x).collect(),
+        )
     }
 
     fn bc_side(bc: &Value) -> (usize, bool) {
@@ -616,7 +725,9 @@ impl SolidKernel {
         let width = m.local_width();
         let ls = m.local_size();
         let dt = self.times[n] - self.times[n - 1];
-        let bulk = self.p["volumetric_heat_W_m3"][n].as_f64().unwrap_or(f64::NAN);
+        let bulk = self.p["volumetric_heat_W_m3"][n]
+            .as_f64()
+            .unwrap_or(f64::NAN);
         let mut current = vec![0.0; self.ne * width];
         let mut previous = vec![0.0; self.ne * width];
         for (e, tet) in self.mesh.tets.iter().enumerate() {
@@ -660,7 +771,6 @@ impl SolidKernel {
         (current.clone(), current)
     }
 
-
     pub fn assembled_residual(
         &self,
         n: usize,
@@ -692,8 +802,10 @@ impl SolidKernel {
         Ok(r)
     }
 
-
-    pub fn external_nodal_load_residual<S: Scalar>(&self, force: &[[S; 3]]) -> Result<Vec<S>, CaeError> {
+    pub fn external_nodal_load_residual<S: Scalar>(
+        &self,
+        force: &[[S; 3]],
+    ) -> Result<Vec<S>, CaeError> {
         if force.len() != self.nn {
             return contract("external nodal load shape/type mismatch");
         }
@@ -706,14 +818,12 @@ impl SolidKernel {
         Ok(out)
     }
 
-
     pub fn validate_external_nodal_heat(&self, power: &[f64]) -> Result<(), CaeError> {
         if power.len() != self.nn || power.iter().any(|v| !v.is_finite()) {
             return contract("external nodal heat requires finite real [node] incoming power in W");
         }
         Ok(())
     }
-
 
     pub fn external_nodal_heat_residual<S: Scalar>(&self, power: &[S]) -> Result<Vec<S>, CaeError> {
         if power.len() != self.nn {
@@ -726,7 +836,6 @@ impl SolidKernel {
         }
         Ok(out)
     }
-
 
     pub fn residual_with_external_load(
         &self,
@@ -755,7 +864,12 @@ impl SolidKernel {
     }
 
     #[must_use]
-    pub fn fields(&self, n: usize, z: &[f64], x: &[f64]) -> Vec<crate::solid_elements::ElementFields<f64>> {
+    pub fn fields(
+        &self,
+        n: usize,
+        z: &[f64],
+        x: &[f64],
+    ) -> Vec<crate::solid_elements::ElementFields<f64>> {
         let (data, _) = self.local_data(n.max(1));
         let width = self.model.local_width();
         let mut fixed = data;
@@ -773,20 +887,24 @@ impl SolidKernel {
         (0..self.ne)
             .map(|e| {
                 let local = self.element_local(n, e, z, &fixed);
-                self.model.fields(&self.mesh.gradients[e], &local, &self.element_design(e, x))
+                self.model
+                    .fields(&self.mesh.gradients[e], &local, &self.element_design(e, x))
             })
             .collect()
     }
 
     fn sum(parts: Vec<CsrMatrix>) -> Result<CsrMatrix, CaeError> {
         let mut iter = parts.into_iter();
-        let Some(mut acc) = iter.next() else { return contract("empty Jacobian") };
+        let Some(mut acc) = iter.next() else {
+            return contract("empty Jacobian");
+        };
         for m in iter {
-            acc = acc.add_scaled(1.0, &m, 1.0).map_err(|e| CaeError::contract(e.to_string()))?;
+            acc = acc
+                .add_scaled(1.0, &m, 1.0)
+                .map_err(|e| CaeError::contract(e.to_string()))?;
         }
         Ok(implexity_solve::matrix::eliminate_zeros(&acc))
     }
-
 
     pub fn jacobian(
         &self,
@@ -839,7 +957,6 @@ impl SolidKernel {
             .map_err(|e| CaeError::contract(e.to_string()))
     }
 
-
     pub fn current_action(
         &self,
         n: usize,
@@ -850,21 +967,32 @@ impl SolidKernel {
         transpose: bool,
     ) -> Result<Vec<f64>, CaeError> {
         let (a, b) = self.local_data(n);
-        let mut r = self.local.current_action(z, old, x, &a, &b, vector, transpose)?;
+        let mut r = self
+            .local
+            .current_action(z, old, x, &a, &b, vector, transpose)?;
         if self.boundary.has_state_terms() {
-            for (v, l) in r.iter_mut().zip(self.boundary.current_action(n, z, old, x, vector, transpose)?) {
+            for (v, l) in r.iter_mut().zip(
+                self.boundary
+                    .current_action(n, z, old, x, vector, transpose)?,
+            ) {
                 *v += l;
             }
         }
         if let Some(inertia) = &self.inertia {
             let (a, b) = self.inertia_data(n);
-            for (v, l) in r.iter_mut().zip(inertia.current_action(z, old, x, &a, &b, vector, transpose)?) {
+            for (v, l) in r
+                .iter_mut()
+                .zip(inertia.current_action(z, old, x, &a, &b, vector, transpose)?)
+            {
                 *v += l;
             }
         }
         if let Some(k) = &self.kinematics {
             let (a, b) = self.kinematic_data(n);
-            for (v, l) in r.iter_mut().zip(k.current_action(z, old, x, &a, &b, vector, transpose)?) {
+            for (v, l) in r
+                .iter_mut()
+                .zip(k.current_action(z, old, x, &a, &b, vector, transpose)?)
+            {
                 *v += l;
             }
         }
@@ -928,7 +1056,13 @@ impl SolidKernel {
     #[must_use]
     pub fn element_design(&self, e: usize, x: &[f64]) -> [f64; 5] {
         let o = self.mesh.owners[e];
-        [x[o], x[self.nc], x[self.nc + 1], x[self.nc + 2], x[self.nc + 3 + o]]
+        [
+            x[o],
+            x[self.nc],
+            x[self.nc + 1],
+            x[self.nc + 2],
+            x[self.nc + 3 + o],
+        ]
     }
 
     #[must_use]
@@ -954,7 +1088,9 @@ impl SolidKernel {
             }
         }
         let phase_aware = self.model.numerical;
-        let legacy_violation = t.iter().any(|v| !v.is_finite() || *v < self.t_min || *v > self.t_max);
+        let legacy_violation = t
+            .iter()
+            .any(|v| !v.is_finite() || *v < self.t_min || *v > self.t_max);
         let passed = if phase_aware {
             finite && stats.violations[0] == 0 && stats.violations[1] == 0
         } else {
@@ -969,8 +1105,15 @@ impl SolidKernel {
         let fixed_common = fixed_values.is_empty()
             || (fixed_values.iter().all(Scalar::is_finite)
                 && fixed_values.iter().copied().fold(f64::INFINITY, f64::min) >= self.t_min
-                && fixed_values.iter().copied().fold(f64::NEG_INFINITY, f64::max) <= self.t_max);
-        let policy = self.p.get("inactive_phase_numerical_material").filter(|v| !v.is_null());
+                && fixed_values
+                    .iter()
+                    .copied()
+                    .fold(f64::NEG_INFINITY, f64::max)
+                    <= self.t_max);
+        let policy = self
+            .p
+            .get("inactive_phase_numerical_material")
+            .filter(|v| !v.is_null());
         let pv = |k: &str| policy.map_or(Value::Null, |p| p[k].clone());
         let opt = |v: f64| if v.is_finite() { json!(v) } else { Value::Null };
         let nodes = 4 * self.ne;
@@ -1017,21 +1160,40 @@ impl SolidKernel {
         }
         let validity = self.material_validity(n, z, x);
         let report_only = self.p["applicability_policy"].as_str() == Some("report_only");
-        if report_only && self.nodal_temperature(n, z).iter().any(|t| !t.is_finite() || *t <= 0.0) {
+        if report_only
+            && self
+                .nodal_temperature(n, z)
+                .iter()
+                .any(|t| !t.is_finite() || *t <= 0.0)
+        {
             return convergence("solid temperature must be finite and positive");
         }
-        if !report_only && validity["solid_temperature_material_interval_screen_passed"] != json!(true) {
+        if !report_only
+            && validity["solid_temperature_material_interval_screen_passed"] != json!(true)
+        {
             let t = self.nodal_temperature(n, z);
-            let argmin = t.iter().enumerate().fold(0, |b, (i, v)| if *v < t[b] { i } else { b });
-            let argmax = t.iter().enumerate().fold(0, |b, (i, v)| if *v > t[b] { i } else { b });
+            let argmin = t
+                .iter()
+                .enumerate()
+                .fold(0, |b, (i, v)| if *v < t[b] { i } else { b });
+            let argmax = t
+                .iter()
+                .enumerate()
+                .fold(0, |b, (i, v)| if *v > t[b] { i } else { b });
             let show = |v: &Value| implexity_core::pyobj::py_str(v);
             return convergence(format!(
                 "temperature leaves authored material validity interval; history_step={n}; nodal_temperature_min_K={}; nodal_temperature_min_index={argmin}; nodal_temperature_max_K={}; nodal_temperature_max_index={argmax}; active_endmember_0_violation_element_nodes={}; active_endmember_1_violation_element_nodes={}; authored_temperature_bc_common_interval_diagnostic_passed={}",
                 show_float(&validity["all_nodal_temperature_min_K"]),
                 show_float(&validity["all_nodal_temperature_max_K"]),
-                show(&validity["active_endmember_0_material_interval_violation_element_node_count"]),
-                show(&validity["active_endmember_1_material_interval_violation_element_node_count"]),
-                if validity["authored_temperature_bc_common_interval_diagnostic_passed"] == json!(true) {
+                show(
+                    &validity["active_endmember_0_material_interval_violation_element_node_count"]
+                ),
+                show(
+                    &validity["active_endmember_1_material_interval_violation_element_node_count"]
+                ),
+                if validity["authored_temperature_bc_common_interval_diagnostic_passed"]
+                    == json!(true)
+                {
                     "True"
                 } else {
                     "False"
@@ -1050,7 +1212,8 @@ impl SolidKernel {
             let row = &mut z[base + e * self.internal_size..base + (e + 1) * self.internal_size];
             if let Some(v) = &m.viscoelastic {
                 let range = m.layout.viscoelastic();
-                for ((slot, init), scale) in row[range].iter_mut().zip(v.initial()).zip(v.scales()) {
+                for ((slot, init), scale) in row[range].iter_mut().zip(v.initial()).zip(v.scales())
+                {
                     *slot = init / scale;
                 }
             }
@@ -1069,7 +1232,6 @@ impl SolidKernel {
         self.boundary.initial_state(self.initial_material_state())
     }
 
-
     pub fn solve(self: &Arc<Self>, x: &[f64]) -> Result<Arc<HistorySolution>, CaeError> {
         let ident: Vec<u64> = x.iter().map(|v| v.to_bits()).collect();
         if let Ok(last) = self.last.lock()
@@ -1086,7 +1248,12 @@ impl SolidKernel {
             ..HistoryOptions::default()
         };
         let system = NativeHistorySystem::new(Arc::new(KernelProblem(Arc::clone(self))), options)?;
-        let sol = system.solve(x, &self.initial_state(), self.nt - 1, &HistorySolveOptions::default())?;
+        let sol = system.solve(
+            x,
+            &self.initial_state(),
+            self.nt - 1,
+            &HistorySolveOptions::default(),
+        )?;
         self.validate_history(&sol, x)?;
         let sol = Arc::new(sol);
         if let Ok(mut last) = self.last.lock() {
@@ -1094,7 +1261,6 @@ impl SolidKernel {
         }
         Ok(sol)
     }
-
 
     pub fn system(self: &Arc<Self>) -> Result<NativeHistorySystem, CaeError> {
         let numerics = &self.p["numerics"];
@@ -1107,7 +1273,6 @@ impl SolidKernel {
         NativeHistorySystem::new(Arc::new(KernelProblem(Arc::clone(self))), options)
     }
 
-
     pub fn validate_history(&self, sol: &HistorySolution, x: &[f64]) -> Result<(), CaeError> {
         let m = &self.model;
         let base = self.n_t() + self.n_u();
@@ -1118,7 +1283,12 @@ impl SolidKernel {
                 let mut aux = Vec::with_capacity(self.ne * h.size);
                 for e in 0..self.ne {
                     let start = base + e * self.internal_size + m.layout.material_start();
-                    aux.extend(state[start..start + h.size].iter().zip(&h.scales).map(|(v, s)| v * s));
+                    aux.extend(
+                        state[start..start + h.size]
+                            .iter()
+                            .zip(&h.scales)
+                            .map(|(v, s)| v * s),
+                    );
                 }
                 h.check_state(&aux)?;
             }
@@ -1132,16 +1302,27 @@ impl SolidKernel {
                 for e in 0..self.ne {
                     let start = base + e * self.internal_size;
                     let row = &sol.states[n][start..start + self.internal_size];
-                    q.extend(row[range.clone()].iter().zip(&m.scales[range.clone()]).map(|(a, s)| a * s));
+                    q.extend(
+                        row[range.clone()]
+                            .iter()
+                            .zip(&m.scales[range.clone()])
+                            .map(|(a, s)| a * s),
+                    );
                 }
                 v.check_state(&q, &d.material_temperature)?;
                 if d.polymer.iter().flatten().any(|v| !v.is_finite()) {
                     return convergence("non-finite viscoelastic diagnostic");
                 }
                 minimum_dissipation = minimum_dissipation.min(
-                    d.polymer_column("dissipation_increment_J_m3").into_iter().fold(f64::INFINITY, f64::min),
+                    d.polymer_column("dissipation_increment_J_m3")
+                        .into_iter()
+                        .fold(f64::INFINITY, f64::min),
                 );
-                if d.polymer_column("strain_margin").into_iter().fold(f64::INFINITY, f64::min) < 0.0 {
+                if d.polymer_column("strain_margin")
+                    .into_iter()
+                    .fold(f64::INFINITY, f64::min)
+                    < 0.0
+                {
                     return convergence("viscoelastic strain exceeds authored applicability limit");
                 }
             }
@@ -1158,10 +1339,28 @@ impl SolidKernel {
             }
             maxstrain = maxstrain.max(d.strain.iter().flatten().fold(0.0, |a, v| a.max(v.abs())));
             minimum_dissipation = minimum_dissipation
-                .min(d.plastic_dissipation.iter().copied().fold(f64::INFINITY, f64::min))
-                .min(d.creep_dissipation.iter().copied().fold(f64::INFINITY, f64::min));
-            let min_p = d.equivalent_plastic.iter().copied().fold(f64::INFINITY, f64::min);
-            let min_c = d.equivalent_creep.iter().copied().fold(f64::INFINITY, f64::min);
+                .min(
+                    d.plastic_dissipation
+                        .iter()
+                        .copied()
+                        .fold(f64::INFINITY, f64::min),
+                )
+                .min(
+                    d.creep_dissipation
+                        .iter()
+                        .copied()
+                        .fold(f64::INFINITY, f64::min),
+                );
+            let min_p = d
+                .equivalent_plastic
+                .iter()
+                .copied()
+                .fold(f64::INFINITY, f64::min);
+            let min_c = d
+                .equivalent_creep
+                .iter()
+                .copied()
+                .fold(f64::INFINITY, f64::min);
             if min_p < -1e-10 || min_c < -1e-10 {
                 return convergence("negative accumulated inelastic strain");
             }
@@ -1198,15 +1397,26 @@ struct ValidityStats {
 impl ValidityStats {
     #[allow(clippy::fn_params_excessive_bools)]
     fn add(&mut self, active_a: bool, active_b: bool, outside_a: bool, outside_b: bool, t: f64) {
-        for (k, (active, outside)) in [(active_a, outside_a), (active_b, outside_b)].into_iter().enumerate() {
+        for (k, (active, outside)) in [(active_a, outside_a), (active_b, outside_b)]
+            .into_iter()
+            .enumerate()
+        {
             if active {
                 self.active_nodes[k] += 1;
                 if outside {
                     self.violations[k] += 1;
                 }
                 if self.seen[k] {
-                    self.min[k] = if t < self.min[k] || t.is_nan() { t } else { self.min[k] };
-                    self.max[k] = if t > self.max[k] || t.is_nan() { t } else { self.max[k] };
+                    self.min[k] = if t < self.min[k] || t.is_nan() {
+                        t
+                    } else {
+                        self.min[k]
+                    };
+                    self.max[k] = if t > self.max[k] || t.is_nan() {
+                        t
+                    } else {
+                        self.max[k]
+                    };
                 } else {
                     self.min[k] = t;
                     self.max[k] = t;
@@ -1230,13 +1440,37 @@ impl HistoryProblem for KernelProblem {
         self.0.check(n, z, prev, x)?;
         self.0.assembled_residual(n, z, prev, x)
     }
-    fn state_jacobian(&self, n: usize, z: &[f64], prev: &[f64], x: &[f64]) -> Result<Jacobian, CaeError> {
-        self.0.jacobian(Kind::Current, n, z, prev, x).map(Jacobian::Csr)
+    fn state_jacobian(
+        &self,
+        n: usize,
+        z: &[f64],
+        prev: &[f64],
+        x: &[f64],
+    ) -> Result<Jacobian, CaeError> {
+        self.0
+            .jacobian(Kind::Current, n, z, prev, x)
+            .map(Jacobian::Csr)
     }
-    fn previous_jacobian(&self, n: usize, z: &[f64], prev: &[f64], x: &[f64]) -> Result<Jacobian, CaeError> {
-        self.0.jacobian(Kind::Previous, n, z, prev, x).map(Jacobian::Csr)
+    fn previous_jacobian(
+        &self,
+        n: usize,
+        z: &[f64],
+        prev: &[f64],
+        x: &[f64],
+    ) -> Result<Jacobian, CaeError> {
+        self.0
+            .jacobian(Kind::Previous, n, z, prev, x)
+            .map(Jacobian::Csr)
     }
-    fn design_jacobian(&self, n: usize, z: &[f64], prev: &[f64], x: &[f64]) -> Result<Jacobian, CaeError> {
-        self.0.jacobian(Kind::Design, n, z, prev, x).map(Jacobian::Csr)
+    fn design_jacobian(
+        &self,
+        n: usize,
+        z: &[f64],
+        prev: &[f64],
+        x: &[f64],
+    ) -> Result<Jacobian, CaeError> {
+        self.0
+            .jacobian(Kind::Design, n, z, prev, x)
+            .map(Jacobian::Csr)
     }
 }

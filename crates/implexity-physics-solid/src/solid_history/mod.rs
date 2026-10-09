@@ -3,15 +3,14 @@
 // Open-access statement and disclaimer: see DISCLAIMER.md.
 // METAPLEXIS-DISCLAIMER-END
 
-
-
-
 mod kernel;
 mod provider;
 mod responses;
 
 pub use kernel::{KernelProblem, SolidKernel, SolidMesh, mesh};
-pub use provider::{NAME, NativeSolidHistoryProvider, SolidHistoryFactory, register_history_component};
+pub use provider::{
+    NAME, NativeSolidHistoryProvider, SolidHistoryFactory, register_history_component,
+};
 pub use responses::{Observed, POLYMER_COLUMNS, ResponseEval, format_e3};
 
 use serde_json::{Map, Value, json};
@@ -42,8 +41,11 @@ pub const HOST_RESPONSES: [&str; 6] = [
     "solid_mass_kg",
     "solid_elastic_energy_J",
 ];
-pub const COMPONENT_KINDS: [(&str, &str); 3] =
-    [("material", "material_properties"), ("plasticity", "plastic_evolution"), ("creep", "creep_evolution")];
+pub const COMPONENT_KINDS: [(&str, &str); 3] = [
+    ("material", "material_properties"),
+    ("plasticity", "plastic_evolution"),
+    ("creep", "creep_evolution"),
+];
 pub const LIMITATIONS: [&str; 6] = [
     "Small-strain linear tetrahedra; two-material relaxed interpolation.",
     "Mechanical equilibrium is quasistatic unless structural_dynamics is authored; then Newmark average-acceleration inertia with consistent T4 mass and fixed supports. Neither form resolves wave propagation below the mesh and time resolution.",
@@ -56,10 +58,15 @@ pub const LIMITATIONS: [&str; 6] = [
 fn finite_array(value: &Value, shape: &[usize], name: &str) -> Result<Vec<f64>, CaeError> {
     match real_array(value) {
         Some((s, v)) if s == shape && v.iter().all(|x| x.is_finite()) => Ok(v),
-        Some((s, _)) => {
-            contract(format!("{name}: expected finite array {}, received {}", py_shape(shape), py_shape(&s)))
-        }
-        None => contract(format!("{name}: expected rectangular numeric array {}", py_shape(shape))),
+        Some((s, _)) => contract(format!(
+            "{name}: expected finite array {}, received {}",
+            py_shape(shape),
+            py_shape(&s)
+        )),
+        None => contract(format!(
+            "{name}: expected rectangular numeric array {}",
+            py_shape(shape)
+        )),
     }
 }
 
@@ -67,7 +74,14 @@ fn finite_array(value: &Value, shape: &[usize], name: &str) -> Result<Vec<f64>, 
 pub fn py_shape(shape: &[usize]) -> String {
     match shape.len() {
         1 => format!("({},)", shape[0]),
-        _ => format!("({})", shape.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ")),
+        _ => format!(
+            "({})",
+            shape
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
     }
 }
 
@@ -86,10 +100,11 @@ fn is_int(v: &Value) -> bool {
     matches!(v, Value::Number(n) if n.is_i64() || n.is_u64())
 }
 
-
 #[allow(clippy::too_many_lines)]
 pub fn normalise(problem: &Value) -> Result<Value, CaeError> {
-    let Some(map) = problem.as_object() else { return contract("solid problem must be an object") };
+    let Some(map) = problem.as_object() else {
+        return contract("solid problem must be an object");
+    };
     let mut p = Value::Object(map.clone());
     let required = [
         "grid",
@@ -105,9 +120,16 @@ pub fn normalise(problem: &Value) -> Result<Value, CaeError> {
         "regularisation",
         "numerics",
     ];
-    let missing: Vec<&str> = required.iter().copied().filter(|k| !map.contains_key(*k)).collect();
+    let missing: Vec<&str> = required
+        .iter()
+        .copied()
+        .filter(|k| !map.contains_key(*k))
+        .collect();
     if !missing.is_empty() {
-        return contract(format!("solid history missing authoring {}", crate::util::sorted_repr(missing)));
+        return contract(format!(
+            "solid history missing authoring {}",
+            crate::util::sorted_repr(missing)
+        ));
     }
     let optional = [
         "field_registration",
@@ -117,6 +139,7 @@ pub fn normalise(problem: &Value) -> Result<Value, CaeError> {
         "thermal_reservoirs",
         "thermal_exchanges",
         "material_history",
+        "creep_parameters",
         "inactive_phase_numerical_material",
         "material_history_numerical_extension",
         "viscoelasticity",
@@ -125,24 +148,66 @@ pub fn normalise(problem: &Value) -> Result<Value, CaeError> {
         "structural_dynamics",
         "applicability_policy",
     ];
-    let extra: Vec<&str> =
-        map.keys().map(String::as_str).filter(|k| !required.contains(k) && !optional.contains(k)).collect();
+    let extra: Vec<&str> = map
+        .keys()
+        .map(String::as_str)
+        .filter(|k| !required.contains(k) && !optional.contains(k))
+        .collect();
     if !extra.is_empty() {
-        return contract(format!("unsupported solid problem keys: {}", crate::util::sorted_repr(extra)));
+        return contract(format!(
+            "unsupported solid problem keys: {}",
+            crate::util::sorted_repr(extra)
+        ));
     }
-    let applicability = p.get("applicability_policy").and_then(Value::as_str).unwrap_or("enforce");
+    let applicability = p
+        .get("applicability_policy")
+        .and_then(Value::as_str)
+        .unwrap_or("enforce");
     if !matches!(applicability, "enforce" | "report_only")
-        || p.get("applicability_policy").is_some_and(|v| !v.is_string())
+        || p.get("applicability_policy")
+            .is_some_and(|v| !v.is_string())
     {
         return contract("applicability_policy must be enforce or report_only");
     }
     if applicability == "report_only"
-        && p.get("inactive_phase_numerical_material").is_none_or(Value::is_null)
+        && p.get("inactive_phase_numerical_material")
+            .is_none_or(Value::is_null)
     {
-        return contract("report_only requires an explicit supported numerical material continuation");
+        return contract(
+            "report_only requires an explicit supported numerical material continuation",
+        );
+    }
+    let strain_hardening = p["components"]["creep"].as_str() == Some("strain_hardening_creep");
+    if strain_hardening {
+        let pairs = p["creep_parameters"]
+            .as_array()
+            .filter(|x| x.len() == 2)
+            .ok_or_else(|| {
+                CaeError::contract(
+                    "strain-hardening creep requires two endpoint coefficient objects",
+                )
+            })?;
+        for (i, settings) in pairs.iter().enumerate() {
+            crate::three_stage_creep::coefficients(settings)?;
+            let d = crate::three_stage_creep::validity(settings)?;
+            if crate::util::f(&p["materials"][i], "T_min") < d[3]
+                || crate::util::f(&p["materials"][i], "T_max") > d[4]
+            {
+                return contract("material temperature interval exceeds creep calibration");
+            }
+        }
+        let a = crate::three_stage_creep::validity(&pairs[0])?;
+        let b = crate::three_stage_creep::validity(&pairs[1])?;
+        if a[0].max(b[0]) >= a[1].min(b[1]) || a[3].max(b[3]) > a[4].min(b[4]) {
+            return contract("creep endpoint calibration intervals must overlap");
+        }
+    } else if p.get("creep_parameters").is_some_and(|v| !v.is_null()) {
+        return contract("creep_parameters requires strain_hardening_creep");
     }
     let grid_ok = p["grid"].as_array().is_some_and(|g| {
-        g.len() == 3 && g.iter().all(|n| !n.is_boolean() && int_like(n).is_some_and(|i| i >= 1))
+        g.len() == 3
+            && g.iter()
+                .all(|n| !n.is_boolean() && int_like(n).is_some_and(|i| i >= 1))
     });
     if !grid_ok {
         return contract("grid must contain three positive integers");
@@ -154,7 +219,10 @@ pub fn normalise(problem: &Value) -> Result<Value, CaeError> {
         .map(|n| usize::try_from(int_like(n).unwrap_or(1)).unwrap_or(1))
         .collect();
     p["grid"] = json!(grid);
-    let times = real_array(&p["times_s"]).filter(|(s, _)| s.len() == 1).map(|(_, v)| v).unwrap_or_default();
+    let times = real_array(&p["times_s"])
+        .filter(|(s, _)| s.len() == 1)
+        .map(|(_, v)| v)
+        .unwrap_or_default();
     let nt = p["times_s"].as_array().map_or(0, Vec::len);
     if nt < 2
         || times.len() != nt
@@ -181,10 +249,16 @@ pub fn normalise(problem: &Value) -> Result<Value, CaeError> {
         p["nodal_forces_N"] = crate::util::nested(&shape, &loads);
     }
     if p.get("fatigue_observer").is_some_and(|v| !v.is_null()) {
-        let row = crate::fatigue::validate_fatigue_row(&p["fatigue_observer"])?.unwrap_or(Value::Null);
-        let beyond =
-            row["settings"]["cycles"].as_array().into_iter().flatten().any(|c| {
-                c["end_index"].as_u64().is_some_and(|e| usize::try_from(e).unwrap_or(usize::MAX) >= nt)
+        let row =
+            crate::fatigue::validate_fatigue_row(&p["fatigue_observer"])?.unwrap_or(Value::Null);
+        let beyond = row["settings"]["cycles"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|c| {
+                c["end_index"]
+                    .as_u64()
+                    .is_some_and(|e| usize::try_from(e).unwrap_or(usize::MAX) >= nt)
             });
         if beyond {
             return contract("fatigue cycle exceeds authored solid history");
@@ -194,8 +268,9 @@ pub fn normalise(problem: &Value) -> Result<Value, CaeError> {
     if p["materials"].as_array().map_or(0, Vec::len) != 2 {
         return contract("current field interpolation requires two explicit material endpoints");
     }
-    let material_name =
-        p["components"].get("material").map_or_else(|| "None".into(), implexity_core::pyobj::py_str);
+    let material_name = p["components"]
+        .get("material")
+        .map_or_else(|| "None".into(), implexity_core::pyobj::py_str);
     let crate::components::SolidComponent::Material(law) =
         selected_component(&material_name, "material_properties")?
     else {
@@ -207,9 +282,13 @@ pub fn normalise(problem: &Value) -> Result<Value, CaeError> {
     if law.reversible_thermoelastic() {
         let present = |k: &str| p.get(k).is_some_and(|v| !v.is_null());
         let selected = |k: &str| p["components"].get(k).is_some_and(|v| !v.is_null());
-        if ["material_history", "viscoelasticity", "inactive_phase_numerical_material"]
-            .iter()
-            .any(|k| present(k))
+        if [
+            "material_history",
+            "viscoelasticity",
+            "inactive_phase_numerical_material",
+        ]
+        .iter()
+        .any(|k| present(k))
             || selected("plasticity")
             || selected("creep")
         {
@@ -220,14 +299,20 @@ pub fn normalise(problem: &Value) -> Result<Value, CaeError> {
     }
     let mut checked = Vec::new();
     let mut errors = Vec::new();
-    for (i, m) in p["materials"].as_array().cloned().unwrap_or_default().iter().enumerate() {
+    for (i, m) in p["materials"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .iter()
+        .enumerate()
+    {
         match law.validate(m) {
             Ok(v) => checked.push(v),
             Err(e) => {
                 let name = match m {
-                    Value::Object(o) => {
-                        o.get("name").map_or_else(|| "unnamed".to_string(), implexity_core::pyobj::py_str)
-                    }
+                    Value::Object(o) => o
+                        .get("name")
+                        .map_or_else(|| "unnamed".to_string(), implexity_core::pyobj::py_str),
                     _ => "invalid object".to_string(),
                 };
                 errors.push(format!("material[{i}] {name}: {}", e.message()));
@@ -237,7 +322,12 @@ pub fn normalise(problem: &Value) -> Result<Value, CaeError> {
     if !errors.is_empty() {
         return contract(errors.join("; "));
     }
-    p["materials"] = Value::Array(checked.iter().map(|m| Value::Object(m.raw.clone())).collect());
+    p["materials"] = Value::Array(
+        checked
+            .iter()
+            .map(|m| Value::Object(m.raw.clone()))
+            .collect(),
+    );
     if map.contains_key("inactive_phase_numerical_material") {
         let policy = p["inactive_phase_numerical_material"].clone();
         if !law.supports_numerical_material() {
@@ -245,21 +335,30 @@ pub fn normalise(problem: &Value) -> Result<Value, CaeError> {
                 "selected solid material does not support inactive-phase/endmember numerical continuation",
             );
         }
-        let policies: Vec<Value> =
-            checked.iter().map(|m| law.validate_numerical_material(m, &policy)).collect::<Result<_, _>>()?;
+        let policies: Vec<Value> = checked
+            .iter()
+            .map(|m| law.validate_numerical_material(m, &policy))
+            .collect::<Result<_, _>>()?;
         if policies.iter().any(|r| r != &policies[0]) {
-            return contract("solid endpoint materials disagree on the numerical continuation contract");
+            return contract(
+                "solid endpoint materials disagree on the numerical continuation contract",
+            );
         }
         p["inactive_phase_numerical_material"] = policies[0].clone();
     }
-    if p.get("material_history_numerical_extension").is_some_and(|v| !v.is_null())
+    if p.get("material_history_numerical_extension")
+        .is_some_and(|v| !v.is_null())
         && p.get("material_history").is_none_or(Value::is_null)
     {
-        return contract("material-history numerical extension requires a selected material history");
+        return contract(
+            "material-history numerical extension requires a selected material history",
+        );
     }
     let t0 = &p["temperature_initial_K"];
     if checked.iter().any(|m| Some(m.t_ref) != t0.as_f64()) {
-        return contract("initial stress-free temperature must equal both material reference temperatures");
+        return contract(
+            "initial stress-free temperature must equal both material reference temperatures",
+        );
     }
     let components_ok = p["components"]
         .as_object()
@@ -279,7 +378,12 @@ pub fn normalise(problem: &Value) -> Result<Value, CaeError> {
     let plasticity_name = p["components"]["plasticity"].as_str().map(str::to_string);
     law.validate_bindings(plasticity_name.as_deref())?;
     let t_initial = t0.as_f64().unwrap_or(f64::NAN);
-    for family in ["displacement_bcs", "temperature_bcs", "tractions", "heat_fluxes"] {
+    for family in [
+        "displacement_bcs",
+        "temperature_bcs",
+        "tractions",
+        "heat_fluxes",
+    ] {
         let Some(rows) = p[family].as_array().cloned() else {
             return contract(format!("{family} must be an array"));
         };
@@ -289,27 +393,41 @@ pub fn normalise(problem: &Value) -> Result<Value, CaeError> {
                 base.push("component");
             }
             if !has_exact_keys(bc, &base) {
-                return contract(format!("{family}: expected keys {}", crate::util::sorted_repr(base)));
+                return contract(format!(
+                    "{family}: expected keys {}",
+                    crate::util::sorted_repr(base)
+                ));
             }
-            let axis_ok = is_int(&bc["axis"]) && bc["axis"].as_i64().is_some_and(|a| (0..=2).contains(&a));
+            let axis_ok =
+                is_int(&bc["axis"]) && bc["axis"].as_i64().is_some_and(|a| (0..=2).contains(&a));
             if !axis_ok || !(bc["side"] == json!("lo") || bc["side"] == json!("hi")) {
                 return contract("face must specify axis 0/1/2 and side lo/hi");
             }
             if family == "displacement_bcs"
                 && !(is_int(&bc["component"])
-                    && bc["component"].as_i64().is_some_and(|a| (0..=2).contains(&a)))
+                    && bc["component"]
+                        .as_i64()
+                        .is_some_and(|a| (0..=2).contains(&a)))
             {
                 return contract("displacement component must be 0/1/2");
             }
-            let shape: Vec<usize> = if family == "tractions" { vec![nt, 3] } else { vec![nt] };
+            let shape: Vec<usize> = if family == "tractions" {
+                vec![nt, 3]
+            } else {
+                vec![nt]
+            };
             let v = finite_array(&bc["values"], &shape, family)?;
             let first = &v[..shape.iter().skip(1).product::<usize>()];
             if family != "temperature_bcs" && first.iter().any(|x| *x != 0.0) {
-                return contract("this stress-free initialisation requires zero initial loads/displacements");
+                return contract(
+                    "this stress-free initialisation requires zero initial loads/displacements",
+                );
             }
             #[allow(clippy::float_cmp)]
             if family == "temperature_bcs" && (v.iter().any(|x| *x <= 0.0) || v[0] != t_initial) {
-                return contract("temperature BC must be positive and start at the initial temperature");
+                return contract(
+                    "temperature BC must be positive and start at the initial temperature",
+                );
             }
         }
     }
@@ -318,15 +436,29 @@ pub fn normalise(problem: &Value) -> Result<Value, CaeError> {
         return contract("initial volumetric heat must be zero");
     }
     let r = &p["regularisation"];
-    if !has_exact_keys(r, &["conductivity_floor_W_mK", "stiffness_floor", "topology_penalty"]) {
-        return contract("explicit stiffness/conductivity regularisation and topology exponent required");
+    if !has_exact_keys(
+        r,
+        &[
+            "conductivity_floor_W_mK",
+            "stiffness_floor",
+            "topology_penalty",
+        ],
+    ) {
+        return contract(
+            "explicit stiffness/conductivity regularisation and topology exponent required",
+        );
     }
     let rv = |k: &str| num(&r[k]);
-    let valid =
-        ["stiffness_floor", "conductivity_floor_W_mK", "topology_penalty"].iter().all(|k| rv(k).is_some())
-            && rv("stiffness_floor").is_some_and(|s| 0.0 < s && s < 1.0)
-            && rv("conductivity_floor_W_mK").is_some_and(|s| s > 0.0)
-            && rv("topology_penalty").is_some_and(|s| s >= 1.0);
+    let valid = [
+        "stiffness_floor",
+        "conductivity_floor_W_mK",
+        "topology_penalty",
+    ]
+    .iter()
+    .all(|k| rv(k).is_some())
+        && rv("stiffness_floor").is_some_and(|s| 0.0 < s && s < 1.0)
+        && rv("conductivity_floor_W_mK").is_some_and(|s| s > 0.0)
+        && rv("topology_penalty").is_some_and(|s| s >= 1.0);
     if !valid {
         return contract("invalid void regularisation");
     }
@@ -344,7 +476,10 @@ pub fn normalise(problem: &Value) -> Result<Value, CaeError> {
     if !has_exact_keys(numerics, &numeric_keys) {
         return contract("explicit numerical scaling and validity settings required");
     }
-    if numeric_keys.iter().any(|k| num(&numerics[*k]).is_none_or(|v| v <= 0.0)) {
+    if numeric_keys
+        .iter()
+        .any(|k| num(&numerics[*k]).is_none_or(|v| v <= 0.0))
+    {
         return contract("all numerical scaling/limits must be positive finite");
     }
     if int_like(&numerics["max_iterations"]).is_none() {
@@ -383,14 +518,16 @@ pub fn normalise(problem: &Value) -> Result<Value, CaeError> {
         let polymer = crate::polymer::bind_viscoelastic(&p["viscoelasticity"], &p)?;
         if let Some(polymer) = polymer {
             viscoelastic_size = Some(polymer.size());
-            p["viscoelasticity"] =
-                json!({"component": p["viscoelasticity"]["component"], "settings": polymer.settings});
+            p["viscoelasticity"] = json!({"component": p["viscoelasticity"]["component"], "settings": polymer.settings});
         }
     }
     let layout = crate::inelastic::layout_for(plastic, creep, viscoelastic_size, &checked)?;
     let ni = layout.material_start() + mh.as_ref().map_or(0, |m| m.size);
     let nl = 16 + ni;
-    let assembly = match p.get("assembly").filter(|v| crate::history::ageing::truthy(v)) {
+    let assembly = match p
+        .get("assembly")
+        .filter(|v| crate::history::ageing::truthy(v))
+    {
         Some(a) => a.clone(),
         None => json!({"batch_size": 64, "max_estimated_bytes": 1_073_741_824_i64}),
     };
@@ -414,8 +551,10 @@ pub fn normalise(problem: &Value) -> Result<Value, CaeError> {
         nz += 6 * nn;
         dynamic = 6 * nc * 12 * 40 * 3 * 8 + batch128 * 12 * 40 * 8 * 8;
     }
-    let estimate =
-        6 * nc * nl128 * nl128 * 3 * 24 + 8 * nz * nt128 * 8 + batch128 * nl128 * nl128 * 8 * 8 + dynamic;
+    let estimate = 6 * nc * nl128 * nl128 * 3 * 24
+        + 8 * nz * nt128 * 8
+        + batch128 * nl128 * nl128 * 8 * 8
+        + dynamic;
     let budget = u128::try_from(assembly["max_estimated_bytes"].as_i64().unwrap_or(0)).unwrap_or(0);
     if estimate > budget {
         return contract(format!(
@@ -436,7 +575,8 @@ pub fn solid_boundary_editor_schema(family: &str) -> Value {
         _ => "W/m²",
     };
     let scalar = json!({"type": "number", "unit": unit});
-    let mut values = json!({"title": "Values at each history time", "type": "array", "items": scalar});
+    let mut values =
+        json!({"title": "Values at each history time", "type": "array", "items": scalar});
     if family == "tractions" {
         let prefix: Vec<Value> = ["X", "Y", "Z"]
             .iter()
@@ -446,13 +586,13 @@ pub fn solid_boundary_editor_schema(family: &str) -> Value {
                 s
             })
             .collect();
-        values["items"] = json!({"type": "array", "minItems": 3, "maxItems": 3, "prefixItems": prefix});
+        values["items"] =
+            json!({"type": "array", "minItems": 3, "maxItems": 3, "prefixItems": prefix});
     }
     let mut properties = json!({"axis": {"title": "Face axis (0=X, 1=Y, 2=Z)", "type": "integer", "enum": [0, 1, 2]},
         "side": {"title": "Face side (lo=minimum, hi=maximum)", "enum": ["lo", "hi"]}, "values": values});
     if family == "displacement_bcs" {
-        properties["component"] =
-            json!({"title": "Displacement direction (0=X, 1=Y, 2=Z)", "type": "integer", "enum": [0, 1, 2]});
+        properties["component"] = json!({"title": "Displacement direction (0=X, 1=Y, 2=Z)", "type": "integer", "enum": [0, 1, 2]});
     }
     let mut starter = json!({"axis": 0, "side": "lo", "values": match family {
         "tractions" => json!([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]),
@@ -489,21 +629,37 @@ pub fn solid_material_editor_schema() -> Value {
     ];
     let mut properties = Map::new();
     for (key, title, unit) in labels {
-        properties.insert(key.into(), json!({"title": title, "unit": unit, "type": "number"}));
+        properties.insert(
+            key.into(),
+            json!({"title": title, "unit": unit, "type": "number"}),
+        );
     }
-    let title = |k: &str| labels.iter().find(|(key, _, _)| *key == k).map_or("", |(_, t, _)| t);
-    let slopes: Map<String, Value> =
-        [("E", "Pa/K"), ("yield_stress", "Pa/K"), ("alpha", "1/K²"), ("k", "W/(m K²)"), ("cp", "J/(kg K²)")]
+    let title = |k: &str| {
+        labels
             .iter()
-            .map(|(k, u)| {
-                (
-                    (*k).to_string(),
-                    json!({"title": format!("{} slope", title(k)), "unit": u, "type": "number"}),
-                )
-            })
-            .collect();
+            .find(|(key, _, _)| *key == k)
+            .map_or("", |(_, t, _)| t)
+    };
+    let slopes: Map<String, Value> = [
+        ("E", "Pa/K"),
+        ("yield_stress", "Pa/K"),
+        ("alpha", "1/K²"),
+        ("k", "W/(m K²)"),
+        ("cp", "J/(kg K²)"),
+    ]
+    .iter()
+    .map(|(k, u)| {
+        (
+            (*k).to_string(),
+            json!({"title": format!("{} slope", title(k)), "unit": u, "type": "number"}),
+        )
+    })
+    .collect();
     properties.insert("name".into(), json!({"title": "Material name"}));
-    properties.insert("provenance".into(), json!({"title": "Data source and calibration"}));
+    properties.insert(
+        "provenance".into(),
+        json!({"title": "Data source and calibration"}),
+    );
     properties.insert("temperature_slopes".into(), json!({"title": "Linear temperature slopes",
         "description": "Absolute coefficient change per kelvin, not a relative multiplier. Values are referenced to the material reference temperature.",
         "properties": slopes}));
@@ -527,7 +683,10 @@ pub fn solid_editor_properties(dynamics: bool) -> Map<String, Value> {
         "nodal_forces_N": {"title": "Applied nodal force history", "format": "json",
             "description": "Optional [time][node][xyz] forces in N. C-order Cartesian nodes; zero initial load. Additive to face tractions. These are prescribed dead loads, not live CFD feedback."}}));
     if dynamics {
-        p.insert("structural_dynamics".into(), crate::structural_inertia::editor_schema());
+        p.insert(
+            "structural_dynamics".into(),
+            crate::structural_inertia::editor_schema(),
+        );
     }
     p
 }
@@ -539,7 +698,9 @@ pub fn merge_editor_schema(base: &Value, overlay: &Value) -> Value {
             let mut out = b.clone();
             for (k, v) in o {
                 let merged = match out.get(k) {
-                    Some(existing @ Value::Object(_)) if v.is_object() => merge_editor_schema(existing, v),
+                    Some(existing @ Value::Object(_)) if v.is_object() => {
+                        merge_editor_schema(existing, v)
+                    }
                     _ => v.clone(),
                 };
                 out.insert(k.clone(), merged);
@@ -575,14 +736,26 @@ pub fn solid_study_templates(solid: &Value, prefix: &[&str]) -> Vec<Value> {
             if normalise(&merge_patch(solid, &row["problem_patch"])).is_err() {
                 continue;
             }
-            let mut schema_patch = row.get("editor_schema_patch").cloned().filter(|v| !v.is_null());
+            let mut schema_patch = row
+                .get("editor_schema_patch")
+                .cloned()
+                .filter(|v| !v.is_null());
             for key in prefix.iter().rev() {
                 schema_patch = schema_patch.map(|s| json!({"properties": {*key: s}}));
             }
             let mut out = Map::new();
-            out.insert("schema".into(), json!("implexity-provider-study-template/1"));
+            out.insert(
+                "schema".into(),
+                json!("implexity-provider-study-template/1"),
+            );
             for (k, v) in row.as_object().into_iter().flatten() {
-                if !["problem_patch", "problem_requirements", "editor_schema_patch"].contains(&k.as_str()) {
+                if ![
+                    "problem_patch",
+                    "problem_requirements",
+                    "editor_schema_patch",
+                ]
+                .contains(&k.as_str())
+                {
                     out.insert(k.clone(), v.clone());
                 }
             }
@@ -648,10 +821,17 @@ pub fn provider_editor_schema(problem: &Value) -> Value {
             "transition_width_K": {"title": "Smooth transition width", "type": "number", "units": "K", "exclusiveMinimum": 0},
             "latent_heat_J_kg": {"title": "Latent heat per unit mass", "type": "number", "units": "J/kg", "minimum": 0}});
         let mut endpoints = Vec::new();
-        for material in problem.get("materials").and_then(Value::as_array).into_iter().flatten() {
+        for material in problem
+            .get("materials")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
             let mut endpoint = fields.clone();
             if material.is_object() {
-                for (source, target) in [("T_min", "exclusiveMinimum"), ("T_max", "exclusiveMaximum")] {
+                for (source, target) in
+                    [("T_min", "exclusiveMinimum"), ("T_max", "exclusiveMaximum")]
+                {
                     if let Some(v) = material.get(source) {
                         endpoint["transition_temperature_K"][target] = v.clone();
                     }
@@ -667,6 +847,15 @@ pub fn provider_editor_schema(problem: &Value) -> Value {
         }
         schema["properties"]["materials"] = json!({"title": "Solid material endpoints", "type": "array",
             "minItems": 2, "maxItems": 2, "items": {"properties": fields}, "prefixItems": endpoints});
+    }
+    if problem["components"]["creep"] == "strain_hardening_creep" {
+        if !schema.is_object() {
+            schema = json!({});
+        }
+        if schema.get("properties").is_none() {
+            schema["properties"] = json!({});
+        }
+        schema["properties"]["creep_parameters"] = json!({"title":"Creep calibration","type":"array","minItems":2,"maxItems":2,"items":{"type":"object","required":["schema","provenance","A","B","n","validity"],"properties":{"schema":{"const":crate::three_stage_creep::SCHEMA},"provenance":{"type":"string","title":"Calibration evidence"},"A":{"type":"array","minItems":5,"maxItems":5,"items":{"type":"number"}},"B":{"type":"array","minItems":5,"maxItems":5,"items":{"type":"number"}},"n":{"type":"number","minimum":1},"validity":{"type":"array","minItems":5,"maxItems":5,"items":{"type":"number"},"title":"Stress, strain and temperature limits"}}}});
     }
     schema
 }
@@ -700,8 +889,10 @@ pub fn authoring_contract() -> Map<String, Value> {
             "integration": "coupled branch states, stress and heat; parameter data supplied by user"}}))
 }
 
-
-pub(crate) fn refuse_chaboche_continuation(law: MaterialLaw, numerical: bool) -> Result<(), CaeError> {
+pub(crate) fn refuse_chaboche_continuation(
+    law: MaterialLaw,
+    numerical: bool,
+) -> Result<(), CaeError> {
     if numerical && law == MaterialLaw::ChabocheTable {
         return contract(
             "inactive-phase numerical continuation does not extend Chaboche kinematic-hardening branches",
