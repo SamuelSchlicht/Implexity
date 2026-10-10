@@ -1,6 +1,28 @@
 // SPDX-License-Identifier: Apache-2.0
 // METAPLEXIS-DISCLAIMER-BEGIN sha256=c7c02258f245d1dcd6db1e8066ef4f6bc1bf36430d91bf9aab026671723c058f
-// Open-access statement and disclaimer: see DISCLAIMER.md.
+// # Open-access statement and disclaimer
+//
+// ## Open-access statement
+// Metaplexis Ingenieurgesellschaft GmbH believes that open access to advanced computer-aided engineering (CAE) tools is essential to advancing research. Computational methods are developing rapidly and can explore scales and levels of complexity beyond those previously practical for unaided human workflows. By publishing Implexity, Metaplexis seeks to enable transparent inspection, reproducibility, independent validation, and collaborative scientific and engineering progress.
+//
+// This statement describes Metaplexis’s motivation. It is not a representation or guarantee of the software’s capabilities, accuracy, fitness, safety, or regulatory status.
+//
+// ## Relationship to the license
+// This notice is informational. It does not amend the Apache License, Version 2.0 (the “License”), or impose any additional condition, restriction, or field-of-use limitation. Permissions and conditions for first-party software are governed by the License. Nothing in this notice creates a warranty, guarantee, professional duty, support obligation, or acceptance of additional liability. Third-party material remains governed by its own notices and license terms.
+//
+// ## Engineering and validation status
+// Implexity is engineering software. Bundled models, examples, simulations, optimization outputs, geometry, renderings, and other results may be reduced-order, approximate, screening, exploratory, non-converged, or unvalidated unless expressly stated otherwise. They are not, by themselves, certification, qualification, design approval, a safety case, or professional engineering advice.
+//
+// Users remain responsible for selecting and validating models and data; checking inputs, units, assumptions, boundary conditions, convergence, sensitivities, constraints, materials, geometry, and outputs; obtaining suitably qualified review; and complying with applicable laws, codes, standards, and safety requirements. For any use in which failure could cause death, personal injury, environmental harm, or substantial property damage, users should apply an independently verified engineering and safety process and appropriate safeguards. These statements describe validation limits; they do not prohibit any use permitted by the License.
+//
+// ## Warranty and liability
+// Sections 7 and 8 of the License apply to the maximum extent permitted by applicable law. Nothing in this notice excludes or limits liability where exclusion or limitation is unlawful.
+//
+// Where German law applies, liability remains unaffected for intentional or grossly negligent conduct by Metaplexis, its statutory representatives, or vicarious agents; for culpable injury to life, body, or health; for mandatory liability under the German Product Liability Act (Produkthaftungsgesetz); and, where applicable, for claims within the scope of an expressly assumed guarantee or arising from fraudulent concealment of a defect.
+//
+// In the event of a slightly negligent breach of a material contractual obligation (an obligation whose performance is essential to proper performance of the contract and on whose performance the other party may regularly rely), liability, to the extent legally permissible, is limited to damage foreseeable and typical for the contract. The statutory allocation of the burden of proof remains unchanged.
+//
+// This savings clause does not create liability beyond liability imposed by applicable law or expressly agreed in writing.
 // METAPLEXIS-DISCLAIMER-END
 
 
@@ -372,6 +394,7 @@ struct Params<S> {
     scales: SampleScales<S>,
     impulse_scale: S,
     theta: f64,
+    incoming: Vec<(usize, Vec<S>)>,
 }
 
 impl<S: Scalar> Params<S> {
@@ -400,6 +423,7 @@ impl<S: Scalar> Params<S> {
             },
             impulse_scale: f(self.impulse_scale),
             theta: self.theta,
+            incoming: self.incoming.iter().map(|(cell, row)| (*cell, row.iter().copied().map(&f).collect())).collect(),
         }
     }
 }
@@ -1023,6 +1047,7 @@ impl<const Q: usize, L: Lattice<Q>> MovingLbm<Q, L> {
             },
             impulse_scale: S::one() / dt_f * (cfg.density_kg_m3 * dx.powi(4)),
             theta: (k as f64 - 0.5) / m as f64,
+            incoming: Vec::new(),
         }
     }
 
@@ -1093,6 +1118,7 @@ impl<const Q: usize, L: Lattice<Q>> MovingLbm<Q, L> {
             },
             impulse_scale: S::one() / dt_f * (cfg.density_kg_m3 * dx.powi(4)),
             theta: (k as f64 - 0.5) / m as f64,
+            incoming: Vec::new(),
         }
     }
 
@@ -1223,6 +1249,9 @@ impl<const Q: usize, L: Lattice<Q>> MovingLbm<Q, L> {
 
     #[inline]
     fn pre<S: Scalar>(&self, g: &[S], x: usize, p: &Params<S>) -> [S; Q] {
+        if let Ok(i) = p.incoming.binary_search_by_key(&x, |(cell, _)| *cell) {
+            return std::array::from_fn(|q| p.incoming[i].1[q]);
+        }
         let r = self.topology.port_slot[x];
         if r == NONE {
             self.topology.pull_cell(g, x)
@@ -1586,14 +1615,31 @@ impl<const Q: usize, L: Lattice<Q>> MovingLbm<Q, L> {
         to: usize,
         tau_s: S,
         mac: &Macro<S>,
+        acc: Option<&mut Accum<S>>,
+        scratch: &mut Vec<S>,
+    ) {
+        self.advance_from_with_incoming(n, initial, state, from, to, tau_s, mac, acc, scratch, &[]);
+    }
+
+    fn advance_from_with_incoming<S: Lane>(
+        &self,
+        n: usize,
+        initial: Option<&[S]>,
+        state: &mut Vec<S>,
+        from: usize,
+        to: usize,
+        tau_s: S,
+        mac: &Macro<S>,
         mut acc: Option<&mut Accum<S>>,
         scratch: &mut Vec<S>,
+        incoming: &[(usize, Vec<S>)],
     ) {
         let cells = self.cells();
         let mut dp = vec![[S::zero(); 3]; mac.occ.cells.len()];
         let mut buffer: Option<Fields<S>> = None;
         for k in from + 1..=to {
-            let p = self.params(tau_s, n, k);
+            let mut p = self.params(tau_s, n, k);
+            p.incoming = incoming.to_vec();
             let want = acc.is_some() && self.needs_fields(k);
             if want && buffer.is_none() {
                 buffer = Some(Fields { rho: vec![S::zero(); cells], u: vec![[S::zero(); 3]; cells] });
@@ -1636,7 +1682,10 @@ impl<const Q: usize, L: Lattice<Q>> MovingLbm<Q, L> {
                                 Some(input) if k == from + 1 => input,
                                 _ => scratch.as_slice(),
                             };
-                            *s += o.population_value(&p.scales, prior) * weight;
+                            *s += o.population_value_with_incoming(&p.scales, prior, |pulled| {
+                                p.incoming.binary_search_by_key(&(pulled % cells), |(cell,_)| *cell)
+                                    .ok().map(|i| p.incoming[i].1[pulled / cells])
+                            }) * weight;
                         } else if o.reads_occupancy() {
                             let kappa = self.config.saturation_width;
                             *s += o.open_area(
@@ -3166,3 +3215,5 @@ impl SubcycledField for AnyMovingLbm {
 }
 
 pub mod event_trace;
+
+pub mod gas_tick;

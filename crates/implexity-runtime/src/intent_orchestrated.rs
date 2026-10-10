@@ -1,6 +1,28 @@
 // SPDX-License-Identifier: Apache-2.0
 // METAPLEXIS-DISCLAIMER-BEGIN sha256=c7c02258f245d1dcd6db1e8066ef4f6bc1bf36430d91bf9aab026671723c058f
-// Open-access statement and disclaimer: see DISCLAIMER.md.
+// # Open-access statement and disclaimer
+//
+// ## Open-access statement
+// Metaplexis Ingenieurgesellschaft GmbH believes that open access to advanced computer-aided engineering (CAE) tools is essential to advancing research. Computational methods are developing rapidly and can explore scales and levels of complexity beyond those previously practical for unaided human workflows. By publishing Implexity, Metaplexis seeks to enable transparent inspection, reproducibility, independent validation, and collaborative scientific and engineering progress.
+//
+// This statement describes Metaplexis’s motivation. It is not a representation or guarantee of the software’s capabilities, accuracy, fitness, safety, or regulatory status.
+//
+// ## Relationship to the license
+// This notice is informational. It does not amend the Apache License, Version 2.0 (the “License”), or impose any additional condition, restriction, or field-of-use limitation. Permissions and conditions for first-party software are governed by the License. Nothing in this notice creates a warranty, guarantee, professional duty, support obligation, or acceptance of additional liability. Third-party material remains governed by its own notices and license terms.
+//
+// ## Engineering and validation status
+// Implexity is engineering software. Bundled models, examples, simulations, optimization outputs, geometry, renderings, and other results may be reduced-order, approximate, screening, exploratory, non-converged, or unvalidated unless expressly stated otherwise. They are not, by themselves, certification, qualification, design approval, a safety case, or professional engineering advice.
+//
+// Users remain responsible for selecting and validating models and data; checking inputs, units, assumptions, boundary conditions, convergence, sensitivities, constraints, materials, geometry, and outputs; obtaining suitably qualified review; and complying with applicable laws, codes, standards, and safety requirements. For any use in which failure could cause death, personal injury, environmental harm, or substantial property damage, users should apply an independently verified engineering and safety process and appropriate safeguards. These statements describe validation limits; they do not prohibit any use permitted by the License.
+//
+// ## Warranty and liability
+// Sections 7 and 8 of the License apply to the maximum extent permitted by applicable law. Nothing in this notice excludes or limits liability where exclusion or limitation is unlawful.
+//
+// Where German law applies, liability remains unaffected for intentional or grossly negligent conduct by Metaplexis, its statutory representatives, or vicarious agents; for culpable injury to life, body, or health; for mandatory liability under the German Product Liability Act (Produkthaftungsgesetz); and, where applicable, for claims within the scope of an expressly assumed guarantee or arising from fraudulent concealment of a defect.
+//
+// In the event of a slightly negligent breach of a material contractual obligation (an obligation whose performance is essential to proper performance of the contract and on whose performance the other party may regularly rely), liability, to the extent legally permissible, is limited to damage foreseeable and typical for the contract. The statutory allocation of the burden of proof remains unchanged.
+//
+// This savings clause does not create liability beyond liability imposed by applicable law or expressly agreed in writing.
 // METAPLEXIS-DISCLAIMER-END
 
 
@@ -476,8 +498,8 @@ impl IntentOrchestratedProvider {
 
     pub fn authoring_coordinates(&self, problem: &Value) -> CaeResult<Vec<String>> {
         let (_p, plan, ctx) = self.parts(problem)?;
-        Ok(if Self::geometry_map(&ctx)?.is_some() {
-            vec![TOPOLOGY_COORDINATE.to_string()]
+        Ok(if let Some(m) = Self::geometry_map(&ctx)? {
+            m.authoring_coordinates()
         } else {
             plan.active_design_coordinates.clone()
         })
@@ -490,7 +512,7 @@ impl IntentOrchestratedProvider {
         coordinate: &str,
     ) -> CaeResult<Option<Vec<usize>>> {
         let (_p, _plan, ctx) = self.parts(problem)?;
-        Ok(Self::geometry_map(&ctx)?.filter(|_| coordinate == TOPOLOGY_COORDINATE).map(|m| m.control_shape()))
+        Ok(Self::geometry_map(&ctx)?.and_then(|m| m.coordinate_shape(coordinate)))
     }
 
 
@@ -849,6 +871,7 @@ impl CaeProvider for IntentOrchestratedProvider {
                         "source": ["context", "provider_problems"]}],
                    "authoring_notes": "Edit provider problems once under Context. The provider synchronizes the planning copies when applying a revision. Conflicting changes to different copies are rejected."}),
         );
+        coordinates.insert(implexity_geometry::lattice::enrichment::COORDINATE.into());
         d.design_coordinates = coordinates.into_iter().collect();
         d.nonlinear = true;
         d.notes = vec![
@@ -1043,6 +1066,21 @@ impl DesignOperations for IntentOrchestratedProvider {
         match self.mapped_execution(value_of(problem)?, design, "export_matching_time_guess", options)? {
             ExecutionOutput::Guess(g) => Ok(g),
             _ => Err(contract("intent orchestration did not export a typed matching-time guess")),
+        }
+    }
+    fn default_design_bindings(&self, problem: &ProviderProblem) -> Option<CaeResult<Value>> {
+        let value = match value_of(problem) {
+            Ok(v) => v,
+            Err(e) => return Some(Err(e)),
+        };
+        let (_, _, ctx) = match self.parts(value) {
+            Ok(p) => p,
+            Err(e) => return Some(Err(e)),
+        };
+        match Self::geometry_map(&ctx) {
+            Ok(Some(m)) => m.default_bindings().map(Ok),
+            Ok(None) => None,
+            Err(e) => Some(Err(e)),
         }
     }
     fn authoring_design_coordinates(&self, problem: &ProviderProblem) -> Option<CaeResult<Vec<String>>> {

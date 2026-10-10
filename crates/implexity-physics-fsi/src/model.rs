@@ -1,9 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
 // METAPLEXIS-DISCLAIMER-BEGIN sha256=c7c02258f245d1dcd6db1e8066ef4f6bc1bf36430d91bf9aab026671723c058f
-// Open-access statement and disclaimer: see DISCLAIMER.md.
+// # Open-access statement and disclaimer
+//
+// ## Open-access statement
+// Metaplexis Ingenieurgesellschaft GmbH believes that open access to advanced computer-aided engineering (CAE) tools is essential to advancing research. Computational methods are developing rapidly and can explore scales and levels of complexity beyond those previously practical for unaided human workflows. By publishing Implexity, Metaplexis seeks to enable transparent inspection, reproducibility, independent validation, and collaborative scientific and engineering progress.
+//
+// This statement describes Metaplexis’s motivation. It is not a representation or guarantee of the software’s capabilities, accuracy, fitness, safety, or regulatory status.
+//
+// ## Relationship to the license
+// This notice is informational. It does not amend the Apache License, Version 2.0 (the “License”), or impose any additional condition, restriction, or field-of-use limitation. Permissions and conditions for first-party software are governed by the License. Nothing in this notice creates a warranty, guarantee, professional duty, support obligation, or acceptance of additional liability. Third-party material remains governed by its own notices and license terms.
+//
+// ## Engineering and validation status
+// Implexity is engineering software. Bundled models, examples, simulations, optimization outputs, geometry, renderings, and other results may be reduced-order, approximate, screening, exploratory, non-converged, or unvalidated unless expressly stated otherwise. They are not, by themselves, certification, qualification, design approval, a safety case, or professional engineering advice.
+//
+// Users remain responsible for selecting and validating models and data; checking inputs, units, assumptions, boundary conditions, convergence, sensitivities, constraints, materials, geometry, and outputs; obtaining suitably qualified review; and complying with applicable laws, codes, standards, and safety requirements. For any use in which failure could cause death, personal injury, environmental harm, or substantial property damage, users should apply an independently verified engineering and safety process and appropriate safeguards. These statements describe validation limits; they do not prohibit any use permitted by the License.
+//
+// ## Warranty and liability
+// Sections 7 and 8 of the License apply to the maximum extent permitted by applicable law. Nothing in this notice excludes or limits liability where exclusion or limitation is unlawful.
+//
+// Where German law applies, liability remains unaffected for intentional or grossly negligent conduct by Metaplexis, its statutory representatives, or vicarious agents; for culpable injury to life, body, or health; for mandatory liability under the German Product Liability Act (Produkthaftungsgesetz); and, where applicable, for claims within the scope of an expressly assumed guarantee or arising from fraudulent concealment of a defect.
+//
+// In the event of a slightly negligent breach of a material contractual obligation (an obligation whose performance is essential to proper performance of the contract and on whose performance the other party may regularly rely), liability, to the extent legally permissible, is limited to damage foreseeable and typical for the contract. The statutory allocation of the burden of proof remains unchanged.
+//
+// This savings clause does not create liability beyond liability imposed by applicable law or expressly agreed in writing.
 // METAPLEXIS-DISCLAIMER-END
-
-
 
 use std::sync::Arc;
 
@@ -13,11 +33,15 @@ use implexity_physics_lbm::moving::field::{AnyMovingLbm, MovingLbmConfig};
 use implexity_physics_solid::soft::design::FieldMap;
 use implexity_physics_solid::soft::model::{NodalPotential, SoftModel};
 use implexity_physics_solid::soft::stepper::Loading;
-use implexity_physics_solid::soft_fsi::field::{DesignLayout, SoftSolidField, SoftStepConfig, SoftStepCore};
+use implexity_physics_solid::soft_fsi::field::{
+    DesignLayout, SoftSolidField, SoftStepConfig, SoftStepCore,
+};
 use implexity_physics_solid::soft_fsi::observables::{Observables, SolidObservable};
 use implexity_physics_solid::soft_fsi::potentials::{ElasticFoundation, RigidPlaneBarrier};
 use implexity_physics_solid::soft_fsi::pushforward::PushforwardPoints;
-use implexity_physics_solid::soft_fsi::voxel::{KuhnMesh, VoxelDesignMap, VoxelGrid, kuhn_tetrahedra};
+use implexity_physics_solid::soft_fsi::voxel::{
+    KuhnMesh, VoxelDesignMap, VoxelGrid, kuhn_tetrahedra,
+};
 use implexity_solve::multirate_coupling::{MultirateOptions, MultirateStepper};
 
 use crate::carrier::SolidCarrier;
@@ -53,12 +77,20 @@ impl DesignChain {
             d.protected_density.clone(),
             d.projection,
         )?;
-        let mirror = d.mirror_axis.map(|a| (0..n).map(|v| mirror_voxel(grid, a, v)).collect());
-        let bound = d
-            .removal
-            .as_ref()
-            .map(|r| (0..n).map(|v| if r.removable[v] { r.reference[v] } else { 1.0 }).collect::<Vec<f64>>());
-        Ok(Self { field, mirror, voxels: n, bound })
+        let mirror = d
+            .mirror_axis
+            .map(|a| (0..n).map(|v| mirror_voxel(grid, a, v)).collect());
+        let bound = d.removal.as_ref().map(|r| {
+            (0..n)
+                .map(|v| if r.removable[v] { r.reference[v] } else { 1.0 })
+                .collect::<Vec<f64>>()
+        });
+        Ok(Self {
+            field,
+            mirror,
+            voxels: n,
+            bound,
+        })
     }
 
     #[must_use]
@@ -79,7 +111,10 @@ impl DesignChain {
     }
 
     fn check(&self, x: &[f64]) -> CaeResult<()> {
-        if x.len() != self.voxels || x.iter().any(|v| !(v.is_finite() && (0.0..=1.0).contains(v))) {
+        if x.len() != self.voxels
+            || x.iter()
+                .any(|v| !(v.is_finite() && (0.0..=1.0).contains(v)))
+        {
             return Err(CaeError::contract(format!(
                 "model:control needs {} values in [0, 1] (one per reference voxel)",
                 self.voxels
@@ -87,7 +122,6 @@ impl DesignChain {
         }
         Ok(())
     }
-
 
     pub fn forward(&self, x: &[f64]) -> CaeResult<Vec<f64>> {
         self.check(x)?;
@@ -97,7 +131,6 @@ impl DesignChain {
             Some(b) => rho.iter().zip(b).map(|(r, c)| r * c).collect(),
         })
     }
-
 
     pub fn pullback(&self, x: &[f64], g: &[f64]) -> CaeResult<Vec<f64>> {
         self.check(x)?;
@@ -141,7 +174,9 @@ impl std::fmt::Debug for FsiModel {
 }
 
 fn node_selection(points: &[[f64; 3]], b: &[[f64; 3]; 2], scale: f64) -> Vec<usize> {
-    (0..points.len()).filter(|&n| in_box(b, points[n], scale)).collect()
+    (0..points.len())
+        .filter(|&n| in_box(b, points[n], scale))
+        .collect()
 }
 
 fn element_materials(kuhn: &KuhnMesh, sd: &SolidSpec) -> (Vec<usize>, Vec<Vec<[f64; 3]>>) {
@@ -149,7 +184,16 @@ fn element_materials(kuhn: &KuhnMesh, sd: &SolidSpec) -> (Vec<usize>, Vec<Vec<[f
     let element_material: Vec<usize> = kuhn.owner.iter().map(|&v| map.voxel_material[v]).collect();
     let fibres = element_material
         .iter()
-        .map(|&m| if map.materials[m].fibres.is_some() { sd.fibre_directions.clone() } else { Vec::new() })
+        .map(|&m| {
+            if map.materials[m].fibres.is_some() {
+                map.fibre_directions[m]
+                    .as_ref()
+                    .unwrap_or(&sd.fibre_directions)
+                    .clone()
+            } else {
+                Vec::new()
+            }
+        })
         .collect();
     (element_material, fibres)
 }
@@ -169,13 +213,20 @@ fn with_removal_modifier(
                 spec,
                 problem.design.interpolation,
             )?);
-            Ok((soft.with_potential(Arc::clone(&m) as Arc<dyn NodalPotential>), Some(m)))
+            Ok((
+                soft.with_potential(Arc::clone(&m) as Arc<dyn NodalPotential>),
+                Some(m),
+            ))
         }
         _ => Ok((soft, None)),
     }
 }
 
-fn support_nodes(grid: &VoxelGrid, points: &[[f64; 3]], selection: &NodeSelection) -> CaeResult<Vec<usize>> {
+fn support_nodes(
+    grid: &VoxelGrid,
+    points: &[[f64; 3]],
+    selection: &NodeSelection,
+) -> CaeResult<Vec<usize>> {
     match selection {
         NodeSelection::Box(b) => Ok(node_selection(points, b, grid.element_size_m)),
         NodeSelection::Voxels(mask) => grid.voxel_nodes(mask),
@@ -183,7 +234,6 @@ fn support_nodes(grid: &VoxelGrid, points: &[[f64; 3]], selection: &NodeSelectio
 }
 
 impl FsiModel {
-
     pub fn new(problem: FsiProblem) -> CaeResult<Self> {
         let sd = &problem.solid;
         let kuhn = kuhn_tetrahedra(&sd.grid)?;
@@ -258,7 +308,9 @@ impl FsiModel {
         for (i, (b, k)) in sd.foundations.iter().enumerate() {
             let nodes = node_selection(&mesh.points, b, h);
             if nodes.is_empty() {
-                return Err(CaeError::contract(format!("solid.foundations[{i}] selects no node")));
+                return Err(CaeError::contract(format!(
+                    "solid.foundations[{i}] selects no node"
+                )));
             }
             let f = ElasticFoundation::new(n, nodes.into_iter().map(|node| (node, *k)).collect())?;
             soft = soft.with_potential(Arc::new(f) as Arc<dyn NodalPotential>);
@@ -278,7 +330,15 @@ impl FsiModel {
             carrier
         });
         let chain = DesignChain::new(&problem)?;
-        Ok(Self { problem, kuhn, soft, points, carrier, chain, modifier })
+        Ok(Self {
+            problem,
+            kuhn,
+            soft,
+            points,
+            carrier,
+            chain,
+            modifier,
+        })
     }
 
     pub fn solid_sample_name_metadata(&self) -> CaeResult<Vec<String>> {
@@ -287,7 +347,9 @@ impl FsiModel {
 
     fn solid_observables(&self) -> CaeResult<Observables> {
         let list: Vec<(String, SolidObservable)> = self.problem.observables.solid.clone();
-        let needs_points = list.iter().any(|(_, o)| matches!(o, SolidObservable::PlaneGap { .. }));
+        let needs_points = list
+            .iter()
+            .any(|(_, o)| matches!(o, SolidObservable::PlaneGap { .. }));
         Observables::new(
             &self.soft,
             list,
@@ -302,7 +364,9 @@ impl FsiModel {
         let (steps, dt, n) = (t.steps_per_period, t.macro_step_s(), self.soft.n());
         let mut groups: Vec<((f64, f64), Vec<f64>)> = Vec::new();
         for support in &sd.supports {
-            let Some(motion) = &support.motion else { continue };
+            let Some(motion) = &support.motion else {
+                continue;
+            };
             let signal = motion.signal();
             let slot = if let Some(i) = groups.iter().position(|(s, _)| *s == signal) {
                 i
@@ -389,7 +453,6 @@ impl FsiModel {
         cfg
     }
 
-
     pub fn fluid_field(&self) -> CaeResult<FluidField> {
         let inner = AnyMovingLbm::new(
             self.problem.fluid.lattice,
@@ -404,7 +467,6 @@ impl FsiModel {
         .with_void_ledger(Arc::clone(&self.carrier)))
     }
 
-
     pub fn solid_field(&self) -> CaeResult<SoftSolidField<'_>> {
         let sd = &self.problem.solid;
         let config = SoftStepConfig {
@@ -414,16 +476,17 @@ impl FsiModel {
             rayleigh: sd.rayleigh,
             newton: sd.newton,
         };
-        let layout = DesignLayout::VoxelDensity(VoxelDesignMap::new(&self.kuhn, sd.grid.voxel_count()));
+        let layout =
+            DesignLayout::VoxelDensity(VoxelDesignMap::new(&self.kuhn, sd.grid.voxel_count()));
         let mut core = SoftStepCore::new(&self.soft, config, layout, self.solid_observables()?)?
             .with_factorization_reuse(sd.factorization_reuse)?;
-        let extra: Vec<(Vec<f64>, Vec<f64>)> = self.motion_patterns()?.into_iter().skip(1).collect();
+        let extra: Vec<(Vec<f64>, Vec<f64>)> =
+            self.motion_patterns()?.into_iter().skip(1).collect();
         if !extra.is_empty() {
             core = core.with_prescribed_patterns(extra)?;
         }
         Ok(SoftSolidField::new(core))
     }
-
 
     pub fn stepper(&self) -> CaeResult<FsiStepper<'_>> {
         let c = &self.problem.coupling;
@@ -432,10 +495,15 @@ impl FsiModel {
             schur_ratio_limit: c.schur_ratio_limit,
             work_defect_limit: c.work_defect_limit,
         };
-        Ok(MultirateStepper::new(self.fluid_field()?, self.solid_field()?, options)?
-            .with_identity(format!("lattice_boltzmann_fsi_dynamic:{}", self.problem.identity()))
-            .with_field_newton(c.field_newton)?
-            .with_linear_solves(c.linear_solves)?
-            .with_step_cache_bytes(c.step_cache_bytes))
+        Ok(
+            MultirateStepper::new(self.fluid_field()?, self.solid_field()?, options)?
+                .with_identity(format!(
+                    "lattice_boltzmann_fsi_dynamic:{}",
+                    self.problem.identity()
+                ))
+                .with_initial_prediction(c.initial_prediction)?.with_field_newton(c.field_newton)?
+                .with_linear_solves(c.linear_solves)?
+                .with_step_cache_bytes(c.step_cache_bytes),
+        )
     }
 }

@@ -1,6 +1,28 @@
 // SPDX-License-Identifier: Apache-2.0
 // METAPLEXIS-DISCLAIMER-BEGIN sha256=c7c02258f245d1dcd6db1e8066ef4f6bc1bf36430d91bf9aab026671723c058f
-// Open-access statement and disclaimer: see DISCLAIMER.md.
+// # Open-access statement and disclaimer
+//
+// ## Open-access statement
+// Metaplexis Ingenieurgesellschaft GmbH believes that open access to advanced computer-aided engineering (CAE) tools is essential to advancing research. Computational methods are developing rapidly and can explore scales and levels of complexity beyond those previously practical for unaided human workflows. By publishing Implexity, Metaplexis seeks to enable transparent inspection, reproducibility, independent validation, and collaborative scientific and engineering progress.
+//
+// This statement describes Metaplexis’s motivation. It is not a representation or guarantee of the software’s capabilities, accuracy, fitness, safety, or regulatory status.
+//
+// ## Relationship to the license
+// This notice is informational. It does not amend the Apache License, Version 2.0 (the “License”), or impose any additional condition, restriction, or field-of-use limitation. Permissions and conditions for first-party software are governed by the License. Nothing in this notice creates a warranty, guarantee, professional duty, support obligation, or acceptance of additional liability. Third-party material remains governed by its own notices and license terms.
+//
+// ## Engineering and validation status
+// Implexity is engineering software. Bundled models, examples, simulations, optimization outputs, geometry, renderings, and other results may be reduced-order, approximate, screening, exploratory, non-converged, or unvalidated unless expressly stated otherwise. They are not, by themselves, certification, qualification, design approval, a safety case, or professional engineering advice.
+//
+// Users remain responsible for selecting and validating models and data; checking inputs, units, assumptions, boundary conditions, convergence, sensitivities, constraints, materials, geometry, and outputs; obtaining suitably qualified review; and complying with applicable laws, codes, standards, and safety requirements. For any use in which failure could cause death, personal injury, environmental harm, or substantial property damage, users should apply an independently verified engineering and safety process and appropriate safeguards. These statements describe validation limits; they do not prohibit any use permitted by the License.
+//
+// ## Warranty and liability
+// Sections 7 and 8 of the License apply to the maximum extent permitted by applicable law. Nothing in this notice excludes or limits liability where exclusion or limitation is unlawful.
+//
+// Where German law applies, liability remains unaffected for intentional or grossly negligent conduct by Metaplexis, its statutory representatives, or vicarious agents; for culpable injury to life, body, or health; for mandatory liability under the German Product Liability Act (Produkthaftungsgesetz); and, where applicable, for claims within the scope of an expressly assumed guarantee or arising from fraudulent concealment of a defect.
+//
+// In the event of a slightly negligent breach of a material contractual obligation (an obligation whose performance is essential to proper performance of the contract and on whose performance the other party may regularly rely), liability, to the extent legally permissible, is limited to damage foreseeable and typical for the contract. The statutory allocation of the burden of proof remains unchanged.
+//
+// This savings clause does not create liability beyond liability imposed by applicable law or expressly agreed in writing.
 // METAPLEXIS-DISCLAIMER-END
 
 use implexity_core::{CaeError,CaeResult};
@@ -45,15 +67,27 @@ impl ClosedSurfaceProblem{
  pub fn stepper(&self,design:&[f64])->CaeResult<ClosedSurfaceStepper<'_>>{
   let field=self.model.solid_field()?;let native=NativeNodalBinding::new(&self.model,&field,design)?;let(law,surface,distance)=self.document.contact.policies()?;
   let contact=NativeClosedSurfaceLaw::new(&native,law,surface,distance)?;let field=ContactField::new(field,contact)?;let c=&self.model.native_body(0)?.problem.coupling;
-  Ok(MultirateStepper::new(self.model.fluid_field()?,field,MultirateOptions{mode:c.mode.clone(),schur_ratio_limit:c.schur_ratio_limit,work_defect_limit:c.work_defect_limit})?.with_identity(self.identity.clone()).with_field_newton(c.field_newton)?.with_linear_solves(c.linear_solves)?.with_step_cache_bytes(c.step_cache_bytes))
+  Ok(MultirateStepper::new(self.model.fluid_field()?,field,MultirateOptions{mode:c.mode.clone(),schur_ratio_limit:c.schur_ratio_limit,work_defect_limit:c.work_defect_limit})?.with_identity(self.identity.clone()).with_initial_prediction(c.initial_prediction)?.with_field_newton(c.field_newton)?.with_linear_solves(c.linear_solves)?.with_step_cache_bytes(c.step_cache_bytes))
  }
 }
 
 impl ClosedSurfaceProblem{
  pub fn admit_loose_coupling(&self,stepper:&ClosedSurfaceStepper<'_>,design:&[f64])->CaeResult<serde_json::Value>{
+  admit_pair_loose_coupling(&self.model,stepper,design)
+ }
+}
+
+pub(crate) fn admit_pair_loose_coupling<A,L>(
+ model:&MovingFsiPairModel,
+ stepper:&MultirateStepper<A,ContactField<PairSolidField<'_>,L>>,
+ design:&[f64],
+)->CaeResult<serde_json::Value>
+where A:implexity_solve::multirate_coupling::SubcycledField,
+ L:super::contact_field::NativeContactLaw,
+{
   use implexity_solve::{multirate_coupling::{CouplingMode,FluxDrivenField},time_stepper::{TimeStepper,StepParameters},factorization::Factorization,local_condensation::LocalEliminationPartition};
   use implexity_physics_solid::soft::stepper::Scheme;
-  let policy=&self.model.native_body(0)?.problem.coupling;
+  let policy=&model.native_body(0)?.problem.coupling;
   if !matches!(policy.mode,CouplingMode::Loose{..}){return Ok(serde_json::json!({"required":false}));}
   let state=stepper.initial_state(design)?;let layout=stepper.layout();let field=stepper.field_b();let native=field.native();let previous=&state[layout.field_b.clone()];let p=StepParameters{design,time_scale:1.};let pred=field.predict(1,previous,None,p);
   let current=field.current_jacobian(1,&pred,previous,&vec![0.;field.trace_operator().nrows()],p)?;let(_,flux)=native.current_flux_jacobians(1,&pred[..native.state_size()],&previous[..native.state_size()],&vec![0.;native.trace_operator().nrows()],p)?;let flux=flux.to_csr()?;
@@ -63,12 +97,12 @@ impl ClosedSurfaceProblem{
   for body in 0..2{
    let body_field=native.body_field(body)?;let size=body_field.design_size();let local=StepParameters{design:&design[design_offset..design_offset+size],time_scale:1.};let history=body_field.core().history(local)?;let mass=history.mass_matrix().clone();let mut row=vec![0.;mass.nrows()];
    for(i,v)in row.iter_mut().enumerate(){let(columns,values)=flux.row(state_offset+i);*v=-columns.iter().zip(values).find(|(j,_)|**j==flux_offset+i).map(|(_,v)|*v).unwrap_or(0.);}
-   let coefficient=match self.model.native_body(body)?.problem.solid.scheme{Scheme::Quasistatic=>0.,Scheme::Newmark{beta,..}=>1./beta,Scheme::GeneralizedAlpha{rho_inf}=>{let am=(2.*rho_inf-1.)/(rho_inf+1.);let af=rho_inf/(rho_inf+1.);(1.-am)/(0.25*(1.-am+af).powi(2))},Scheme::AvfMidpoint{..}=>2.};
+   let coefficient=match model.native_body(body)?.problem.solid.scheme{Scheme::Quasistatic=>0.,Scheme::Newmark{beta,..}=>1./beta,Scheme::GeneralizedAlpha{rho_inf}=>{let am=(2.*rho_inf-1.)/(rho_inf+1.);let af=rho_inf/(rho_inf+1.);(1.-am)/(0.25*(1.-am+af).powi(2))},Scheme::AvfMidpoint{..}=>2.};
    if !coefficient.is_finite()||coefficient<=0.{return Err(fail("closed surface loose coupling needs inertial bodies"));}
    blocks.push((mass,row,coefficient,state_offset));state_offset+=body_field.state_size();flux_offset+=body_field.trace_operator().nrows();design_offset+=size;
   }
   let mass_action=|phi:&[f64]|->Vec<f64>{let mut out=vec![0.;field.state_size()];for(mass,row,coefficient,offset)in &blocks{let product=mass.matvec(&phi[*offset..*offset+mass.ncols()]).unwrap_or_else(|_|vec![f64::NAN;mass.nrows()]);for i in 0..product.len(){out[*offset+i]=row[i]*coefficient/(dt*dt)*product[i];}}out};
-  let binding=NativeNodalBinding::new(&self.model,native,design)?;let mut free=vec![false;field.state_size()];let mut modes=vec![vec![0.;field.state_size()];policy.preflight_modes];
+  let binding=NativeNodalBinding::new(model,native,design)?;let mut free=vec![false;field.state_size()];let mut modes=vec![vec![0.;field.state_size()];policy.preflight_modes];
   for body in 0..2{let body_field=native.body_field(body)?;let offset=blocks[body].3;for node in &binding.nodes()[body]{for a in 0..3{free[node.state[a]]= !body_field.core().model().fixed[node.state[a]-offset];}for(m,mode)in modes.iter_mut().enumerate(){let axis=m%3;if free[node.state[axis]]{let sign=if body==1&&(m/3)%2==0{-1.}else{1.};let weight=1.+(m/6)as f64*node.reference_m.iter().sum::<f64>();mode[node.state[axis]]=sign*weight;}}}}
   for _ in 0..8{
    let mut next=vec![];for mode in &modes{let rhs=mass_action(mode);let(x,_,_)=factor.solve(&rhs,false)?;let mut value=vec![0.;field.state_size()];for i in 0..value.len(){if free[i]{value[i]=x[i];}}next.push(value);}
@@ -77,5 +111,4 @@ impl ClosedSurfaceProblem{
   }
   let ratios=stepper.interface_schur_ratio(design,&state,&modes,&mass_action)?;
   Ok(serde_json::json!({"required":true,"ratios":ratios,"limit":policy.schur_ratio_limit,"mode_count":modes.len(),"inverse_iterations":8,"native_inertia":true,"exact_local_elimination":partition.is_some(),"global_spectral_bound_certified":false}))
- }
 }

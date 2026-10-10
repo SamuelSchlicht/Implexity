@@ -1,6 +1,28 @@
 // SPDX-License-Identifier: Apache-2.0
 // METAPLEXIS-DISCLAIMER-BEGIN sha256=c7c02258f245d1dcd6db1e8066ef4f6bc1bf36430d91bf9aab026671723c058f
-// Open-access statement and disclaimer: see DISCLAIMER.md.
+// # Open-access statement and disclaimer
+//
+// ## Open-access statement
+// Metaplexis Ingenieurgesellschaft GmbH believes that open access to advanced computer-aided engineering (CAE) tools is essential to advancing research. Computational methods are developing rapidly and can explore scales and levels of complexity beyond those previously practical for unaided human workflows. By publishing Implexity, Metaplexis seeks to enable transparent inspection, reproducibility, independent validation, and collaborative scientific and engineering progress.
+//
+// This statement describes Metaplexis’s motivation. It is not a representation or guarantee of the software’s capabilities, accuracy, fitness, safety, or regulatory status.
+//
+// ## Relationship to the license
+// This notice is informational. It does not amend the Apache License, Version 2.0 (the “License”), or impose any additional condition, restriction, or field-of-use limitation. Permissions and conditions for first-party software are governed by the License. Nothing in this notice creates a warranty, guarantee, professional duty, support obligation, or acceptance of additional liability. Third-party material remains governed by its own notices and license terms.
+//
+// ## Engineering and validation status
+// Implexity is engineering software. Bundled models, examples, simulations, optimization outputs, geometry, renderings, and other results may be reduced-order, approximate, screening, exploratory, non-converged, or unvalidated unless expressly stated otherwise. They are not, by themselves, certification, qualification, design approval, a safety case, or professional engineering advice.
+//
+// Users remain responsible for selecting and validating models and data; checking inputs, units, assumptions, boundary conditions, convergence, sensitivities, constraints, materials, geometry, and outputs; obtaining suitably qualified review; and complying with applicable laws, codes, standards, and safety requirements. For any use in which failure could cause death, personal injury, environmental harm, or substantial property damage, users should apply an independently verified engineering and safety process and appropriate safeguards. These statements describe validation limits; they do not prohibit any use permitted by the License.
+//
+// ## Warranty and liability
+// Sections 7 and 8 of the License apply to the maximum extent permitted by applicable law. Nothing in this notice excludes or limits liability where exclusion or limitation is unlawful.
+//
+// Where German law applies, liability remains unaffected for intentional or grossly negligent conduct by Metaplexis, its statutory representatives, or vicarious agents; for culpable injury to life, body, or health; for mandatory liability under the German Product Liability Act (Produkthaftungsgesetz); and, where applicable, for claims within the scope of an expressly assumed guarantee or arising from fraudulent concealment of a defect.
+//
+// In the event of a slightly negligent breach of a material contractual obligation (an obligation whose performance is essential to proper performance of the contract and on whose performance the other party may regularly rely), liability, to the extent legally permissible, is limited to damage foreseeable and typical for the contract. The statutory allocation of the burden of proof remains unchanged.
+//
+// This savings clause does not create liability beyond liability imposed by applicable law or expressly agreed in writing.
 // METAPLEXIS-DISCLAIMER-END
 
 
@@ -14,6 +36,9 @@ use implexity_core::wire::fingerprint_value;
 use implexity_geometry::field_registration::GridRegistration;
 use implexity_geometry::lattice::assembly::ControlledAssembly;
 use implexity_geometry::lattice::controls::{CONTROL_SCHEMA, control_contract, validate_control};
+use implexity_geometry::lattice::enrichment::{
+    COORDINATE as DETAIL_COORDINATE, PARAMETER as DETAIL_PARAMETER,
+};
 use implexity_geometry::lattice::node::ControlledLattice;
 use implexity_geometry::node::ConstructArgs;
 use implexity_geometry::{Attr, GeometryError, NdArray, Node, ParamValue};
@@ -294,7 +319,11 @@ impl GeometryDesignMap {
 
     pub fn validate_model(&self, node: &Node, parameter: &str) -> CaeResult<()> {
         let same = node.kind() == self.kind.name()
-            && parameter == "control"
+            && (parameter == "control"
+                || (parameter == DETAIL_PARAMETER
+                    && self
+                        .lattice()
+                        .is_some_and(|l| l.spec.residual_enrichment.is_some())))
             && fingerprint_value(&Value::Object(attrs_json(node.op().doc_attrs())))
                 == fingerprint_value(&self.spec["geometry"]);
         if same {
@@ -304,6 +333,35 @@ impl GeometryDesignMap {
                 "geometry map does not match the authoritative model; re-author the problem and preflight",
             ))
         }
+    }
+
+    pub fn authoring_coordinates(&self) -> Vec<String> {
+        let mut names = vec![CONTROL_COORDINATE.into()];
+        if self
+            .lattice()
+            .is_some_and(|l| l.spec.residual_enrichment.is_some())
+        {
+            names.push(DETAIL_COORDINATE.into());
+        }
+        names
+    }
+    pub fn coordinate_shape(&self, coordinate: &str) -> Option<Vec<usize>> {
+        if coordinate == CONTROL_COORDINATE {
+            Some(self.control_shape())
+        } else if coordinate == DETAIL_COORDINATE {
+            self.lattice()?
+                .spec
+                .residual_enrichment
+                .as_ref()
+                .map(|e| vec![e.coefficient_count()])
+        } else {
+            None
+        }
+    }
+    pub fn default_bindings(&self) -> Option<Value> {
+        let e = self.lattice()?.spec.residual_enrichment.as_ref()?;
+        Some(json!([{"coordinate":CONTROL_COORDINATE},
+            {"coordinate":DETAIL_COORDINATE,"ref":format!("model:{DETAIL_PARAMETER}"),"lower":e.coefficient_bounds()[0],"upper":e.coefficient_bounds()[1]}]))
     }
 
     fn validate_control(&self, control: &ArrayD<f64>) -> CaeResult<()> {
@@ -326,19 +384,41 @@ impl GeometryDesignMap {
     }
 
     fn require_control<'a>(&self, design: &'a NamedArrays, message: &str) -> CaeResult<&'a ArrayD<f64>> {
-        if design.len() != 1 || !design.contains(CONTROL_COORDINATE) {
+        let names = self.authoring_coordinates();
+        if design.len() != names.len() || names.iter().any(|n| !design.contains(n)) {
             return Err(err(message.to_string()));
+        }
+        if let Some(e) = self
+            .lattice()
+            .and_then(|l| l.spec.residual_enrichment.as_ref())
+        {
+            let detail = design
+                .get(DETAIL_COORDINATE)
+                .ok_or_else(|| err("local shape detail design missing"))?;
+            if detail.shape() != [e.coefficient_count()] {
+                return Err(err(
+                    "local shape detail design shape differs from support count",
+                ));
+            }
+            e.coefficients(&detail.iter().copied().collect::<Vec<_>>())
+                .map_err(|e| geo(&e))?;
         }
         let control = design.get(CONTROL_COORDINATE).ok_or_else(|| err(message.to_string()))?;
         self.validate_control(control)?;
         Ok(control)
     }
 
-    fn bound(&self, control: &ArrayD<f64>) -> CaeResult<Node> {
+    fn bound(&self, control: &ArrayD<f64>, design: &NamedArrays) -> CaeResult<Node> {
         let array = NdArray::from_f64(control.shape().to_vec(), control.iter().copied().collect())
             .ok_or_else(|| err("control tensor shape mismatch"))?;
         let mut params = self.node.params().clone();
         params.insert("control".into(), ParamValue::Array(Arc::new(array)));
+        if let Some(detail) = design.get(DETAIL_COORDINATE) {
+            let array =
+                NdArray::from_f64(detail.shape().to_vec(), detail.iter().copied().collect())
+                    .ok_or_else(|| err("local shape detail tensor shape mismatch"))?;
+            params.insert(DETAIL_PARAMETER.into(), ParamValue::Array(Arc::new(array)));
+        }
         Ok(self.node.with_params(params))
     }
 
@@ -372,7 +452,7 @@ impl GeometryDesignMap {
             design,
             "a mapped design must contain exactly the authoritative twenty-field model:control tensor",
         )?;
-        let node = self.bound(control)?;
+        let node = self.bound(control, design)?;
         let fields = self.source()?.analysis_fields(&node).map_err(|e| geo(&e))?;
         let view = self.view()?;
         let grid = IxDyn(&fields.shape);
@@ -427,13 +507,41 @@ impl GeometryDesignMap {
                 }
             }
         }
-        let node = self.bound(control)?;
-        let grad = self.source()?.analysis_vjp(&node, &adj_rho, &adj_phase).map_err(|e| geo(&e))?;
+        let node = self.bound(control, design)?;
+        let (grad, detail_grad) = if let Some(l) = self
+            .lattice()
+            .filter(|l| l.spec.residual_enrichment.is_some())
+        {
+            let fine = l
+                .analysis_fine_vjp(&node, &adj_rho, &adj_phase)
+                .map_err(|e| geo(&e))?;
+            let (base, detail) = l
+                .spec
+                .residual_enrichment
+                .as_ref()
+                .unwrap()
+                .transpose(&fine)
+                .map_err(|e| geo(&e))?;
+            (base, Some(detail))
+        } else {
+            (
+                self.source()?.analysis_vjp(&node, &adj_rho, &adj_phase).map_err(|e| geo(&e))?,
+                None,
+            )
+        };
         if !grad.iter().all(|v| v.is_finite()) {
             return Err(err("nonfinite complete geometry pullback"));
         }
         let array = ArrayD::from_shape_vec(IxDyn(control.shape()), grad).map_err(|e| err(e.to_string()))?;
-        Ok(NamedArrays::single(CONTROL_COORDINATE, array))
+        let mut out = NamedArrays::single(CONTROL_COORDINATE, array);
+        if let Some(detail) = detail_grad {
+            out.insert(
+                DETAIL_COORDINATE,
+                ArrayD::from_shape_vec(IxDyn(&[detail.len()]), detail)
+                    .map_err(|e| err(e.to_string()))?,
+            );
+        }
+        Ok(out)
     }
 
     fn reframe_registration(
@@ -596,6 +704,17 @@ impl GeometryDesignMap {
                     "components": control_contract()["components"].clone()}}),
             );
         }
+        if let Some(e) = self
+            .lattice()
+            .and_then(|l| l.spec.residual_enrichment.as_ref())
+        {
+            if let Some(layouts) = dg
+                .get_mut("design_field_layouts")
+                .and_then(Value::as_object_mut)
+            {
+                layouts.insert(DETAIL_COORDINATE.into(), e.compact_layout());
+            }
+        }
         if let Some(meta) = dg.get_mut("field_metadata").and_then(Value::as_object_mut) {
             for name in ["design_control", "design_material"] {
                 if let Some(row) = meta.get_mut(name).and_then(Value::as_object_mut) {
@@ -604,6 +723,13 @@ impl GeometryDesignMap {
                         json!("decoded_physical_field_not_free_control_tensor"),
                     );
                     row.insert("source_design_coordinate".into(), json!(CONTROL_COORDINATE));
+                    if self.authoring_coordinates().len() > 1 {
+                        row.remove("source_design_coordinate");
+                        row.insert(
+                            "source_design_coordinates".into(),
+                            json!(self.authoring_coordinates()),
+                        );
+                    }
                 }
             }
         }
@@ -633,6 +759,21 @@ impl GeometryDesignMap {
         result.insert("derivative".into(), json!("complete_discrete_geometry_vjp"));
         result.insert("control_shape".into(), json!(self.control_shape()));
         result.insert("analysis_shape".into(), json!(view.analysis_grid));
+        if let Some(e) = self
+            .lattice()
+            .and_then(|l| l.spec.residual_enrichment.as_ref())
+        {
+            result.insert("local_shape_detail".into(), e.compact_layout());
+            result.insert(
+                "decoded_control_shape".into(),
+                json!([
+                    20,
+                    e.fine_control_grid()[0],
+                    e.fine_control_grid()[1],
+                    e.fine_control_grid()[2]
+                ]),
+            );
+        }
         result.insert("analysis_sampling".into(), json!("trilinear_at_cell_centers_not_exact_cell_averages"));
         result.insert("origin_mm".into(), floats(&view.origin_mm));
         let constants: Vec<String> =

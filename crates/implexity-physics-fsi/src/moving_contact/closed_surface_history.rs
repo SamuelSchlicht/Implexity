@@ -1,12 +1,34 @@
 // SPDX-License-Identifier: Apache-2.0
 // METAPLEXIS-DISCLAIMER-BEGIN sha256=c7c02258f245d1dcd6db1e8066ef4f6bc1bf36430d91bf9aab026671723c058f
-// Open-access statement and disclaimer: see DISCLAIMER.md.
+// # Open-access statement and disclaimer
+//
+// ## Open-access statement
+// Metaplexis Ingenieurgesellschaft GmbH believes that open access to advanced computer-aided engineering (CAE) tools is essential to advancing research. Computational methods are developing rapidly and can explore scales and levels of complexity beyond those previously practical for unaided human workflows. By publishing Implexity, Metaplexis seeks to enable transparent inspection, reproducibility, independent validation, and collaborative scientific and engineering progress.
+//
+// This statement describes Metaplexis’s motivation. It is not a representation or guarantee of the software’s capabilities, accuracy, fitness, safety, or regulatory status.
+//
+// ## Relationship to the license
+// This notice is informational. It does not amend the Apache License, Version 2.0 (the “License”), or impose any additional condition, restriction, or field-of-use limitation. Permissions and conditions for first-party software are governed by the License. Nothing in this notice creates a warranty, guarantee, professional duty, support obligation, or acceptance of additional liability. Third-party material remains governed by its own notices and license terms.
+//
+// ## Engineering and validation status
+// Implexity is engineering software. Bundled models, examples, simulations, optimization outputs, geometry, renderings, and other results may be reduced-order, approximate, screening, exploratory, non-converged, or unvalidated unless expressly stated otherwise. They are not, by themselves, certification, qualification, design approval, a safety case, or professional engineering advice.
+//
+// Users remain responsible for selecting and validating models and data; checking inputs, units, assumptions, boundary conditions, convergence, sensitivities, constraints, materials, geometry, and outputs; obtaining suitably qualified review; and complying with applicable laws, codes, standards, and safety requirements. For any use in which failure could cause death, personal injury, environmental harm, or substantial property damage, users should apply an independently verified engineering and safety process and appropriate safeguards. These statements describe validation limits; they do not prohibit any use permitted by the License.
+//
+// ## Warranty and liability
+// Sections 7 and 8 of the License apply to the maximum extent permitted by applicable law. Nothing in this notice excludes or limits liability where exclusion or limitation is unlawful.
+//
+// Where German law applies, liability remains unaffected for intentional or grossly negligent conduct by Metaplexis, its statutory representatives, or vicarious agents; for culpable injury to life, body, or health; for mandatory liability under the German Product Liability Act (Produkthaftungsgesetz); and, where applicable, for claims within the scope of an expressly assumed guarantee or arising from fraudulent concealment of a defect.
+//
+// In the event of a slightly negligent breach of a material contractual obligation (an obligation whose performance is essential to proper performance of the contract and on whose performance the other party may regularly rely), liability, to the extent legally permissible, is limited to damage foreseeable and typical for the contract. The statutory allocation of the burden of proof remains unchanged.
+//
+// This savings clause does not create liability beyond liability imposed by applicable law or expressly agreed in writing.
 // METAPLEXIS-DISCLAIMER-END
 
 use std::collections::BTreeMap;
 use implexity_core::{CaeError,CaeResult};
 use implexity_linalg::dense::DenseMatrix;
-use implexity_solve::{checkpointed_history::{run_history,history_adjoint_many},state_store::StoreBudget,time_stepper::{TimeStepper,StepParameters}};
+use implexity_solve::{checkpointed_history::history_adjoint_many,state_store::StoreBudget,time_stepper::{TimeStepper,StepParameters}};
 use serde::{Serialize,Deserialize};
 use serde_json::Value;
 use super::{closed_surface_problem::{ClosedSurfaceProblemDocument,ClosedSurfaceProblem},sample_projection::{from_observables,PairSampleProjection}};
@@ -47,23 +69,63 @@ impl ClosedSurfaceHistoryDocument{
 }
 impl ClosedSurfaceHistoryProblem{
  pub fn execute(&self,controls:[&[f64];2],budget:&StoreBudget,gradients:bool)->CaeResult<ClosedSurfaceHistory>{
-  let design=self.problem.physical_design(controls)?;let stepper=self.problem.stepper(&design)?;
-  let projection=from_observables(&self.document.observables,[&self.document.problem.bodies[0]["observables"],&self.document.problem.bodies[1]["observables"]],stepper.sample_names().to_vec())?;
-  let time=&self.problem.model.native_body(0)?.problem.time;let autonomous=self.problem.model.fixed_horizon_autonomous()?;
-  let program=projection.bind_program(&self.document.responses,&DESIGN_KINDS,time.history_steps(),false,autonomous)?;
-  let coupling_admission=self.problem.admit_loose_coupling(&stepper,&design)?;
+  let design=self.problem.physical_design(controls)?;
+  let stepper=self.problem.stepper(&design)?;
+  execute_pair_history(
+   &self.problem.model,&stepper,controls,&design,
+   &self.document.observables,
+   [&self.document.problem.bodies[0]["observables"],&self.document.problem.bodies[1]["observables"]],
+   &self.document.responses,budget,gradients,||self.problem.admit_loose_coupling(&stepper,&design),self.problem.identity.clone(),
+  )
+ }
+}
+
+pub(crate) fn execute_pair_history<S:TimeStepper,A:FnOnce()->CaeResult<Value>>(
+ model:&super::separate_body::MovingFsiPairModel,
+ stepper:&S,
+ controls:[&[f64];2],
+ design:&[f64],
+ observables:&Value,
+ body_observables:[&Value;2],
+ response_program:&Value,
+ budget:&StoreBudget,
+ gradients:bool,
+ admission:A,
+ problem_identity:String,
+)->CaeResult<ClosedSurfaceHistory>{
+ execute_pair_history_observed(model,stepper,controls,design,observables,body_observables,response_program,budget,gradients,admission,problem_identity,None)
+}
+
+pub(crate) fn execute_pair_history_observed<S:TimeStepper,A:FnOnce()->CaeResult<Value>>(
+ model:&super::separate_body::MovingFsiPairModel,
+ stepper:&S,
+ controls:[&[f64];2],
+ design:&[f64],
+ observables:&Value,
+ body_observables:[&Value;2],
+ response_program:&Value,
+ budget:&StoreBudget,
+ gradients:bool,
+ admission:A,
+ problem_identity:String,
+ observer:Option<&mut dyn implexity_solve::checkpointed_history::HistoryObserver>,
+)->CaeResult<ClosedSurfaceHistory>{
+  let projection=from_observables(observables,[body_observables[0],body_observables[1]],stepper.sample_names().to_vec())?;
+  let time=&model.native_body(0)?.problem.time;let autonomous=model.fixed_horizon_autonomous()?;
+  let program=projection.bind_program(response_program,&DESIGN_KINDS,time.history_steps(),false,autonomous)?;
+  let coupling_admission=admission()?;
   let initial=stepper.initial_state(&design)?;let p=StepParameters{design:&design,time_scale:1.};
-  let run=run_history(&stepper,p,&initial,1,Some(time.history_steps()),None,time.checkpoint.clone(),budget)?;
+  let run=implexity_solve::checkpointed_history::run_history_observed(stepper,p,&initial,1,Some(time.history_steps()),None,time.checkpoint.clone(),budget,observer)?;
   let samples=projected(&projection,run.samples())?;let values=program.evaluate(&samples,stepper.nominal_step_s(),false,autonomous)?;
   let dynamic_gradients=if gradients{
    let bars:Vec<_>=values.iter().map(|(_,v)|source_bar(&projection,&v.d_samples)).collect::<CaeResult<_>>()?;
    let final_bars=vec![vec![0.;stepper.state_size()];bars.len()];
-   Some(history_adjoint_many(&stepper,p,&run,&bars,&final_bars)?)
+   Some(history_adjoint_many(stepper,p,&run,&bars,&final_bars)?)
   }else{None};
-  let split=self.problem.model.native_body(0)?.chain.len();
+  let split=model.native_body(0)?.chain.len();
   let pullback=|g:&[f64]|->CaeResult<[Vec<f64>;2]>{
    if g.len()!=design.len(){return Err(fail("closed history physical design cotangent shape"));}
-   Ok([self.problem.model.native_body(0)?.chain.pullback(controls[0],&g[..split])?,self.problem.model.native_body(1)?.chain.pullback(controls[1],&g[split..])?])
+   Ok([model.native_body(0)?.chain.pullback(controls[0],&g[..split])?,model.native_body(1)?.chain.pullback(controls[1],&g[split..])?])
   };
   let mut responses=BTreeMap::new();
   for (i,(name,v)) in values.into_iter().enumerate(){
@@ -73,10 +135,9 @@ impl ClosedSurfaceHistoryProblem{
    }else{None};
    if responses.insert(name,ClosedSurfaceHistoryResponse{value:v.value,control_gradients}).is_some(){return Err(fail("closed history response duplicated"));}
   }
-  for(name,value,g)in self.problem.model.event_design_terms(&design,&program)?{
+  for(name,value,g)in model.event_design_terms(&design,&program)?{
    let control_gradients=if gradients{Some(pullback(&g)?)}else{None};
    if responses.insert(name,ClosedSurfaceHistoryResponse{value,control_gradients}).is_some(){return Err(fail("closed history design response duplicated"));}
   }
-  Ok(ClosedSurfaceHistory{responses,samples,sample_names:projection.names().to_vec(),final_state:run.final_state().to_vec(),ledger:run.ledger().to_vec(),record:run.record(),coupling_admission,problem_identity:self.problem.identity.clone()})
- }
+  Ok(ClosedSurfaceHistory{responses,samples,sample_names:projection.names().to_vec(),final_state:run.final_state().to_vec(),ledger:run.ledger().to_vec(),record:run.record(),coupling_admission,problem_identity:problem_identity})
 }

@@ -1,8 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
 // METAPLEXIS-DISCLAIMER-BEGIN sha256=c7c02258f245d1dcd6db1e8066ef4f6bc1bf36430d91bf9aab026671723c058f
-// Open-access statement and disclaimer: see DISCLAIMER.md.
+// # Open-access statement and disclaimer
+//
+// ## Open-access statement
+// Metaplexis Ingenieurgesellschaft GmbH believes that open access to advanced computer-aided engineering (CAE) tools is essential to advancing research. Computational methods are developing rapidly and can explore scales and levels of complexity beyond those previously practical for unaided human workflows. By publishing Implexity, Metaplexis seeks to enable transparent inspection, reproducibility, independent validation, and collaborative scientific and engineering progress.
+//
+// This statement describes Metaplexis’s motivation. It is not a representation or guarantee of the software’s capabilities, accuracy, fitness, safety, or regulatory status.
+//
+// ## Relationship to the license
+// This notice is informational. It does not amend the Apache License, Version 2.0 (the “License”), or impose any additional condition, restriction, or field-of-use limitation. Permissions and conditions for first-party software are governed by the License. Nothing in this notice creates a warranty, guarantee, professional duty, support obligation, or acceptance of additional liability. Third-party material remains governed by its own notices and license terms.
+//
+// ## Engineering and validation status
+// Implexity is engineering software. Bundled models, examples, simulations, optimization outputs, geometry, renderings, and other results may be reduced-order, approximate, screening, exploratory, non-converged, or unvalidated unless expressly stated otherwise. They are not, by themselves, certification, qualification, design approval, a safety case, or professional engineering advice.
+//
+// Users remain responsible for selecting and validating models and data; checking inputs, units, assumptions, boundary conditions, convergence, sensitivities, constraints, materials, geometry, and outputs; obtaining suitably qualified review; and complying with applicable laws, codes, standards, and safety requirements. For any use in which failure could cause death, personal injury, environmental harm, or substantial property damage, users should apply an independently verified engineering and safety process and appropriate safeguards. These statements describe validation limits; they do not prohibit any use permitted by the License.
+//
+// ## Warranty and liability
+// Sections 7 and 8 of the License apply to the maximum extent permitted by applicable law. Nothing in this notice excludes or limits liability where exclusion or limitation is unlawful.
+//
+// Where German law applies, liability remains unaffected for intentional or grossly negligent conduct by Metaplexis, its statutory representatives, or vicarious agents; for culpable injury to life, body, or health; for mandatory liability under the German Product Liability Act (Produkthaftungsgesetz); and, where applicable, for claims within the scope of an expressly assumed guarantee or arising from fraudulent concealment of a defect.
+//
+// In the event of a slightly negligent breach of a material contractual obligation (an obligation whose performance is essential to proper performance of the contract and on whose performance the other party may regularly rely), liability, to the extent legally permissible, is limited to damage foreseeable and typical for the contract. The statutory allocation of the burden of proof remains unchanged.
+//
+// This savings clause does not create liability beyond liability imposed by applicable law or expressly agreed in writing.
 // METAPLEXIS-DISCLAIMER-END
-
 
 use implexity_ad::{Jet3, Scalar};
 use implexity_core::{CaeError, CaeResult};
@@ -25,7 +46,12 @@ pub struct ModalOptions {
 
 impl Default for ModalOptions {
     fn default() -> Self {
-        Self { modes: 4, guard_vectors: 6, tolerance: 1e-8, max_iterations: 300 }
+        Self {
+            modes: 4,
+            guard_vectors: 6,
+            tolerance: 1e-8,
+            max_iterations: 300,
+        }
     }
 }
 
@@ -63,7 +89,11 @@ fn dot(a: &[f64], b: &[f64]) -> f64 {
 }
 
 fn check_model(model: &SoftModel, params: &[f64]) -> CaeResult<()> {
-    if model.materials.iter().any(|m| m.prony.is_some()) {
+    if model
+        .materials
+        .iter()
+        .any(|m| m.prony.is_some() || m.directional_prony.is_some())
+    {
         return contract(
             "modal analysis takes elastic laws: evaluate a viscoelastic law at its storage modulus \
              (Prony::storage_ratio) instead of its incremental step stiffness",
@@ -76,7 +106,6 @@ fn check_model(model: &SoftModel, params: &[f64]) -> CaeResult<()> {
 }
 
 impl<'m> ModalAnalysis<'m> {
-
     pub fn at_rest(model: &'m SoftModel, params: &[f64]) -> CaeResult<Self> {
         check_model(model, params)?;
         let n3 = 3 * model.n();
@@ -101,10 +130,13 @@ impl<'m> ModalAnalysis<'m> {
         let x0 = history.initial_state()?;
         let y0 = vec![0.0; model.n_unknowns];
         let (_, _, jacobian) = history.step_system(0, &x0, &y0, None, true)?;
-        let np = if model.formulation.mixed() { model.n() } else { 0 };
+        let np = if model.formulation.mixed() {
+            model.n()
+        } else {
+            0
+        };
         Self::finish(model, params, vec![0.0; n3], vec![0.0; np], jacobian, false)
     }
-
 
     pub fn prestressed(
         model: &'m SoftModel,
@@ -120,8 +152,14 @@ impl<'m> ModalAnalysis<'m> {
             );
         }
         let steps = loading.steps();
-        let history =
-            SoftHistory::new(model, Scheme::Quasistatic, loading, (0.0, 0.0), newton, params.to_vec())?;
+        let history = SoftHistory::new(
+            model,
+            Scheme::Quasistatic,
+            loading,
+            (0.0, 0.0),
+            newton,
+            params.to_vec(),
+        )?;
         let mut x = history.initial_state()?;
         let mut prev = x.clone();
         let mut y = vec![0.0; model.n_unknowns];
@@ -133,7 +171,11 @@ impl<'m> ModalAnalysis<'m> {
         }
         let (_, _, jacobian) = history.step_system(steps - 1, &prev, &y, None, true)?;
         let n3 = 3 * model.n();
-        let np = if model.formulation.mixed() { model.n() } else { 0 };
+        let np = if model.formulation.mixed() {
+            model.n()
+        } else {
+            0
+        };
         let u = x[..n3].to_vec();
         let p = x[4 * n3..4 * n3 + np].to_vec();
         Self::finish(model, params, u, p, jacobian, true)
@@ -152,11 +194,25 @@ impl<'m> ModalAnalysis<'m> {
         };
         let lu = model.factor(&jacobian)?;
         let ne = model.ne();
-        let mass_factor: Vec<f64> = params[..ne].iter().map(|r| model.interpolation.mass(*r)).collect();
-        let stiffness_factor: Vec<f64> =
-            params[..ne].iter().map(|r| model.interpolation.stiffness(*r)).collect();
+        let mass_factor: Vec<f64> = params[..ne]
+            .iter()
+            .map(|r| model.interpolation.mass(*r))
+            .collect();
+        let stiffness_factor: Vec<f64> = params[..ne]
+            .iter()
+            .map(|r| model.interpolation.stiffness(*r))
+            .collect();
         let (mass, _) = model.global_mass_and_reference(&mass_factor, &stiffness_factor)?;
-        Ok(Self { model, params: params.to_vec(), u, p, jacobian, lu, mass, loaded })
+        Ok(Self {
+            model,
+            params: params.to_vec(),
+            u,
+            p,
+            jacobian,
+            lu,
+            mass,
+            loaded,
+        })
     }
 
     #[must_use]
@@ -168,7 +224,13 @@ impl<'m> ModalAnalysis<'m> {
     pub fn displacement_of(&self, y: &[f64]) -> Vec<f64> {
         let n3 = 3 * self.model.n();
         (0..n3)
-            .map(|i| if self.model.unknown[i] == usize::MAX { 0.0 } else { y[self.model.unknown[i]] })
+            .map(|i| {
+                if self.model.unknown[i] == usize::MAX {
+                    0.0
+                } else {
+                    y[self.model.unknown[i]]
+                }
+            })
             .collect()
     }
 
@@ -176,7 +238,10 @@ impl<'m> ModalAnalysis<'m> {
         let m = self.model;
         let n3 = 3 * m.n();
         let u = self.displacement_of(y);
-        let mu = self.mass.matvec(&u).map_err(|e| CaeError::contract(e.to_string()))?;
+        let mu = self
+            .mass
+            .matvec(&u)
+            .map_err(|e| CaeError::contract(e.to_string()))?;
         let mut out = vec![0.0; m.n_unknowns];
         for i in 0..n3 {
             if m.unknown[i] != usize::MAX {
@@ -187,13 +252,16 @@ impl<'m> ModalAnalysis<'m> {
     }
 
     fn a_mul(&self, y: &[f64]) -> CaeResult<Vec<f64>> {
-        self.jacobian.matvec(y).map_err(|e| CaeError::contract(e.to_string()))
+        self.jacobian
+            .matvec(y)
+            .map_err(|e| CaeError::contract(e.to_string()))
     }
 
     fn solve(&self, b: &mut [f64]) -> CaeResult<()> {
-        self.lu.solve_in_place(b).map_err(|e| CaeError::convergence(format!("modal solve: {e}")))
+        self.lu
+            .solve_in_place(b)
+            .map_err(|e| CaeError::convergence(format!("modal solve: {e}")))
     }
-
 
     #[allow(clippy::too_many_lines)]
     pub fn modes(&self, options: &ModalOptions) -> CaeResult<Modes> {
@@ -236,8 +304,14 @@ impl<'m> ModalAnalysis<'m> {
                 self.solve(&mut rhs)?;
                 next.push(rhs);
             }
-            let ax: Vec<Vec<f64>> = next.iter().map(|y| self.a_mul(y)).collect::<CaeResult<_>>()?;
-            let mx: Vec<Vec<f64>> = next.iter().map(|y| self.mass_mul(y)).collect::<CaeResult<_>>()?;
+            let ax: Vec<Vec<f64>> = next
+                .iter()
+                .map(|y| self.a_mul(y))
+                .collect::<CaeResult<_>>()?;
+            let mx: Vec<Vec<f64>> = next
+                .iter()
+                .map(|y| self.mass_mul(y))
+                .collect::<CaeResult<_>>()?;
             let mut ar = DenseMatrix::zeros(p, p);
             let mut mr = DenseMatrix::zeros(p, p);
             for a in 0..p {
@@ -258,7 +332,10 @@ impl<'m> ModalAnalysis<'m> {
                 })
                 .collect();
             eigenvalues.clone_from(&ritz.eigenvalues);
-            if eigenvalues[..options.modes].iter().any(|l| !(l.is_finite() && *l > 0.0)) {
+            if eigenvalues[..options.modes]
+                .iter()
+                .any(|l| !(l.is_finite() && *l > 0.0))
+            {
                 return Err(CaeError::convergence(
                     "modal analysis: non-positive eigenvalue (unsupported rigid motion or a buckled state)",
                 ));
@@ -267,14 +344,23 @@ impl<'m> ModalAnalysis<'m> {
             for (i, y) in basis.iter().take(options.modes).enumerate() {
                 let ay = self.a_mul(y)?;
                 let my = self.mass_mul(y)?;
-                let r: f64 =
-                    ay.iter().zip(&my).map(|(a, b)| (a - eigenvalues[i] * b).powi(2)).sum::<f64>().sqrt();
+                let r: f64 = ay
+                    .iter()
+                    .zip(&my)
+                    .map(|(a, b)| (a - eigenvalues[i] * b).powi(2))
+                    .sum::<f64>()
+                    .sqrt();
                 worst = worst.max(r / dot(&ay, &ay).sqrt());
             }
 
             let fixed_values = previous.len() == eigenvalues.len()
-                && (0..options.modes).all(|i| (eigenvalues[i] - previous[i]).abs() <= 1e-13 * eigenvalues[i]);
-            stalled = if fixed_values && worst > 0.5 * best_residual { stalled + 1 } else { 0 };
+                && (0..options.modes)
+                    .all(|i| (eigenvalues[i] - previous[i]).abs() <= 1e-13 * eigenvalues[i]);
+            stalled = if fixed_values && worst > 0.5 * best_residual {
+                stalled + 1
+            } else {
+                0
+            };
             best_residual = best_residual.min(worst);
             if worst <= options.tolerance || stalled >= 3 {
                 break;
@@ -298,10 +384,16 @@ impl<'m> ModalAnalysis<'m> {
             let lambda = eigenvalues[i];
             let ay = self.a_mul(y)?;
             let my = self.mass_mul(y)?;
-            let r: f64 = ay.iter().zip(&my).map(|(a, b)| (a - lambda * b).powi(2)).sum::<f64>().sqrt();
+            let r: f64 = ay
+                .iter()
+                .zip(&my)
+                .map(|(a, b)| (a - lambda * b).powi(2))
+                .sum::<f64>()
+                .sqrt();
             let norm = dot(y, &my).sqrt();
             out.eigenvalues.push(lambda);
-            out.frequencies_hz.push(lambda.sqrt() / (2.0 * std::f64::consts::PI));
+            out.frequencies_hz
+                .push(lambda.sqrt() / (2.0 * std::f64::consts::PI));
             out.residuals.push(r / dot(&ay, &ay).sqrt());
             out.vectors.push(y.iter().map(|v| v / norm).collect());
         }
@@ -341,7 +433,6 @@ impl<'m> ModalAnalysis<'m> {
         }
         Ok(value)
     }
-
 
     pub fn stiffness_scale_sensitivities(
         &self,
@@ -387,7 +478,6 @@ impl<'m> ModalAnalysis<'m> {
                 }
             }
             if self.loaded {
-
                 let mut z = c;
                 self.solve(&mut z)?;
                 let mut b = [0.0; 17];

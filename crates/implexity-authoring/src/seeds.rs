@@ -1,6 +1,28 @@
 // SPDX-License-Identifier: Apache-2.0
 // METAPLEXIS-DISCLAIMER-BEGIN sha256=c7c02258f245d1dcd6db1e8066ef4f6bc1bf36430d91bf9aab026671723c058f
-// Open-access statement and disclaimer: see DISCLAIMER.md.
+// # Open-access statement and disclaimer
+//
+// ## Open-access statement
+// Metaplexis Ingenieurgesellschaft GmbH believes that open access to advanced computer-aided engineering (CAE) tools is essential to advancing research. Computational methods are developing rapidly and can explore scales and levels of complexity beyond those previously practical for unaided human workflows. By publishing Implexity, Metaplexis seeks to enable transparent inspection, reproducibility, independent validation, and collaborative scientific and engineering progress.
+//
+// This statement describes Metaplexis’s motivation. It is not a representation or guarantee of the software’s capabilities, accuracy, fitness, safety, or regulatory status.
+//
+// ## Relationship to the license
+// This notice is informational. It does not amend the Apache License, Version 2.0 (the “License”), or impose any additional condition, restriction, or field-of-use limitation. Permissions and conditions for first-party software are governed by the License. Nothing in this notice creates a warranty, guarantee, professional duty, support obligation, or acceptance of additional liability. Third-party material remains governed by its own notices and license terms.
+//
+// ## Engineering and validation status
+// Implexity is engineering software. Bundled models, examples, simulations, optimization outputs, geometry, renderings, and other results may be reduced-order, approximate, screening, exploratory, non-converged, or unvalidated unless expressly stated otherwise. They are not, by themselves, certification, qualification, design approval, a safety case, or professional engineering advice.
+//
+// Users remain responsible for selecting and validating models and data; checking inputs, units, assumptions, boundary conditions, convergence, sensitivities, constraints, materials, geometry, and outputs; obtaining suitably qualified review; and complying with applicable laws, codes, standards, and safety requirements. For any use in which failure could cause death, personal injury, environmental harm, or substantial property damage, users should apply an independently verified engineering and safety process and appropriate safeguards. These statements describe validation limits; they do not prohibit any use permitted by the License.
+//
+// ## Warranty and liability
+// Sections 7 and 8 of the License apply to the maximum extent permitted by applicable law. Nothing in this notice excludes or limits liability where exclusion or limitation is unlawful.
+//
+// Where German law applies, liability remains unaffected for intentional or grossly negligent conduct by Metaplexis, its statutory representatives, or vicarious agents; for culpable injury to life, body, or health; for mandatory liability under the German Product Liability Act (Produkthaftungsgesetz); and, where applicable, for claims within the scope of an expressly assumed guarantee or arising from fraudulent concealment of a defect.
+//
+// In the event of a slightly negligent breach of a material contractual obligation (an obligation whose performance is essential to proper performance of the contract and on whose performance the other party may regularly rely), liability, to the extent legally permissible, is limited to damage foreseeable and typical for the contract. The statutory allocation of the burden of proof remains unchanged.
+//
+// This savings clause does not create liability beyond liability imposed by applicable law or expressly agreed in writing.
 // METAPLEXIS-DISCLAIMER-END
 
 
@@ -1281,6 +1303,49 @@ fn controlled_volume(values: &Map<String, Value>) -> AResult<Value> {
     from_graph(&node, "Spatially controlled design volume", meta)
 }
 
+fn enriched_volume(values: &Map<String, Value>) -> AResult<Value> {
+    let dims = [
+        f(values, "width_mm"),
+        f(values, "depth_mm"),
+        f(values, "height_mm"),
+    ];
+    let (n, c, q) = (
+        i(values, "analysis_cells"),
+        i(values, "control_nodes"),
+        i(values, "detail_grid_factor"),
+    );
+    let fine = (c - 1) * q + 1;
+    let center = [
+        f(values, "detail_center_x"),
+        f(values, "detail_center_y"),
+        f(values, "detail_center_z"),
+    ];
+    let radius = f(values, "detail_radius");
+    let support = json!({"center_mm":[center[0]*dims[0],center[1]*dims[1],center[2]*dims[2]],"radius_mm":[radius*dims[0],radius*dims[1],radius*dims[2]]});
+    let detail = json!({"schema":implexity_geometry::lattice::enrichment::SCHEMA,"fine_control_grid":[fine,fine,fine],"supports":[support],"residual_bounds":[-6.,6.],"coefficient_bounds":[-2.,2.]});
+    let node = construct_node(
+        "lattice.controlled",
+        &json!({"domain_mm":f3(dims),"analysis_grid":[n,n,n],"control_grid":[c,c,c],
+        "period_mm":jf(f(values,"period_mm")),"interface_mm":jf(f(values,"interface_mm")),"residual_enrichment":detail}),
+    )?;
+    let owner = node
+        .op()
+        .as_any()
+        .downcast_ref::<ControlledLattice>()
+        .ok_or_else(|| serr("local shape detail volume did not construct a native lattice"))?;
+    let layout = owner
+        .spec
+        .residual_enrichment
+        .as_ref()
+        .unwrap()
+        .compact_layout();
+    let meta = json!({"implexity":{"topology":{"coordinate":"model:control","ref":"model:control","lower":-8.,"upper":8.,"control_schema":CONTROL_SCHEMA,"representation":"spatial_implicit_controls"},
+        "spatial_controls":control_contract(),"local_shape_detail":layout,
+        "design_coordinates":[{"coordinate":"model:control","ref":"model:control"},{"coordinate":implexity_geometry::lattice::enrichment::COORDINATE,"ref":"model:residual_coefficients","lower":-2.,"upper":2.}],
+        "geometry_factory":{"creation_only":true,"settings":values,"note":"Local supports and the finer grid are fixed structure; coefficients remain design variables."}}});
+    from_graph(&node, "Spatial design volume with local shape detail", meta)
+}
+
 fn controlled_assembly(values: &Map<String, Value>) -> AResult<Value> {
     let dims = [f(values, "width_mm"), f(values, "depth_mm"), f(values, "height_mm")];
     let (count, nodes, samples) =
@@ -1341,7 +1406,7 @@ fn controlled_assembly(values: &Map<String, Value>) -> AResult<Value> {
 
 #[allow(clippy::too_many_lines)]
 fn core_seeds() -> Vec<SeedDefinition> {
-    vec![
+    let mut seeds = vec![
         def(
             "primitive.box",
             "Rounded box",
@@ -1592,5 +1657,23 @@ fn core_seeds() -> Vec<SeedDefinition> {
             Arc::new(controlled_assembly),
             true,
         ),
-    ]
+    ];
+    let mut enriched = seeds
+        .iter()
+        .find(|s| s.id == "lattice.controlled-volume")
+        .unwrap()
+        .clone();
+    enriched.id = "lattice.enriched-volume".into();
+    enriched.label = "Spatial volume with local shape detail".into();
+    enriched.description="Twenty spatial fields with optional local shape detail on a finer grid; local support positions stay fixed during optimization.".into();
+    enriched.builder = Arc::new(enriched_volume);
+    enriched.parameters.extend([
+        ip("detail_grid_factor","Local detail resolution",4,2,16,"Finer control intervals per coarse interval."),
+        np_full("detail_center_x","Detail centre X",0.25,0.,1.,0.05,"Fixed local support position as a fraction of the volume width.","1",false),
+        np_full("detail_center_y","Detail centre Y",0.25,0.,1.,0.05,"Fixed local support position as a fraction of the volume depth.","1",false),
+        np_full("detail_center_z","Detail centre Z",0.25,0.,1.,0.05,"Fixed local support position as a fraction of the volume height.","1",false),
+        np_full("detail_radius","Detail radius",0.20,0.01,0.5,0.01,"Support radius as a fraction of each volume extent; support must fit inside the volume.","1",false),
+    ]);
+    seeds.push(enriched);
+    seeds
 }

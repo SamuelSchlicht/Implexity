@@ -1,8 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
 // METAPLEXIS-DISCLAIMER-BEGIN sha256=c7c02258f245d1dcd6db1e8066ef4f6bc1bf36430d91bf9aab026671723c058f
-// Open-access statement and disclaimer: see DISCLAIMER.md.
+// # Open-access statement and disclaimer
+//
+// ## Open-access statement
+// Metaplexis Ingenieurgesellschaft GmbH believes that open access to advanced computer-aided engineering (CAE) tools is essential to advancing research. Computational methods are developing rapidly and can explore scales and levels of complexity beyond those previously practical for unaided human workflows. By publishing Implexity, Metaplexis seeks to enable transparent inspection, reproducibility, independent validation, and collaborative scientific and engineering progress.
+//
+// This statement describes Metaplexis’s motivation. It is not a representation or guarantee of the software’s capabilities, accuracy, fitness, safety, or regulatory status.
+//
+// ## Relationship to the license
+// This notice is informational. It does not amend the Apache License, Version 2.0 (the “License”), or impose any additional condition, restriction, or field-of-use limitation. Permissions and conditions for first-party software are governed by the License. Nothing in this notice creates a warranty, guarantee, professional duty, support obligation, or acceptance of additional liability. Third-party material remains governed by its own notices and license terms.
+//
+// ## Engineering and validation status
+// Implexity is engineering software. Bundled models, examples, simulations, optimization outputs, geometry, renderings, and other results may be reduced-order, approximate, screening, exploratory, non-converged, or unvalidated unless expressly stated otherwise. They are not, by themselves, certification, qualification, design approval, a safety case, or professional engineering advice.
+//
+// Users remain responsible for selecting and validating models and data; checking inputs, units, assumptions, boundary conditions, convergence, sensitivities, constraints, materials, geometry, and outputs; obtaining suitably qualified review; and complying with applicable laws, codes, standards, and safety requirements. For any use in which failure could cause death, personal injury, environmental harm, or substantial property damage, users should apply an independently verified engineering and safety process and appropriate safeguards. These statements describe validation limits; they do not prohibit any use permitted by the License.
+//
+// ## Warranty and liability
+// Sections 7 and 8 of the License apply to the maximum extent permitted by applicable law. Nothing in this notice excludes or limits liability where exclusion or limitation is unlawful.
+//
+// Where German law applies, liability remains unaffected for intentional or grossly negligent conduct by Metaplexis, its statutory representatives, or vicarious agents; for culpable injury to life, body, or health; for mandatory liability under the German Product Liability Act (Produkthaftungsgesetz); and, where applicable, for claims within the scope of an expressly assumed guarantee or arising from fraudulent concealment of a defect.
+//
+// In the event of a slightly negligent breach of a material contractual obligation (an obligation whose performance is essential to proper performance of the contract and on whose performance the other party may regularly rely), liability, to the extent legally permissible, is limited to damage foreseeable and typical for the contract. The statutory allocation of the burden of proof remains unchanged.
+//
+// This savings clause does not create liability beyond liability imposed by applicable law or expressly agreed in writing.
 // METAPLEXIS-DISCLAIMER-END
-
 
 use rayon::prelude::*;
 
@@ -13,7 +34,7 @@ use implexity_linalg::sparse::{CscMatrix, CsrMatrix};
 
 use super::design::Interpolation;
 use super::jet::Jet2;
-use super::laws::{Kin, Material, Volumetric, fibre_i4};
+use super::laws::{Kin, Material, RelaxationScale, Volumetric, fibre_i4};
 use crate::hyperelastic::kinematics::{Mat3, TetMesh, det, matmul, transpose};
 use crate::util::contract;
 
@@ -23,7 +44,13 @@ const GAUSS_A: f64 = 0.585_410_196_624_968_5;
 const GAUSS_B: f64 = 0.138_196_601_125_010_5;
 
 pub trait NodalPotential: Send + Sync + core::fmt::Debug {
-    fn admissible_step(&self, u: &[f64], direction: &[f64], params: &[f64], trial: f64) -> Result<f64, CaeError> {
+    fn admissible_step(
+        &self,
+        u: &[f64],
+        direction: &[f64],
+        params: &[f64],
+        trial: f64,
+    ) -> Result<f64, CaeError> {
         let _ = (u, direction, params);
         Ok(trial)
     }
@@ -36,7 +63,11 @@ pub trait NodalPotential: Send + Sync + core::fmt::Debug {
 
     fn force_params_vjp(&self, u: &[f64], params: &[f64], w: &[f64]) -> Result<Vec<f64>, CaeError>;
 
-    fn force_params_jacobian(&self, u: &[f64], params: &[f64]) -> Result<Vec<(usize, usize, f64)>, CaeError>;
+    fn force_params_jacobian(
+        &self,
+        u: &[f64],
+        params: &[f64],
+    ) -> Result<Vec<(usize, usize, f64)>, CaeError>;
 
     fn force_second_directional(
         &self,
@@ -57,9 +88,7 @@ pub trait NodalPotential: Send + Sync + core::fmt::Debug {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Formulation {
     Displacement,
-    Mixed {
-        stabilization: f64,
-    },
+    Mixed { stabilization: f64 },
 }
 
 impl Formulation {
@@ -94,13 +123,17 @@ pub struct SoftModel {
     pub n_unknowns: usize,
     pub n_free_u: usize,
     pattern: (Vec<usize>, Vec<usize>),
-    contact_node_pairs: Vec<(usize,usize)>,
+    contact_node_pairs: Vec<(usize, usize)>,
     symbolic: std::sync::OnceLock<LuSymbolic>,
 }
 
 pub fn rotate<S: Scalar>(a: &[f64; 3], n: &[f64; 3], theta: S) -> [S; 3] {
     let (c, s) = (theta.cos(), theta.sin());
-    let cross = [n[1] * a[2] - n[2] * a[1], n[2] * a[0] - n[0] * a[2], n[0] * a[1] - n[1] * a[0]];
+    let cross = [
+        n[1] * a[2] - n[2] * a[1],
+        n[2] * a[0] - n[0] * a[2],
+        n[0] * a[1] - n[1] * a[0],
+    ];
     let dot = n[0] * a[0] + n[1] * a[1] + n[2] * a[2];
     core::array::from_fn(|i| c * a[i] + s * cross[i] + (-c + 1.0) * (n[i] * dot))
 }
@@ -125,7 +158,6 @@ pub struct ElementLocal {
 }
 
 impl SoftModel {
-
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         mesh: TetMesh,
@@ -142,13 +174,29 @@ impl SoftModel {
         let n = mesh.node_count();
         let ne = mesh.elements.len();
         if ne == 0 || mesh.volumes.iter().any(|v| !(v.is_finite() && *v > 0.0)) {
-            return contract("the mesh requires positively oriented tetrahedra with nonzero volume");
+            return contract(
+                "the mesh requires positively oriented tetrahedra with nonzero volume",
+            );
         }
         if materials.is_empty()
             || element_material.len() != ne
             || element_material.iter().any(|m| *m >= materials.len())
         {
-            return contract("element_material must assign one listed material to every tetrahedron");
+            return contract(
+                "element_material must assign one listed material to every tetrahedron",
+            );
+        }
+        for material in &materials {
+            if let Some(p) = &material.directional_prony {
+                material.clone().with_directional_prony(p.clone())?;
+            }
+            if !material.matrix_scale.is_finite()
+                || material.matrix_scale <= 0.0
+                || !material.fibre_scale.is_finite()
+                || material.fibre_scale <= 0.0
+            {
+                return contract("matrix and fibre property scales must be finite and positive");
+            }
         }
         interpolation.validate()?;
         if let Formulation::Mixed { stabilization } = formulation {
@@ -160,17 +208,31 @@ impl SoftModel {
                     "the mixed u-p formulation requires decoupled laws (not neo_hookean_coupled)",
                 );
             }
-        } else if materials.iter().any(|m| matches!(m.volumetric, Volumetric::Incompressible)) {
+        } else if materials
+            .iter()
+            .any(|m| matches!(m.volumetric, Volumetric::Incompressible))
+        {
             return contract("exact incompressibility requires the mixed u-p formulation");
         }
-        if materials.iter().any(|m| m.coupled() && m.prony.is_some()) {
+        if materials
+            .iter()
+            .any(|m| m.coupled() && (m.prony.is_some() || m.directional_prony.is_some()))
+        {
             return contract("prony viscoelasticity requires a decoupled (isochoric) law");
         }
         if fibres.len() != ne || fibre_axis.len() != ne {
             return contract("fibre directions and axes are required per element");
         }
         for (e, dirs) in fibres.iter().enumerate() {
-            let needs = materials[element_material[e]].fibres.is_some();
+            let mat = &materials[element_material[e]];
+            if let Some(p) = &mat.directional_prony
+                && p.fibres.len() != dirs.len()
+            {
+                return contract(
+                    "directional_prony must list one spectrum or null for each fibre direction",
+                );
+            }
+            let needs = mat.fibres.is_some();
             if needs != !dirs.is_empty() || dirs.len() > MAX_FIBRES {
                 return contract(
                     "fibre-reinforced materials need 1..4 fibre directions per element, other materials none",
@@ -233,7 +295,6 @@ impl SoftModel {
         Ok(model)
     }
 
-
     pub fn with_interpolation(mut self, interpolation: Interpolation) -> Result<Self, CaeError> {
         interpolation.validate()?;
         self.interpolation = interpolation;
@@ -246,26 +307,47 @@ impl SoftModel {
         self
     }
 
-    pub fn with_potential_couplings(mut self,potential:std::sync::Arc<dyn NodalPotential>,node_pairs:&[(usize,usize)])->Result<Self,CaeError> {
-        if node_pairs.iter().any(|(a,b)|*a>=self.n()||*b>=self.n()) {return contract("contact sparsity references unknown nodes");}
+    pub fn with_potential_couplings(
+        mut self,
+        potential: std::sync::Arc<dyn NodalPotential>,
+        node_pairs: &[(usize, usize)],
+    ) -> Result<Self, CaeError> {
+        if node_pairs
+            .iter()
+            .any(|(a, b)| *a >= self.n() || *b >= self.n())
+        {
+            return contract("contact sparsity references unknown nodes");
+        }
         self.contact_node_pairs.extend_from_slice(node_pairs);
-        self.contact_node_pairs.sort_unstable();self.contact_node_pairs.dedup();
+        self.contact_node_pairs.sort_unstable();
+        self.contact_node_pairs.dedup();
         self.potentials.push(potential);
-        self.pattern=self.build_pattern();self.symbolic=std::sync::OnceLock::new();
+        self.pattern = self.build_pattern();
+        self.symbolic = std::sync::OnceLock::new();
         Ok(self)
     }
 
-    pub fn admissible_step(&self, u: &[f64], direction: &[f64], params: &[f64], trial: f64) -> Result<f64, CaeError> {
-        if u.len()!=3*self.n() || direction.len()!=u.len() || !trial.is_finite() || trial<=0.0 {
+    pub fn admissible_step(
+        &self,
+        u: &[f64],
+        direction: &[f64],
+        params: &[f64],
+        trial: f64,
+    ) -> Result<f64, CaeError> {
+        if u.len() != 3 * self.n()
+            || direction.len() != u.len()
+            || !trial.is_finite()
+            || trial <= 0.0
+        {
             return contract("invalid potential path");
         }
-        let mut limit=trial;
+        let mut limit = trial;
         for potential in &self.potentials {
-            let next=potential.admissible_step(u,direction,params,limit)?;
-            if !next.is_finite() || next<=0.0 || next>limit {
+            let next = potential.admissible_step(u, direction, params, limit)?;
+            if !next.is_finite() || next <= 0.0 || next > limit {
                 return contract("potential returned invalid path limit");
             }
-            limit=next;
+            limit = next;
         }
         Ok(limit)
     }
@@ -289,7 +371,13 @@ impl SoftModel {
     pub fn element_dofs(&self, e: usize) -> [usize; 16] {
         let t = self.mesh.elements[e];
         let n = self.n();
-        core::array::from_fn(|k| if k < 12 { 3 * t[k / 3] + k % 3 } else { 3 * n + t[k - 12] })
+        core::array::from_fn(|k| {
+            if k < 12 {
+                3 * t[k / 3] + k % 3
+            } else {
+                3 * n + t[k - 12]
+            }
+        })
     }
 
     fn build_pattern(&self) -> (Vec<usize>, Vec<usize>) {
@@ -308,7 +396,9 @@ impl SoftModel {
         for f in &self.faces {
             link(f);
         }
-        for &(a,b) in &self.contact_node_pairs {link(&[a,b]);}
+        for &(a, b) in &self.contact_node_pairs {
+            link(&[a, b]);
+        }
         for row in &mut adjacency {
             row.sort_unstable();
             row.dedup();
@@ -348,19 +438,26 @@ impl SoftModel {
         (indptr, indices)
     }
 
-
     pub fn zero_matrix(&self) -> Result<CscMatrix, CaeError> {
         let (p, i) = &self.pattern;
-        CscMatrix::try_new(self.n_unknowns, self.n_unknowns, p.clone(), i.clone(), vec![0.0; i.len()])
-            .map_err(|e| CaeError::contract(format!("soft model pattern: {e}")))
+        CscMatrix::try_new(
+            self.n_unknowns,
+            self.n_unknowns,
+            p.clone(),
+            i.clone(),
+            vec![0.0; i.len()],
+        )
+        .map_err(|e| CaeError::contract(format!("soft model pattern: {e}")))
     }
 
     fn slot(&self, row: usize, col: usize) -> Option<usize> {
         let (p, i) = &self.pattern;
         let range = p[col]..p[col + 1];
-        i[range.clone()].binary_search(&row).ok().map(|k| range.start + k)
+        i[range.clone()]
+            .binary_search(&row)
+            .ok()
+            .map(|k| range.start + k)
     }
-
 
     pub fn factor(&self, a: &CscMatrix) -> Result<SparseLu, CaeError> {
         let symbolic = if let Some(s) = self.symbolic.get() {
@@ -396,8 +493,9 @@ impl SoftModel {
         pbar: S,
         d: &ElemDesign<S>,
         h: &Mat3<S>,
-        g: f64,
+        g: impl Into<RelaxationScale> + Copy,
     ) -> S {
+        let g = g.into();
         let mat = &self.materials[self.element_material[e]];
         let mixed = self.formulation.mixed();
         let wang = self.interpolation.wang_active();
@@ -412,7 +510,7 @@ impl SoftModel {
             *f
         };
         let k = Kin::of(&fg);
-        let mut w = mat.isochoric(&k, &d.dirs[..d.nf]) * g;
+        let mut w = mat.scaled_isochoric(&k, &d.dirs[..d.nf], g);
         if !mixed {
             w += mat.volumetric_energy(&k);
         }
@@ -440,7 +538,7 @@ impl SoftModel {
         psi
     }
 
-    fn linear_energy<S: Scalar>(&self, mat: &Material, f: &Mat3<S>, g: f64) -> S {
+    fn linear_energy<S: Scalar>(&self, mat: &Material, f: &Mat3<S>, g: RelaxationScale) -> S {
         let eps: Mat3<S> = core::array::from_fn(|i| {
             core::array::from_fn(|j| (f[i][j] + f[j][i]) * 0.5 - if i == j { 1.0 } else { 0.0 })
         });
@@ -451,15 +549,19 @@ impl SoftModel {
                 ee += eps[i][j] * eps[i][j];
             }
         }
-        let mut w = (ee - tr * tr / 3.0) * (g * mat.mu0);
+        let mut w = (ee - tr * tr / 3.0) * (g.0[0] * mat.mu0);
         if !self.formulation.mixed() {
             w += tr * tr * (0.5 * mat.kappa0);
         }
         w
     }
 
-
-    pub fn pressure_energy<S: Scalar>(&self, e: usize, p: &[S; 4], stiffness: S) -> Result<S, CaeError> {
+    pub fn pressure_energy<S: Scalar>(
+        &self,
+        e: usize,
+        p: &[S; 4],
+        stiffness: S,
+    ) -> Result<S, CaeError> {
         let Formulation::Mixed { stabilization } = self.formulation else {
             return Ok(S::zero());
         };
@@ -483,7 +585,6 @@ impl SoftModel {
         self.mesh.deformation_gradient(e, u)
     }
 
-
     #[allow(clippy::too_many_arguments)]
     pub fn element_energy<S: Scalar>(
         &self,
@@ -492,7 +593,7 @@ impl SoftModel {
         rho: S,
         theta: S,
         h: &[S; 6],
-        g: f64,
+        g: impl Into<RelaxationScale> + Copy,
     ) -> Result<S, CaeError> {
         let u: [[S; 3]; 4] = core::array::from_fn(|a| core::array::from_fn(|i| d[3 * a + i]));
         let f = self.deformation_gradient(e, &u);
@@ -504,7 +605,6 @@ impl SoftModel {
         Ok(psi + self.pressure_energy(e, &p, des.e)?)
     }
 
-
     #[allow(clippy::too_many_arguments)]
     pub fn element_energy_scaled<S: Scalar>(
         &self,
@@ -513,7 +613,7 @@ impl SoftModel {
         rho: S,
         theta: S,
         h: &[S; 6],
-        g: f64,
+        g: impl Into<RelaxationScale> + Copy,
         scale: S,
     ) -> Result<S, CaeError> {
         let u: [[S; 3]; 4] = core::array::from_fn(|a| core::array::from_fn(|i| d[3 * a + i]));
@@ -527,7 +627,6 @@ impl SoftModel {
         Ok(psi + self.pressure_energy(e, &p, des.e)?)
     }
 
-
     pub fn element_local(
         &self,
         e: usize,
@@ -535,7 +634,7 @@ impl SoftModel {
         rho: f64,
         theta: f64,
         h: &[f64; 6],
-        g: f64,
+        g: impl Into<RelaxationScale> + Copy,
         hessian: bool,
     ) -> Result<ElementLocal, CaeError> {
         let grads = &self.mesh.gradients[e];
@@ -551,18 +650,24 @@ impl SoftModel {
             }
         }
         fv[9] = (d[12] + d[13] + d[14] + d[15]) * 0.25;
-        let mut out = ElementLocal { energy: 0.0, gradient: [0.0; 16], hessian: Box::new([0.0; 256]) };
+        let mut out = ElementLocal {
+            energy: 0.0,
+            gradient: [0.0; 16],
+            hessian: Box::new([0.0; 256]),
+        };
         let (psi, gz, hz) = if hessian {
             let des = self.element_design(e, Jet2::<10>::constant(rho), Jet2::constant(theta));
             let z = Jet2::<10>::seed(&fv);
-            let fm: Mat3<Jet2<10>> = core::array::from_fn(|i| core::array::from_fn(|j| z[3 * i + j]));
+            let fm: Mat3<Jet2<10>> =
+                core::array::from_fn(|i| core::array::from_fn(|j| z[3 * i + j]));
             let hm = sym_from6(&h.map(Jet2::constant));
             let r = self.point_energy(e, &fm, z[9], &des, &hm, g);
             (r.v, r.g, Some(r.hessian()))
         } else {
             let des = self.element_design(e, Dual::<10>::constant(rho), Dual::constant(theta));
             let z: [Dual<10>; 10] = core::array::from_fn(|k| Dual::variable(fv[k], k));
-            let fm: Mat3<Dual<10>> = core::array::from_fn(|i| core::array::from_fn(|j| z[3 * i + j]));
+            let fm: Mat3<Dual<10>> =
+                core::array::from_fn(|i| core::array::from_fn(|j| z[3 * i + j]));
             let hm = sym_from6(&h.map(Dual::constant));
             let r = self.point_energy(e, &fm, z[9], &des, &hm, g);
             (r.re, r.eps, None)
@@ -570,10 +675,13 @@ impl SoftModel {
         out.energy = v * psi;
         let mixed = self.formulation.mixed();
         let nz = |k: usize| -> [(usize, f64); 3] {
-
             if k < 12 {
                 let (a, i) = (k / 3, k % 3);
-                [(3 * i, grads[a][0]), (3 * i + 1, grads[a][1]), (3 * i + 2, grads[a][2])]
+                [
+                    (3 * i, grads[a][0]),
+                    (3 * i + 1, grads[a][1]),
+                    (3 * i + 2, grads[a][2]),
+                ]
             } else {
                 [(9, 0.25), (9, 0.0), (9, 0.0)]
             }
@@ -624,7 +732,6 @@ impl SoftModel {
         Ok(out)
     }
 
-
     pub fn element_local_full(
         &self,
         e: usize,
@@ -632,7 +739,7 @@ impl SoftModel {
         rho: f64,
         theta: f64,
         h: &[f64; 6],
-        g: f64,
+        g: impl Into<RelaxationScale> + Copy,
     ) -> Result<ElementFull, CaeError> {
         let grads = &self.mesh.gradients[e];
         let v = self.mesh.volumes[e];
@@ -660,7 +767,11 @@ impl SoftModel {
         let nz = |k: usize| -> [(usize, f64); 3] {
             if k < 12 {
                 let (a, i) = (k / 3, k % 3);
-                [(3 * i, grads[a][0]), (3 * i + 1, grads[a][1]), (3 * i + 2, grads[a][2])]
+                [
+                    (3 * i, grads[a][0]),
+                    (3 * i + 1, grads[a][1]),
+                    (3 * i + 2, grads[a][2]),
+                ]
             } else {
                 [(9, 0.25), (9, 0.0), (9, 0.0)]
             }
@@ -739,7 +850,8 @@ impl SoftModel {
         let pf: [Dual<18>; 18] =
             core::array::from_fn(|k| Dual::variable(if k < 9 { psi.g[k] } else { z0[k - 9] }, k));
         let p: Mat3<Dual<18>> = core::array::from_fn(|i| core::array::from_fn(|j| pf[3 * i + j]));
-        let f: Mat3<Dual<18>> = core::array::from_fn(|i| core::array::from_fn(|j| pf[9 + 3 * i + j]));
+        let f: Mat3<Dual<18>> =
+            core::array::from_fn(|i| core::array::from_fn(|j| pf[9 + 3 * i + j]));
         let jdet = det(&f);
         let sigma = matmul(&p, &transpose(&f));
         let tr = (sigma[0][0] + sigma[1][1] + sigma[2][2]) / 3.0;
@@ -770,7 +882,11 @@ impl SoftModel {
                 *slot = 0.25 * dz[9];
             }
         }
-        let gamma = if self.interpolation.wang_active() { self.interpolation.gamma(rho) } else { 1.0 };
+        let gamma = if self.interpolation.wang_active() {
+            self.interpolation.gamma(rho)
+        } else {
+            1.0
+        };
         let fg: Mat3<f64> = core::array::from_fn(|i| {
             core::array::from_fn(|j| {
                 let id = if i == j { 1.0 } else { 0.0 };
@@ -793,7 +909,11 @@ impl SoftModel {
         let v = self.mesh.volumes[e];
         let u: [[f64; 3]; 4] = core::array::from_fn(|a| core::array::from_fn(|i| d[3 * a + i]));
         let f = self.deformation_gradient(e, &u);
-        let gamma = if self.interpolation.wang_active() { self.interpolation.gamma(rho) } else { 1.0 };
+        let gamma = if self.interpolation.wang_active() {
+            self.interpolation.gamma(rho)
+        } else {
+            1.0
+        };
         let fg: Mat3<f64> = core::array::from_fn(|i| {
             core::array::from_fn(|j| {
                 let id = if i == j { 1.0 } else { 0.0 };
@@ -808,7 +928,8 @@ impl SoftModel {
             let pk = matmul(&fg, &ek);
             for a in 0..4 {
                 for i in 0..3 {
-                    out[3 * a + i][k] = v * gamma * (0..3).map(|j| pk[i][j] * grads[a][j]).sum::<f64>();
+                    out[3 * a + i][k] =
+                        v * gamma * (0..3).map(|j| pk[i][j] * grads[a][j]).sum::<f64>();
                 }
             }
         }
@@ -817,7 +938,8 @@ impl SoftModel {
 
     #[must_use]
     pub fn element_mass(&self, e: usize, mass_factor: f64) -> [[f64; 4]; 4] {
-        let rho = self.materials[self.element_material[e]].density * self.mesh.volumes[e] * mass_factor;
+        let rho =
+            self.materials[self.element_material[e]].density * self.mesh.volumes[e] * mass_factor;
         core::array::from_fn(|a| {
             core::array::from_fn(|b| {
                 if self.lumped_mass {
@@ -835,7 +957,11 @@ impl SoftModel {
         let g = &self.mesh.gradients[e];
         let v = self.mesh.volumes[e];
         let mu = mat.mu0;
-        let lam = if mat.kappa0.is_finite() { mat.kappa0 - 2.0 * mu / 3.0 } else { -2.0 * mu / 3.0 };
+        let lam = if mat.kappa0.is_finite() {
+            mat.kappa0 - 2.0 * mu / 3.0
+        } else {
+            -2.0 * mu / 3.0
+        };
         let mut k = [0.0; 144];
         for a in 0..4 {
             for i in 0..3 {
@@ -855,14 +981,20 @@ impl SoftModel {
     pub fn face_residual<S: Scalar>(x: &[[S; 3]; 3], pressure: f64) -> [S; 3] {
         let a: [S; 3] = core::array::from_fn(|i| x[1][i] - x[0][i]);
         let b: [S; 3] = core::array::from_fn(|i| x[2][i] - x[0][i]);
-        let n = [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+        let n = [
+            a[1] * b[2] - a[2] * b[1],
+            a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0],
+        ];
         n.map(|c| c * (pressure / 6.0))
     }
 
     #[must_use]
     pub fn face_positions(&self, f: usize, u: &[f64]) -> [[f64; 3]; 3] {
         let face = self.faces[f];
-        core::array::from_fn(|k| core::array::from_fn(|i| self.mesh.points[face[k]][i] + u[3 * face[k] + i]))
+        core::array::from_fn(|k| {
+            core::array::from_fn(|i| self.mesh.points[face[k]][i] + u[3 * face[k] + i])
+        })
     }
 
     #[must_use]
@@ -887,7 +1019,6 @@ impl SoftModel {
             }
         })
     }
-
 
     pub fn for_elements<T: Send>(
         &self,
@@ -929,7 +1060,6 @@ impl SoftModel {
         }
     }
 
-
     pub fn scatter_triplets(
         &self,
         a: &mut CscMatrix,
@@ -948,13 +1078,14 @@ impl SoftModel {
                 continue;
             }
             let Some(s) = self.slot(row, col) else {
-                return contract("nodal potential tangent couples dofs of nodes that share no element");
+                return contract(
+                    "nodal potential tangent couples dofs of nodes that share no element",
+                );
             };
             a.data_mut()[s] += weight * v;
         }
         Ok(())
     }
-
 
     pub fn global_mass_and_reference(
         &self,
@@ -1003,7 +1134,9 @@ impl SoftModel {
                 }
             }
         }
-        let err = |e: implexity_linalg::LinalgError| CaeError::contract(format!("soft model matrices: {e}"));
+        let err = |e: implexity_linalg::LinalgError| {
+            CaeError::contract(format!("soft model matrices: {e}"))
+        };
         Ok((
             CsrMatrix::try_new(3 * n, 3 * n, indptr.clone(), indices.clone(), dm).map_err(err)?,
             CsrMatrix::try_new(3 * n, 3 * n, indptr, indices, dk).map_err(err)?,
@@ -1018,7 +1151,7 @@ impl SoftModel {
         rho: f64,
         theta: f64,
         h: &[f64; 6],
-        g: f64,
+        g: impl Into<RelaxationScale> + Copy,
     ) -> (Mat3<f64>, f64, Vec<f64>) {
         let u: [[f64; 3]; 4] = core::array::from_fn(|a| core::array::from_fn(|i| d[3 * a + i]));
         let f = self.deformation_gradient(e, &u);
@@ -1034,7 +1167,9 @@ impl SoftModel {
         let sigma = s.map(|r| r.map(|x| x / j));
         let c = matmul(&transpose(&f), &f);
         let des64 = self.element_design(e, rho, theta);
-        let stretches = (0..des64.nf).map(|k| fibre_i4(&c, &des64.dirs[k]).sqrt()).collect();
+        let stretches = (0..des64.nf)
+            .map(|k| fibre_i4(&c, &des64.dirs[k]).sqrt())
+            .collect();
         (sigma, j, stretches)
     }
 
@@ -1046,6 +1181,19 @@ impl SoftModel {
         theta: S,
         w: &[f64; 6],
         t: S,
+    ) -> S {
+        self.channel_stress_dot(e, u, rho, theta, w, t, usize::MAX)
+    }
+
+    pub fn channel_stress_dot<S: Scalar>(
+        &self,
+        e: usize,
+        u: &[[S; 3]; 4],
+        rho: S,
+        theta: S,
+        w: &[f64; 6],
+        t: S,
+        channel: usize,
     ) -> S {
         let mat = &self.materials[self.element_material[e]];
         let des = self.element_design(e, rho, theta);
@@ -1062,25 +1210,38 @@ impl SoftModel {
         };
         let c0 = matmul(&transpose(&fg), &fg);
         let wm = sym_from6(w);
-        let c: Mat3<S> = core::array::from_fn(|i| core::array::from_fn(|j| c0[i][j] + t * wm[i][j]));
+        let c: Mat3<S> =
+            core::array::from_fn(|i| core::array::from_fn(|j| c0[i][j] + t * wm[i][j]));
         let k = Kin::from_c(c, det(&c).sqrt());
-        mat.isochoric(&k, &des.dirs[..des.nf]) * des.e * 2.0
+        mat.channel_energy(&k, &des.dirs[..des.nf], channel) * des.e * 2.0
     }
 
     #[must_use]
     pub fn isochoric_stress(&self, e: usize, u: &[[f64; 3]; 4], rho: f64, theta: f64) -> [f64; 6] {
+        self.channel_stress(e, u, rho, theta, usize::MAX)
+    }
+
+    pub fn channel_stress(
+        &self,
+        e: usize,
+        u: &[[f64; 3]; 4],
+        rho: f64,
+        theta: f64,
+        channel: usize,
+    ) -> [f64; 6] {
         let um = u.map(|r| r.map(HyperDual::constant));
         core::array::from_fn(|k| {
             let mut w = [0.0; 6];
             w[k] = 1.0;
             let t = HyperDual::new(0.0, 1.0, 0.0, 0.0);
-            let v = self.isochoric_stress_dot(
+            let v = self.channel_stress_dot(
                 e,
                 &um,
                 HyperDual::constant(rho),
                 HyperDual::constant(theta),
                 &w,
                 t,
+                channel,
             );
             if k < 3 { v.e1 } else { 0.5 * v.e1 }
         })

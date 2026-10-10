@@ -1,6 +1,28 @@
 // SPDX-License-Identifier: Apache-2.0
 // METAPLEXIS-DISCLAIMER-BEGIN sha256=c7c02258f245d1dcd6db1e8066ef4f6bc1bf36430d91bf9aab026671723c058f
-// Open-access statement and disclaimer: see DISCLAIMER.md.
+// # Open-access statement and disclaimer
+//
+// ## Open-access statement
+// Metaplexis Ingenieurgesellschaft GmbH believes that open access to advanced computer-aided engineering (CAE) tools is essential to advancing research. Computational methods are developing rapidly and can explore scales and levels of complexity beyond those previously practical for unaided human workflows. By publishing Implexity, Metaplexis seeks to enable transparent inspection, reproducibility, independent validation, and collaborative scientific and engineering progress.
+//
+// This statement describes Metaplexis’s motivation. It is not a representation or guarantee of the software’s capabilities, accuracy, fitness, safety, or regulatory status.
+//
+// ## Relationship to the license
+// This notice is informational. It does not amend the Apache License, Version 2.0 (the “License”), or impose any additional condition, restriction, or field-of-use limitation. Permissions and conditions for first-party software are governed by the License. Nothing in this notice creates a warranty, guarantee, professional duty, support obligation, or acceptance of additional liability. Third-party material remains governed by its own notices and license terms.
+//
+// ## Engineering and validation status
+// Implexity is engineering software. Bundled models, examples, simulations, optimization outputs, geometry, renderings, and other results may be reduced-order, approximate, screening, exploratory, non-converged, or unvalidated unless expressly stated otherwise. They are not, by themselves, certification, qualification, design approval, a safety case, or professional engineering advice.
+//
+// Users remain responsible for selecting and validating models and data; checking inputs, units, assumptions, boundary conditions, convergence, sensitivities, constraints, materials, geometry, and outputs; obtaining suitably qualified review; and complying with applicable laws, codes, standards, and safety requirements. For any use in which failure could cause death, personal injury, environmental harm, or substantial property damage, users should apply an independently verified engineering and safety process and appropriate safeguards. These statements describe validation limits; they do not prohibit any use permitted by the License.
+//
+// ## Warranty and liability
+// Sections 7 and 8 of the License apply to the maximum extent permitted by applicable law. Nothing in this notice excludes or limits liability where exclusion or limitation is unlawful.
+//
+// Where German law applies, liability remains unaffected for intentional or grossly negligent conduct by Metaplexis, its statutory representatives, or vicarious agents; for culpable injury to life, body, or health; for mandatory liability under the German Product Liability Act (Produkthaftungsgesetz); and, where applicable, for claims within the scope of an expressly assumed guarantee or arising from fraudulent concealment of a defect.
+//
+// In the event of a slightly negligent breach of a material contractual obligation (an obligation whose performance is essential to proper performance of the contract and on whose performance the other party may regularly rely), liability, to the extent legally permissible, is limited to damage foreseeable and typical for the contract. The statutory allocation of the burden of proof remains unchanged.
+//
+// This savings clause does not create liability beyond liability imposed by applicable law or expressly agreed in writing.
 // METAPLEXIS-DISCLAIMER-END
 
 
@@ -56,6 +78,19 @@ pub(super) struct CoupledPoint<'p> {
     pub(super) d_s: &'p [f64],
     pub(super) d_e: &'p [f64],
     pub(super) p: StepParameters<'p>,
+    pub(super) trace_extension: Option<std::sync::Arc<dyn super::TraceDerivativeExtension>>,
+    derivative_context: Option<std::sync::Arc<super::SubcycleDerivativeContext>>,
+}
+
+impl<'p> CoupledPoint<'p> {
+    pub(super) fn new(n:usize,a_prev:&'p[f64],d_s:&'p[f64],d_e:&'p[f64],p:StepParameters<'p>,trace_extension:Option<std::sync::Arc<dyn super::TraceDerivativeExtension>>)->Self {
+        let derivative_context=trace_extension.as_ref().and_then(|v|v.derivative_context());
+        Self{n,a_prev,d_s,d_e,p,trace_extension,derivative_context}
+    }
+    pub(super) fn set_trace_extension(&mut self, extension:Option<std::sync::Arc<dyn super::TraceDerivativeExtension>>) {
+        self.derivative_context=extension.as_ref().and_then(|v|v.derivative_context());
+        self.trace_extension=extension;
+    }
 }
 
 fn flatten(c: &SubcycleCotangent) -> Vec<f64> {
@@ -169,7 +204,7 @@ impl<A: SubcycledField, B: FluxDrivenField> MultirateStepper<A, B> {
         self.sample_names.len() - self.ns_b
     }
 
-    fn a_tangent(
+    pub(super) fn a_tangent(
         &self,
         pt: &CoupledPoint<'_>,
         d_previous: &[f64],
@@ -178,7 +213,18 @@ impl<A: SubcycledField, B: FluxDrivenField> MultirateStepper<A, B> {
         d_design: Option<&[f64]>,
         d_time_scale: f64,
     ) -> CaeResult<SubcycleTangent> {
-        let t = self.a.subcycle_tangent(
+        let extended = pt.trace_extension.as_ref().map(|extension| {
+            extension.tangent(d_trace_start, d_trace_end, d_design, d_time_scale)
+        }).transpose()?;
+        if let Some((start, end)) = &extended {
+            check_len("extended start-trace tangent", start, self.n_t)?;
+            check_len("extended end-trace tangent", end, self.n_t)?;
+        }
+        let (d_trace_start, d_trace_end) = extended.as_ref().map_or(
+            (d_trace_start, d_trace_end), |(start, end)| (start.as_slice(), end.as_slice())
+        );
+        let context = &pt.derivative_context;
+        let t = self.a.subcycle_tangent_with_context(
             pt.n,
             pt.a_prev,
             pt.d_s,
@@ -189,6 +235,7 @@ impl<A: SubcycledField, B: FluxDrivenField> MultirateStepper<A, B> {
             d_trace_end,
             d_design,
             d_time_scale,
+            context.as_deref(),
         )?;
         check_len("field-A state tangent", &t.state, self.n_a)?;
         check_len("field-A flux tangent", &t.flux, self.n_t)?;
@@ -203,10 +250,25 @@ impl<A: SubcycledField, B: FluxDrivenField> MultirateStepper<A, B> {
         flux_bar: &[f64],
         sample_bar: &[f64],
     ) -> CaeResult<SubcycleCotangent> {
-        let c = self
+        let context = &pt.derivative_context;
+        let mut c = self
             .a
-            .subcycle_adjoint(pt.n, pt.a_prev, pt.d_s, pt.d_e, pt.p, state_bar, flux_bar, sample_bar)?;
+            .subcycle_adjoint_with_context(pt.n, pt.a_prev, pt.d_s, pt.d_e, pt.p, state_bar, flux_bar, sample_bar, context.as_deref())?;
         self.check_a_cotangent(&c)?;
+        if let Some(extension) = &pt.trace_extension {
+            let extended = extension.adjoint(&c.trace_start, &c.trace_end)?;
+            check_len("extended start-trace cotangent", &extended.trace_start, self.n_t)?;
+            check_len("extended end-trace cotangent", &extended.trace_end, self.n_t)?;
+            check_len("extended design cotangent", &extended.design, self.n_d)?;
+            if !extended.time_scale.is_finite() {
+                return Err(contract("extended trace time-scale cotangent must be finite"));
+            }
+            c.trace_start = extended.trace_start;
+            c.trace_end = extended.trace_end;
+            add_into(&mut c.design, &extended.design);
+            c.time_scale += extended.time_scale;
+            self.check_a_cotangent(&c)?;
+        }
         Ok(c)
     }
 
@@ -245,6 +307,14 @@ impl<A: SubcycledField, B: FluxDrivenField> MultirateStepper<A, B> {
         secant: &mut SecantInverse,
         limits: KrylovLimits,
     ) -> CaeResult<(Vec<f64>, usize)> {
+        let (delta, iterations, _) = self.coupled_solve_with_flux(point, lin, rhs, secant, limits)?;
+        Ok((delta, iterations))
+    }
+
+    pub(super) fn coupled_solve_with_flux(
+        &self, point: &CoupledPoint<'_>, lin: &Linearization, rhs: &[f64],
+        secant: &mut SecantInverse, limits: KrylovLimits,
+    ) -> CaeResult<(Vec<f64>, usize, Vec<f64>)> {
         let u = lin.factor.solve(rhs, false)?;
         let eu = self.trace_of(&u)?;
         let mut system = CoupledTrace { st: self, point, lin, secant, transpose: false };
@@ -259,7 +329,7 @@ impl<A: SubcycledField, B: FluxDrivenField> MultirateStepper<A, B> {
         let w = lin.jac.flux.apply(&out.aux, false)?;
         let mut delta = u;
         sub_into(&mut delta, &lin.factor.solve(&w, false)?);
-        Ok((delta, out.iterations))
+        Ok((delta, out.iterations, out.aux))
     }
 
     fn coupled_solve_transpose(
@@ -410,8 +480,9 @@ impl<A: SubcycledField, B: FluxDrivenField> MultirateStepper<A, B> {
         let (b_prev, a_prev, _) = self.split(previous);
         let (b, _, _) = self.split(current);
         let (db_prev, da_prev, dlags) = self.split(d_previous);
-        let point = CoupledPoint { n, a_prev, d_s: &d_s, d_e: &d_e, p };
+        let point = CoupledPoint::new(n,a_prev,&d_s,&d_e,p,self.b.trace_derivative_extension(n, b, b_prev, p)?);
         let parts = self.tangent_parts(&point, &lin, db_prev, da_prev, dlags, d_design, d_time_scale)?;
+        self.b.check_tangent_domain(n,b,b_prev,p,&parts.field_b,db_prev,d_design,d_time_scale)?;
         let mut samples = self.sample_tangent_b(n, b, b_prev, p, &parts.field_b, db_prev, d_design)?;
         samples.extend_from_slice(&parts.field_a.samples);
         let mut state = parts.field_b;
@@ -444,7 +515,7 @@ impl<A: SubcycledField, B: FluxDrivenField> MultirateStepper<A, B> {
         let (lin, d_s, d_e) = self.linearize(n, previous, current, p)?;
         let (b_prev, a_prev, _) = self.split(previous);
         let (b, _, _) = self.split(current);
-        let point = CoupledPoint { n, a_prev, d_s: &d_s, d_e: &d_e, p };
+        let point = CoupledPoint::new(n,a_prev,&d_s,&d_e,p,self.b.trace_derivative_extension(n, b, b_prev, p)?);
         let mut secant = self.fresh_secant()?;
         let mut out = Vec::with_capacity(state_bars.len());
         for (zbar, sbar) in state_bars.iter().zip(sample_bars) {
@@ -549,7 +620,10 @@ impl<A: SubcycledField, B: FluxDrivenField> MultirateStepper<A, B> {
         let (b, _, _) = self.split(current);
         let (bbar, abar, lbar) = self.split(state_bar);
         let (db_prev, da_prev, dlags) = self.split(d_previous);
-        let point = CoupledPoint { n, a_prev, d_s: &d_s, d_e: &d_e, p };
+        let point = CoupledPoint::new(n,a_prev,&d_s,&d_e,p,self.b.trace_derivative_extension(n, b, b_prev, p)?);
+        if point.trace_extension.is_some() {
+            return Err(contract("second-order trace extension derivatives are not available"));
+        }
         let parts = self.tangent_parts(&point, &lin, db_prev, da_prev, dlags, d_design, 0.0)?;
         let e_db_prev = self.trace_of(db_prev)?;
         let zero_a = vec![0.0; self.n_a];

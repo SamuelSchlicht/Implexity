@@ -1,8 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
 // METAPLEXIS-DISCLAIMER-BEGIN sha256=c7c02258f245d1dcd6db1e8066ef4f6bc1bf36430d91bf9aab026671723c058f
-// Open-access statement and disclaimer: see DISCLAIMER.md.
+// # Open-access statement and disclaimer
+//
+// ## Open-access statement
+// Metaplexis Ingenieurgesellschaft GmbH believes that open access to advanced computer-aided engineering (CAE) tools is essential to advancing research. Computational methods are developing rapidly and can explore scales and levels of complexity beyond those previously practical for unaided human workflows. By publishing Implexity, Metaplexis seeks to enable transparent inspection, reproducibility, independent validation, and collaborative scientific and engineering progress.
+//
+// This statement describes Metaplexis’s motivation. It is not a representation or guarantee of the software’s capabilities, accuracy, fitness, safety, or regulatory status.
+//
+// ## Relationship to the license
+// This notice is informational. It does not amend the Apache License, Version 2.0 (the “License”), or impose any additional condition, restriction, or field-of-use limitation. Permissions and conditions for first-party software are governed by the License. Nothing in this notice creates a warranty, guarantee, professional duty, support obligation, or acceptance of additional liability. Third-party material remains governed by its own notices and license terms.
+//
+// ## Engineering and validation status
+// Implexity is engineering software. Bundled models, examples, simulations, optimization outputs, geometry, renderings, and other results may be reduced-order, approximate, screening, exploratory, non-converged, or unvalidated unless expressly stated otherwise. They are not, by themselves, certification, qualification, design approval, a safety case, or professional engineering advice.
+//
+// Users remain responsible for selecting and validating models and data; checking inputs, units, assumptions, boundary conditions, convergence, sensitivities, constraints, materials, geometry, and outputs; obtaining suitably qualified review; and complying with applicable laws, codes, standards, and safety requirements. For any use in which failure could cause death, personal injury, environmental harm, or substantial property damage, users should apply an independently verified engineering and safety process and appropriate safeguards. These statements describe validation limits; they do not prohibit any use permitted by the License.
+//
+// ## Warranty and liability
+// Sections 7 and 8 of the License apply to the maximum extent permitted by applicable law. Nothing in this notice excludes or limits liability where exclusion or limitation is unlawful.
+//
+// Where German law applies, liability remains unaffected for intentional or grossly negligent conduct by Metaplexis, its statutory representatives, or vicarious agents; for culpable injury to life, body, or health; for mandatory liability under the German Product Liability Act (Produkthaftungsgesetz); and, where applicable, for claims within the scope of an expressly assumed guarantee or arising from fraudulent concealment of a defect.
+//
+// In the event of a slightly negligent breach of a material contractual obligation (an obligation whose performance is essential to proper performance of the contract and on whose performance the other party may regularly rely), liability, to the extent legally permissible, is limited to damage foreseeable and typical for the contract. The statutory allocation of the burden of proof remains unchanged.
+//
+// This savings clause does not create liability beyond liability imposed by applicable law or expressly agreed in writing.
 // METAPLEXIS-DISCLAIMER-END
-
 
 use implexity_ad::HyperDual;
 use implexity_core::CaeError;
@@ -13,7 +34,6 @@ use crate::util::contract;
 
 pub const MAX_GAUSS_POINTS: usize = 8;
 
-
 pub fn gauss_legendre(n: usize) -> Result<(Vec<f64>, Vec<f64>), CaeError> {
     if !(1..=MAX_GAUSS_POINTS).contains(&n) {
         return contract("avf_midpoint requires 1..8 Gauss-Legendre points");
@@ -21,7 +41,6 @@ pub fn gauss_legendre(n: usize) -> Result<(Vec<f64>, Vec<f64>), CaeError> {
     #[allow(clippy::cast_precision_loss)]
     let nf = n as f64;
     let legendre = |x: f64| -> (f64, f64) {
-
         let (mut p0, mut p1) = (1.0, x);
         for k in 2..=n {
             #[allow(clippy::cast_precision_loss)]
@@ -61,7 +80,6 @@ pub fn gauss_legendre(n: usize) -> Result<(Vec<f64>, Vec<f64>), CaeError> {
     }
     Ok((nodes, weights))
 }
-
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct EnergyLedger {
@@ -139,7 +157,11 @@ impl SoftHistory<'_> {
         let mut out = PathForces {
             r: vec![0.0; l.n3],
             rp: vec![0.0; l.np],
-            jac: if pass.jacobian { Some(m.zero_matrix()?) } else { None },
+            jac: if pass.jacobian {
+                Some(m.zero_matrix()?)
+            } else {
+                None
+            },
             terms: [0.0; 2],
             pull_u: vec![0.0; if pass.pull.is_some() { l.n3 } else { 0 }],
             pull_p: vec![0.0; if pass.pull.is_some() { l.np } else { 0 }],
@@ -154,15 +176,27 @@ impl SoftHistory<'_> {
                 let h = self.history_h(x, e, dt);
                 let (_, gf) = self.branch_factors(e, dt);
                 let mut grad = [0.0; 16];
-                let mut hess = if need_hessian { Some(Box::new([0.0; 256])) } else { None };
+                let mut hess = if need_hessian {
+                    Some(Box::new([0.0; 256]))
+                } else {
+                    None
+                };
                 let mut big = [0.0_f64; 2];
                 for (sg, wg) in s.iter().zip(&w) {
                     let d: [f64; 16] = core::array::from_fn(|k| d0[k] + sg * (d1[k] - d0[k]));
-                    let local =
-                        m.element_local(e, &d, self.ctx.rho[e], self.ctx.theta[e], &h, gf, need_hessian)?;
+                    let local = m.element_local(
+                        e,
+                        &d,
+                        self.ctx.rho[e],
+                        self.ctx.theta[e],
+                        &h,
+                        gf,
+                        need_hessian,
+                    )?;
                     for k in 0..nl {
                         grad[k] += wg * local.gradient[k];
-                        big[usize::from(k >= 12)] = big[usize::from(k >= 12)].max(local.gradient[k].abs());
+                        big[usize::from(k >= 12)] =
+                            big[usize::from(k >= 12)].max(local.gradient[k].abs());
                     }
                     if let Some(hs) = hess.as_mut() {
                         for (a, b) in hs.iter_mut().zip(local.hessian.iter()) {
@@ -203,10 +237,13 @@ impl SoftHistory<'_> {
                     for ai in 0..4 {
                         for bi in 0..4 {
                             for i in 0..3 {
-                                block[(3 * ai + i) * 16 + 3 * bi + i] += (cm + cc * am) * me[ai][bi];
+                                block[(3 * ai + i) * 16 + 3 * bi + i] +=
+                                    (cm + cc * am) * me[ai][bi];
                                 for j in 0..3 {
-                                    block[(3 * ai + i) * 16 + 3 * bi + j] +=
-                                        cc * bk * self.ctx.stiffness[e] * ke[(3 * ai + i) * 12 + 3 * bi + j];
+                                    block[(3 * ai + i) * 16 + 3 * bi + j] += cc
+                                        * bk
+                                        * self.ctx.stiffness[e]
+                                        * ke[(3 * ai + i) * 12 + 3 * bi + j];
                                 }
                             }
                         }
@@ -216,7 +253,8 @@ impl SoftHistory<'_> {
                 Ok(())
             },
         )?;
-        let path = |sg: f64| -> Vec<f64> { u0.iter().zip(u1).map(|(a, b)| a + sg * (b - a)).collect() };
+        let path =
+            |sg: f64| -> Vec<f64> { u0.iter().zip(u1).map(|(a, b)| a + sg * (b - a)).collect() };
         for pot in &m.potentials {
             for (sg, wg) in s.iter().zip(&w) {
                 let ug = path(*sg);
@@ -290,7 +328,9 @@ impl SoftHistory<'_> {
     pub(super) fn avf_kinematics(&self, t: usize, x: &[f64], u1: &[f64]) -> (Vec<f64>, Vec<f64>) {
         let l = self.layout;
         let dt = self.dt(t);
-        let mut v1: Vec<f64> = (0..l.n3).map(|i| 2.0 * (u1[i] - x[l.u() + i]) / dt - x[l.v() + i]).collect();
+        let mut v1: Vec<f64> = (0..l.n3)
+            .map(|i| 2.0 * (u1[i] - x[l.u() + i]) / dt - x[l.v() + i])
+            .collect();
         let (g, _) = self.prescribed_rates(t);
         for i in (0..l.n3).filter(|i| self.model.fixed[*i]) {
             v1[i] = g[i];
@@ -303,7 +343,9 @@ impl SoftHistory<'_> {
         let l = self.layout;
         let dt = self.dt(t);
         let (u0, v0) = (&x[l.u()..l.u() + l.n3], &x[l.v()..l.v() + l.n3]);
-        let mut da: Vec<f64> = (0..l.n3).map(|i| 2.0 / (dt * dt) * (u1[i] - u0[i] - dt * v0[i])).collect();
+        let mut da: Vec<f64> = (0..l.n3)
+            .map(|i| 2.0 / (dt * dt) * (u1[i] - u0[i] - dt * v0[i]))
+            .collect();
         let (g, _) = self.prescribed_rates(t);
         for i in (0..l.n3).filter(|i| self.model.fixed[*i]) {
             da[i] = (g[i] - v0[i]) / dt;
@@ -325,12 +367,27 @@ impl SoftHistory<'_> {
         let l = self.layout;
         let dt = self.dt(t);
         let (u1, p1) = self.expand(t, y);
-        let pf = self.avf_assemble(t, x, &u1, &p1, extra, gauss_points, &Pass { jacobian, pull: None })?;
+        let pf = self.avf_assemble(
+            t,
+            x,
+            &u1,
+            &p1,
+            extra,
+            gauss_points,
+            &Pass {
+                jacobian,
+                pull: None,
+            },
+        )?;
         let mut terms = pf.terms;
         let (u0, v0) = (&x[l.u()..l.u() + l.n3], &x[l.v()..l.v() + l.n3]);
         let du: Vec<f64> = (0..l.n3).map(|i| u1[i] - u0[i]).collect();
         let da = self.avf_inertia(t, x, &u1);
-        let ma = self.ctx.m.matvec(&da).map_err(|e| CaeError::contract(e.to_string()))?;
+        let ma = self
+            .ctx
+            .m
+            .matvec(&da)
+            .map_err(|e| CaeError::contract(e.to_string()))?;
         let cv = self.damping_matvec(&du.iter().map(|d| d / dt).collect::<Vec<_>>())?;
         let mut full = pf.r.clone();
         for i in 0..l.n3 {
@@ -341,8 +398,11 @@ impl SoftHistory<'_> {
         let amax = |v: &[f64]| v.iter().fold(0.0_f64, |a, b| a.max(b.abs()));
         let mass_row = self.ctx.m.norm_inf();
         let damp_row = self.rayleigh.0 * mass_row + self.rayleigh.1 * self.ctx.kref.norm_inf();
-        terms[0] = terms[0]
-            .max(2.0 / (dt * dt) * (mass_row + 0.5 * dt * damp_row) * (amax(&u1) + amax(u0) + dt * amax(v0)));
+        terms[0] = terms[0].max(
+            2.0 / (dt * dt)
+                * (mass_row + 0.5 * dt * damp_row)
+                * (amax(&u1) + amax(u0) + dt * amax(v0)),
+        );
         let mut res = vec![0.0; m.n_unknowns];
         for i in 0..l.n3 {
             if m.unknown[i] != usize::MAX {
@@ -373,7 +433,7 @@ impl SoftHistory<'_> {
                 let (h, g) = if incremental {
                     (self.history_h(x, e, dt), self.branch_factors(e, dt).1)
                 } else {
-                    ([0.0; 6], 1.0)
+                    ([0.0; 6], 1.0.into())
                 };
                 m.element_energy::<f64>(e, &d, self.ctx.rho[e], self.ctx.theta[e], &h, g)
             },
@@ -415,7 +475,8 @@ impl SoftHistory<'_> {
             size += wg / sg * (sz + size0);
         }
         let dot = |a: &[f64], b: &[f64]| a.iter().zip(b).map(|(p, q)| p * q).sum::<f64>();
-        let absdot = |a: &[f64], b: &[f64]| a.iter().zip(b).map(|(p, q)| (p * q).abs()).sum::<f64>();
+        let absdot =
+            |a: &[f64], b: &[f64]| a.iter().zip(b).map(|(p, q)| (p * q).abs()).sum::<f64>();
         let fd = self.avf_load(t, extra);
         phi -= dot(&fd, &u1);
         size += absdot(&fd, &u1);
@@ -427,7 +488,11 @@ impl SoftHistory<'_> {
         for i in (0..l.n3).filter(|i| self.model.fixed[*i]) {
             z[i] = 0.5 * dt * (g[i] - v0[i]);
         }
-        let mz = self.ctx.m.matvec(&z).map_err(|e| CaeError::contract(e.to_string()))?;
+        let mz = self
+            .ctx
+            .m
+            .matvec(&z)
+            .map_err(|e| CaeError::contract(e.to_string()))?;
         let cdu = self.damping_matvec(&du)?;
         phi += dot(&z, &mz) / (dt * dt) + dot(&du, &cdu) / (2.0 * dt);
         size += absdot(&z, &mz) / (dt * dt) + absdot(&du, &cdu) / (2.0 * dt);
@@ -472,8 +537,18 @@ impl SoftHistory<'_> {
             wx[l.v() + i] -= wv + 2.0 / dt * wa;
         }
 
-        let pf =
-            self.avf_assemble(t, x, u1, p1, extra, gauss_points, &Pass { jacobian: true, pull: Some(wr) })?;
+        let pf = self.avf_assemble(
+            t,
+            x,
+            u1,
+            p1,
+            extra,
+            gauss_points,
+            &Pass {
+                jacobian: true,
+                pull: Some(wr),
+            },
+        )?;
         for i in 0..l.n3 {
             wu1[i] += pf.pull_u[i];
         }
@@ -490,7 +565,9 @@ impl SoftHistory<'_> {
         for a in 0..l.np {
             rhs[m.unknown[l.n3 + a]] = wp1[a];
         }
-        let jac = pf.jac.ok_or_else(|| CaeError::contract("internal: missing Jacobian"))?;
+        let jac = pf
+            .jac
+            .ok_or_else(|| CaeError::contract("internal: missing Jacobian"))?;
         let lu = m.factor(&jac)?;
         let mu = lu
             .solve_transpose(&rhs)
@@ -506,7 +583,11 @@ impl SoftHistory<'_> {
         let omega_u: Vec<f64> = (0..l.n3).map(|i| wr[i] - mu_u[i]).collect();
 
         let (am, bk) = self.rayleigh;
-        let mmu = self.ctx.m.matvec(&mu_u).map_err(|e| CaeError::contract(e.to_string()))?;
+        let mmu = self
+            .ctx
+            .m
+            .matvec(&mu_u)
+            .map_err(|e| CaeError::contract(e.to_string()))?;
         let cmu = self.damping_matvec(&mu_u)?;
         for i in 0..l.n3 {
             if m.fixed[i] {
@@ -569,8 +650,15 @@ impl SoftHistory<'_> {
                     let mut par = [0.0; 8];
                     for (sg, wg) in s.iter().zip(&wg_rule) {
                         let d: [f64; 16] = core::array::from_fn(|k| d0[k] + sg * (d1[k] - d0[k]));
-                        let local =
-                            m.element_local(e, &d, self.ctx.rho[e], self.ctx.theta[e], &h, gf, true)?;
+                        let local = m.element_local(
+                            e,
+                            &d,
+                            self.ctx.rho[e],
+                            self.ctx.theta[e],
+                            &h,
+                            gf,
+                            true,
+                        )?;
                         for a in 0..nl {
                             let mut acc = 0.0;
                             for b in 0..nl {
@@ -579,12 +667,21 @@ impl SoftHistory<'_> {
                             back[a] += wg * (1.0 - sg) * acc;
                         }
                         for (sd, slot) in par.iter_mut().enumerate().take(seeds) {
-                            let dd: [HyperDual; 16] =
-                                core::array::from_fn(|k| HyperDual::new(d[k], wg * omega[k], 0.0, 0.0));
-                            let rho =
-                                HyperDual::new(self.ctx.rho[e], 0.0, if sd == 0 { 1.0 } else { 0.0 }, 0.0);
-                            let th =
-                                HyperDual::new(self.ctx.theta[e], 0.0, if sd == 1 { 1.0 } else { 0.0 }, 0.0);
+                            let dd: [HyperDual; 16] = core::array::from_fn(|k| {
+                                HyperDual::new(d[k], wg * omega[k], 0.0, 0.0)
+                            });
+                            let rho = HyperDual::new(
+                                self.ctx.rho[e],
+                                0.0,
+                                if sd == 0 { 1.0 } else { 0.0 },
+                                0.0,
+                            );
+                            let th = HyperDual::new(
+                                self.ctx.theta[e],
+                                0.0,
+                                if sd == 1 { 1.0 } else { 0.0 },
+                                0.0,
+                            );
                             let hh: [HyperDual; 6] = core::array::from_fn(|k| {
                                 HyperDual::new(h[k], 0.0, if sd == 2 + k { 1.0 } else { 0.0 }, 0.0)
                             });
@@ -618,12 +715,13 @@ impl SoftHistory<'_> {
                     let off = 6 * (e * l.nb + i);
                     for k in 0..6 {
                         wx[l.q() + off + k] += ei * par[2 + k];
-                        wx[l.s() + 6 * e + k] -= bi * par[2 + k];
+                        wx[l.stress(e, self.branch_channel(e, i)) + k] -= bi * par[2 + k];
                     }
                 }
             }
         }
-        let path = |sg: f64| -> Vec<f64> { u0.iter().zip(u1).map(|(a, b)| a + sg * (b - a)).collect() };
+        let path =
+            |sg: f64| -> Vec<f64> { u0.iter().zip(u1).map(|(a, b)| a + sg * (b - a)).collect() };
         for pot in &m.potentials {
             for (sg, wg) in s.iter().zip(&wg_rule) {
                 let ug = path(*sg);
@@ -633,7 +731,9 @@ impl SoftHistory<'_> {
                 let scaled: Vec<f64> = omega_u.iter().map(|o| wg * o).collect();
                 let g = pot.force_params_vjp(&ug, &self.params, &scaled)?;
                 if g.len() != 2 * ne {
-                    return contract("nodal potential parameter cotangent must hold 2 values per element");
+                    return contract(
+                        "nodal potential parameter cotangent must hold 2 values per element",
+                    );
                 }
                 for (a, b) in wparams.iter_mut().zip(&g) {
                     *a += b;
@@ -660,9 +760,12 @@ impl SoftHistory<'_> {
         }
 
         let extra_load: Vec<f64> = (0..l.n3).map(|i| -wr[i] + mu_u[i]).collect();
-        Ok(StepCotangent { state: wx, params: wparams, extra_load })
+        Ok(StepCotangent {
+            state: wx,
+            params: wparams,
+            extra_load,
+        })
     }
-
 
     #[allow(clippy::too_many_lines)]
     pub fn energy_ledger(
@@ -689,7 +792,11 @@ impl SoftHistory<'_> {
         let (v0, v1) = (&x[l.v()..l.v() + l.n3], &x1[l.v()..l.v() + l.n3]);
         let du: Vec<f64> = (0..l.n3).map(|i| u1[i] - u0[i]).collect();
         let kinetic = |v: &[f64]| -> Result<f64, CaeError> {
-            let mv = self.ctx.m.matvec(v).map_err(|e| CaeError::contract(e.to_string()))?;
+            let mv = self
+                .ctx
+                .m
+                .matvec(v)
+                .map_err(|e| CaeError::contract(e.to_string()))?;
             Ok(0.5 * dot(v, &mv))
         };
         let mut out = EnergyLedger {
@@ -716,7 +823,8 @@ impl SoftHistory<'_> {
             self.avf_pressure(t)
         } else {
             0.5 * (self.pressure(t)
-                + self.loading.pressure * self.amplitude_before(&self.loading.pressure_amplitude, t))
+                + self.loading.pressure
+                    * self.amplitude_before(&self.loading.pressure_amplitude, t))
         };
         if pressure != 0.0 {
             for (f, face) in m.faces.iter().enumerate() {
@@ -732,10 +840,13 @@ impl SoftHistory<'_> {
             }
         }
         if avf {
-
             let r_bar = &x1[l.r()..l.r() + l.n3];
             let dv: Vec<f64> = (0..l.n3).map(|i| (v1[i] - v0[i]) / dt).collect();
-            let mdv = self.ctx.m.matvec(&dv).map_err(|e| CaeError::contract(e.to_string()))?;
+            let mdv = self
+                .ctx
+                .m
+                .matvec(&dv)
+                .map_err(|e| CaeError::contract(e.to_string()))?;
             for i in 0..l.n3 {
                 if m.fixed[i] {
                     let travel = 0.5 * dt * (v0[i] + v1[i]);
@@ -776,7 +887,6 @@ impl SoftHistory<'_> {
             }
             out.quadrature_defect = (inc1 - inc0) - averaged;
         } else {
-
             let end_force = |xs: &[f64]| -> Result<Vec<f64>, CaeError> {
                 let ma = self
                     .ctx
@@ -802,4 +912,3 @@ impl SoftHistory<'_> {
         Ok(out)
     }
 }
-

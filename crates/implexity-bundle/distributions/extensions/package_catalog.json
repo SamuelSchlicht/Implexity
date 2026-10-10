@@ -5,7 +5,7 @@
       "package_id": "soft_matter_mechanics",
       "label": "Nonlinear soft-matter mechanics",
       "installer": "implexity.addins.soft_matter_mechanics",
-      "scope": "Finite-deformation hyperelastic laws (neo-Hookean, Mooney-Rivlin, Yeoh, Ogden, Gent, Arruda-Boyce, Holzapfel-Gasser-Ogden fibres), decoupled volumetric functions and a stabilised mixed u-p formulation against locking, follower pressure, Newmark/generalized-alpha dynamics with Rayleigh damping, Prony finite-strain viscoelasticity, and density/fibre-angle topology design with exact history adjoints. No contact or fluid coupling."
+      "scope": "Finite-deformation hyperelastic laws (neo-Hookean, Mooney-Rivlin, Yeoh, Ogden, Gent, Arruda-Boyce, Holzapfel-Gasser-Ogden fibres), decoupled volumetric functions and a stabilised mixed u-p formulation against locking, follower pressure, Newmark/generalized-alpha dynamics with Rayleigh damping, Prony finite-strain viscoelasticity with optional separate matrix/fibre spectra and calibrated material-evolution endpoints from fixed rates or cycle-averaged exposure, and density/fibre-angle topology design with exact history adjoints. No contact or fluid coupling."
     },
     {
       "package_id": "region_history_responses",

@@ -1,24 +1,44 @@
 // SPDX-License-Identifier: Apache-2.0
 // METAPLEXIS-DISCLAIMER-BEGIN sha256=c7c02258f245d1dcd6db1e8066ef4f6bc1bf36430d91bf9aab026671723c058f
-// Open-access statement and disclaimer: see DISCLAIMER.md.
+// # Open-access statement and disclaimer
+//
+// ## Open-access statement
+// Metaplexis Ingenieurgesellschaft GmbH believes that open access to advanced computer-aided engineering (CAE) tools is essential to advancing research. Computational methods are developing rapidly and can explore scales and levels of complexity beyond those previously practical for unaided human workflows. By publishing Implexity, Metaplexis seeks to enable transparent inspection, reproducibility, independent validation, and collaborative scientific and engineering progress.
+//
+// This statement describes Metaplexis’s motivation. It is not a representation or guarantee of the software’s capabilities, accuracy, fitness, safety, or regulatory status.
+//
+// ## Relationship to the license
+// This notice is informational. It does not amend the Apache License, Version 2.0 (the “License”), or impose any additional condition, restriction, or field-of-use limitation. Permissions and conditions for first-party software are governed by the License. Nothing in this notice creates a warranty, guarantee, professional duty, support obligation, or acceptance of additional liability. Third-party material remains governed by its own notices and license terms.
+//
+// ## Engineering and validation status
+// Implexity is engineering software. Bundled models, examples, simulations, optimization outputs, geometry, renderings, and other results may be reduced-order, approximate, screening, exploratory, non-converged, or unvalidated unless expressly stated otherwise. They are not, by themselves, certification, qualification, design approval, a safety case, or professional engineering advice.
+//
+// Users remain responsible for selecting and validating models and data; checking inputs, units, assumptions, boundary conditions, convergence, sensitivities, constraints, materials, geometry, and outputs; obtaining suitably qualified review; and complying with applicable laws, codes, standards, and safety requirements. For any use in which failure could cause death, personal injury, environmental harm, or substantial property damage, users should apply an independently verified engineering and safety process and appropriate safeguards. These statements describe validation limits; they do not prohibit any use permitted by the License.
+//
+// ## Warranty and liability
+// Sections 7 and 8 of the License apply to the maximum extent permitted by applicable law. Nothing in this notice excludes or limits liability where exclusion or limitation is unlawful.
+//
+// Where German law applies, liability remains unaffected for intentional or grossly negligent conduct by Metaplexis, its statutory representatives, or vicarious agents; for culpable injury to life, body, or health; for mandatory liability under the German Product Liability Act (Produkthaftungsgesetz); and, where applicable, for claims within the scope of an expressly assumed guarantee or arising from fraudulent concealment of a defect.
+//
+// In the event of a slightly negligent breach of a material contractual obligation (an obligation whose performance is essential to proper performance of the contract and on whose performance the other party may regularly rely), liability, to the extent legally permissible, is limited to damage foreseeable and typical for the contract. The statutory allocation of the burden of proof remains unchanged.
+//
+// This savings clause does not create liability beyond liability imposed by applicable law or expressly agreed in writing.
 // METAPLEXIS-DISCLAIMER-END
-
-
-
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 use implexity_core::{CaeError, CaeResult};
 use implexity_linalg::lu::{Parallelism, SparseLu};
-use implexity_solve::factorization::symbolic_for;
 use implexity_linalg::sparse::CsrMatrix;
+use implexity_solve::factorization::symbolic_for;
 use implexity_solve::matrix::Jacobian;
 use implexity_solve::multirate_coupling::{
     FieldJacobians, FluxDrivenField, ResidualAdjointTangent, SecondOrderField,
 };
 use implexity_solve::time_stepper::{
-    SecondOrderStepper, StepCotangent, StepDiagnostics, StepParameters, StepRecord, StepTangent, TimeStepper,
+    SecondOrderStepper, StepCotangent, StepDiagnostics, StepParameters, StepRecord, StepTangent,
+    TimeStepper,
 };
 
 use super::observables::Observables;
@@ -96,7 +116,6 @@ fn bits(values: &[f64]) -> impl Iterator<Item = u64> + '_ {
 }
 
 impl<'m> SoftStepCore<'m> {
-
     pub fn new(
         model: &'m SoftModel,
         config: SoftStepConfig,
@@ -109,8 +128,13 @@ impl<'m> SoftStepCore<'m> {
             return contract("the soft-solid field needs at least one loading step");
         }
         let dt_nom = times[1] - times[0];
-        if times.windows(2).any(|w| ((w[1] - w[0]) - dt_nom).abs() > 1e-12 * dt_nom) {
-            return contract("the soft-solid field needs uniform steps (macro steps of equal length)");
+        if times
+            .windows(2)
+            .any(|w| ((w[1] - w[0]) - dt_nom).abs() > 1e-12 * dt_nom)
+        {
+            return contract(
+                "the soft-solid field needs uniform steps (macro steps of equal length)",
+            );
         }
         if let DesignLayout::VoxelDensity(map) = &design
             && map.elements() != model.ne()
@@ -128,18 +152,24 @@ impl<'m> SoftStepCore<'m> {
         let l = probe.layout;
         let mut local_groups = Vec::with_capacity(l.ne_visc + l.n3);
         for e in 0..l.ne_visc {
-            let mut group: Vec<usize> = (l.s() + 6 * e..l.s() + 6 * e + 6).collect();
+            let mut group: Vec<usize> = (l.stress(e, 0)..l.stress(e, 0) + 6 * l.nc).collect();
             group.extend(l.q() + 6 * e * l.nb..l.q() + 6 * (e + 1) * l.nb);
             local_groups.push(group);
         }
         for i in 0..l.n3 {
             local_groups.push(vec![l.v() + i, l.a() + i]);
         }
-        let mu = model.materials.iter().map(|m| m.mu0).fold(0.0_f64, f64::max);
+        let mu = model
+            .materials
+            .iter()
+            .map(|m| m.mu0)
+            .fold(0.0_f64, f64::max);
         #[allow(clippy::cast_precision_loss)]
         let length = (6.0 * model.mesh.volumes.iter().sum::<f64>() / model.ne() as f64).cbrt();
         if !(mu.is_finite() && mu > 0.0 && length.is_finite() && length > 0.0) {
-            return contract("the soft-solid field needs positive shear moduli and element volumes");
+            return contract(
+                "the soft-solid field needs positive shear moduli and element volumes",
+            );
         }
         let k = mu * length;
         let mut scale = vec![1.0; l.len()];
@@ -188,9 +218,10 @@ impl<'m> SoftStepCore<'m> {
         })
     }
 
-
-    pub fn with_prescribed_patterns(mut self, patterns: Vec<(Vec<f64>, Vec<f64>)>) -> Result<Self, CaeError> {
-
+    pub fn with_prescribed_patterns(
+        mut self,
+        patterns: Vec<(Vec<f64>, Vec<f64>)>,
+    ) -> Result<Self, CaeError> {
         SoftHistory::new(
             self.model,
             self.config.scheme,
@@ -207,8 +238,10 @@ impl<'m> SoftStepCore<'m> {
         Ok(self)
     }
 
-
-    pub fn with_factorization_reuse(mut self, reuse: Option<FactorizationReuse>) -> Result<Self, CaeError> {
+    pub fn with_factorization_reuse(
+        mut self,
+        reuse: Option<FactorizationReuse>,
+    ) -> Result<Self, CaeError> {
         if let Some(r) = reuse {
             r.validate()?;
         }
@@ -224,7 +257,9 @@ impl<'m> SoftStepCore<'m> {
         self.model
     }
 
-    pub fn local_elimination_groups(&self) -> &[Vec<usize>] { &self.local_groups }
+    pub fn local_elimination_groups(&self) -> &[Vec<usize>] {
+        &self.local_groups
+    }
 
     #[must_use]
     pub fn scale(&self) -> &[f64] {
@@ -238,7 +273,11 @@ impl<'m> SoftStepCore<'m> {
 
     #[must_use]
     pub fn to_scaled(&self, physical: &[f64]) -> Vec<f64> {
-        physical.iter().zip(&self.scale).map(|(z, s)| z * s).collect()
+        physical
+            .iter()
+            .zip(&self.scale)
+            .map(|(z, s)| z * s)
+            .collect()
     }
 
     #[must_use]
@@ -249,14 +288,15 @@ impl<'m> SoftStepCore<'m> {
         }
     }
 
-
     pub fn params(&self, design: &[f64]) -> Result<Vec<f64>, CaeError> {
         if design.len() != self.design_size() {
             return contract("soft-solid design vector has the wrong length");
         }
         Ok(match &self.design {
             DesignLayout::ElementParams => design.to_vec(),
-            DesignLayout::VoxelDensity(map) => [map.forward(design)?, vec![0.0; self.model.ne()]].concat(),
+            DesignLayout::VoxelDensity(map) => {
+                [map.forward(design)?, vec![0.0; self.model.ne()]].concat()
+            }
         })
     }
 
@@ -290,7 +330,6 @@ impl<'m> SoftStepCore<'m> {
         }
     }
 
-
     pub fn loading_step(&self, n: usize) -> Result<usize, CaeError> {
         let steps = self.config.loading.steps();
         if n == 0 {
@@ -301,14 +340,17 @@ impl<'m> SoftStepCore<'m> {
         } else if n <= steps {
             Ok(n - 1)
         } else {
-            contract(format!("soft-solid step {n} lies beyond the {steps} loading steps"))
+            contract(format!(
+                "soft-solid step {n} lies beyond the {steps} loading steps"
+            ))
         }
     }
 
-
     pub fn history(&self, p: StepParameters<'_>) -> Result<Arc<SoftHistory<'m>>, CaeError> {
         let params = self.params(p.design)?;
-        let key: HistoryKey = std::iter::once(p.time_scale.to_bits()).chain(bits(&params)).collect();
+        let key: HistoryKey = std::iter::once(p.time_scale.to_bits())
+            .chain(bits(&params))
+            .collect();
         if let Ok(cache) = self.histories.lock()
             && let Some((_, h)) = cache.iter().find(|(k, _)| *k == key)
         {
@@ -343,25 +385,40 @@ impl<'m> SoftStepCore<'m> {
         if v.len() == self.state_len {
             Ok(())
         } else {
-            contract(format!("soft-solid {what} has length {} instead of {}", v.len(), self.state_len))
+            contract(format!(
+                "soft-solid {what} has length {} instead of {}",
+                v.len(),
+                self.state_len
+            ))
         }
     }
 
-
     pub fn initial_state(&self, design: &[f64]) -> Result<Vec<f64>, CaeError> {
-        let h = self.history(StepParameters { design, time_scale: 1.0 })?;
+        let h = self.history(StepParameters {
+            design,
+            time_scale: 1.0,
+        })?;
         Ok(self.to_scaled(&h.initial_state()?))
     }
 
-
-    pub fn initial_state_vjp(&self, design: &[f64], cotangent: &[f64]) -> Result<Vec<f64>, CaeError> {
+    pub fn initial_state_vjp(
+        &self,
+        design: &[f64],
+        cotangent: &[f64],
+    ) -> Result<Vec<f64>, CaeError> {
         self.check(cotangent, "initial-state cotangent")?;
-        let h = self.history(StepParameters { design, time_scale: 1.0 })?;
+        let h = self.history(StepParameters {
+            design,
+            time_scale: 1.0,
+        })?;
         let x0 = h.initial_state()?;
-        let lambda: Vec<f64> = cotangent.iter().zip(&self.scale).map(|(c, s)| c * s).collect();
+        let lambda: Vec<f64> = cotangent
+            .iter()
+            .zip(&self.scale)
+            .map(|(c, s)| c * s)
+            .collect();
         self.params_pullback(&h.initial_state_vjp(&x0, &lambda)?)
     }
-
 
     pub fn residual(
         &self,
@@ -375,7 +432,12 @@ impl<'m> SoftStepCore<'m> {
         self.check(previous, "previous state")?;
         let t = self.loading_step(n)?;
         let h = self.history(p)?;
-        let r = h.state_residual(t, &self.to_physical(previous), &self.to_physical(current), flux)?;
+        let r = h.state_residual(
+            t,
+            &self.to_physical(previous),
+            &self.to_physical(current),
+            flux,
+        )?;
         Ok(r.iter().zip(&self.row).map(|(a, b)| a * b).collect())
     }
 
@@ -391,9 +453,16 @@ impl<'m> SoftStepCore<'m> {
         self.check(previous, "previous state")?;
         let t = self.loading_step(n)?;
         let h = self.history(p)?;
-        let j = h.state_jacobians(t, &self.to_physical(previous), &self.to_physical(current), flux)?;
+        let j = h.state_jacobians(
+            t,
+            &self.to_physical(previous),
+            &self.to_physical(current),
+            flux,
+        )?;
         let inv: Vec<f64> = self.scale.iter().map(|s| 1.0 / s).collect();
-        let err = |e: implexity_linalg::LinalgError| CaeError::contract(format!("soft-solid Jacobian: {e}"));
+        let err = |e: implexity_linalg::LinalgError| {
+            CaeError::contract(format!("soft-solid Jacobian: {e}"))
+        };
         let ones = |k: usize| vec![1.0; k];
         let design = self.params_compose(&j.params)?;
         let nd = design.ncols();
@@ -401,8 +470,16 @@ impl<'m> SoftStepCore<'m> {
             current: j.current.scaled(&self.row, &inv).map_err(err)?,
             previous: j.previous.scaled(&self.row, &inv).map_err(err)?,
             design: design.scaled(&self.row, &ones(nd)).map_err(err)?,
-            flux: j.extra.scaled(&self.row, &ones(j.extra.ncols())).map_err(err)?,
-            time_scale: j.dt.iter().zip(&self.row).map(|(d, r)| d * r * self.dt_nom).collect(),
+            flux: j
+                .extra
+                .scaled(&self.row, &ones(j.extra.ncols()))
+                .map_err(err)?,
+            time_scale: j
+                .dt
+                .iter()
+                .zip(&self.row)
+                .map(|(d, r)| d * r * self.dt_nom)
+                .collect(),
         })
     }
 
@@ -424,13 +501,23 @@ impl<'m> SoftStepCore<'m> {
             Some(flux),
         )?;
         let inv: Vec<f64> = self.scale.iter().map(|s| 1.0 / s).collect();
-        j.scaled(&self.row, &inv).map_err(|e| CaeError::contract(format!("soft-solid Jacobian: {e}")))
+        j.scaled(&self.row, &inv)
+            .map_err(|e| CaeError::contract(format!("soft-solid Jacobian: {e}")))
     }
 
-    fn current_flux_jacobians(&self, n: usize, current: &[f64], previous: &[f64], flux: &[f64], p: StepParameters<'_>) -> CaeResult<(CsrMatrix, CsrMatrix)> {
+    fn current_flux_jacobians(
+        &self,
+        n: usize,
+        current: &[f64],
+        previous: &[f64],
+        flux: &[f64],
+        p: StepParameters<'_>,
+    ) -> CaeResult<(CsrMatrix, CsrMatrix)> {
         let current = self.current_jacobian(n, current, previous, flux, p)?;
         let j = self.history(p)?.state_flux_jacobian()?;
-        let flux = j.scaled(&self.row, &vec![1.0; j.ncols()]).map_err(|e| CaeError::contract(format!("soft-solid Jacobian: {e}")))?;
+        let flux = j
+            .scaled(&self.row, &vec![1.0; j.ncols()])
+            .map_err(|e| CaeError::contract(format!("soft-solid Jacobian: {e}")))?;
         Ok((current, flux))
     }
 
@@ -440,10 +527,11 @@ impl<'m> SoftStepCore<'m> {
         }
         Ok(match &self.design {
             DesignLayout::ElementParams => d_design.to_vec(),
-            DesignLayout::VoxelDensity(map) => [map.forward(d_design)?, vec![0.0; self.model.ne()]].concat(),
+            DesignLayout::VoxelDensity(map) => {
+                [map.forward(d_design)?, vec![0.0; self.model.ne()]].concat()
+            }
         })
     }
-
 
     #[allow(clippy::too_many_arguments)]
     pub fn residual_adjoint_tangent(
@@ -486,13 +574,11 @@ impl<'m> SoftStepCore<'m> {
         })
     }
 
-
     pub fn samples(&self, current: &[f64], p: StepParameters<'_>) -> Result<Vec<f64>, CaeError> {
         self.check(current, "state")?;
         let h = self.history(p)?;
         self.observables.values(&h, &self.to_physical(current))
     }
-
 
     pub fn samples_vjp(
         &self,
@@ -506,11 +592,18 @@ impl<'m> SoftStepCore<'m> {
         }
         let h = self.history(p)?;
         let (xs, ps) = self.observables.vjp(&h, &self.to_physical(current), bar)?;
-        Ok((xs.iter().zip(&self.scale).map(|(a, s)| a / s).collect(), self.params_pullback(&ps)?))
+        Ok((
+            xs.iter().zip(&self.scale).map(|(a, s)| a / s).collect(),
+            self.params_pullback(&ps)?,
+        ))
     }
 
-
-    pub fn predict(&self, n: usize, previous: &[f64], p: StepParameters<'_>) -> Result<Vec<f64>, CaeError> {
+    pub fn predict(
+        &self,
+        n: usize,
+        previous: &[f64],
+        p: StepParameters<'_>,
+    ) -> Result<Vec<f64>, CaeError> {
         self.check(previous, "previous state")?;
         let t = self.loading_step(n)?;
         let h = self.history(p)?;
@@ -518,7 +611,10 @@ impl<'m> SoftStepCore<'m> {
         let l = h.layout;
         let m = self.model;
         let dt = h.step_length(t);
-        let quad = if matches!(self.config.scheme, Scheme::Newmark { .. } | Scheme::GeneralizedAlpha { .. }) {
+        let quad = if matches!(
+            self.config.scheme,
+            Scheme::Newmark { .. } | Scheme::GeneralizedAlpha { .. }
+        ) {
             0.5 * dt * dt
         } else {
             0.0
@@ -554,25 +650,60 @@ impl<'m> SoftSolidField<'m> {
 }
 
 impl FluxDrivenField for SoftSolidField<'_> {
-    fn local_elimination_groups(&self) -> CaeResult<Option<Vec<Vec<usize>>>> { let groups=self.core.local_elimination_groups(); Ok(if groups.is_empty(){None}else{Some(groups.to_vec())}) }
-    fn admissible_step(&self, _n: usize, current: &[f64], direction: &[f64], previous: &[f64], p: StepParameters<'_>, trial: f64) -> CaeResult<f64> {
-        self.core.check(current,"state")?;
-        self.core.check(direction,"direction")?;
-        self.core.check(previous,"previous state")?;
-        let history=self.core.history(p)?;
-        let l=history.layout;
-        let u=self.core.to_physical(current);
-        let du=self.core.to_physical(direction);
-        self.core.model.admissible_step(&u[l.u()..l.u()+l.n3],&du[l.u()..l.u()+l.n3],history.params(),trial)
+    fn local_elimination_groups(&self) -> CaeResult<Option<Vec<Vec<usize>>>> {
+        let groups = self.core.local_elimination_groups();
+        Ok(if groups.is_empty() {
+            None
+        } else {
+            Some(groups.to_vec())
+        })
+    }
+    fn admissible_step(
+        &self,
+        _n: usize,
+        current: &[f64],
+        direction: &[f64],
+        previous: &[f64],
+        p: StepParameters<'_>,
+        trial: f64,
+    ) -> CaeResult<f64> {
+        self.core.check(current, "state")?;
+        self.core.check(direction, "direction")?;
+        self.core.check(previous, "previous state")?;
+        let history = self.core.history(p)?;
+        let l = history.layout;
+        let u = self.core.to_physical(current);
+        let du = self.core.to_physical(direction);
+        self.core.model.admissible_step(
+            &u[l.u()..l.u() + l.n3],
+            &du[l.u()..l.u() + l.n3],
+            history.params(),
+            trial,
+        )
     }
 
-    fn check_trace_path(&self, _n: usize, start: &[f64], end: &[f64], p: StepParameters<'_>) -> CaeResult<()> {
-        let n3=3*self.core.model.n();
-        if start.len()!=n3 || end.len()!=n3 {return Err(CaeError::contract("invalid solid trace path"));}
-        let history=self.core.history(p)?;
-        let direction:Vec<f64>=end.iter().zip(start).map(|(a,b)|a-b).collect();
-        if self.core.model.admissible_step(start,&direction,history.params(),1.0)?<1.0 {
-            return Err(CaeError::contract("solid trace linear surface path is inadmissible"));
+    fn check_trace_path(
+        &self,
+        _n: usize,
+        start: &[f64],
+        end: &[f64],
+        p: StepParameters<'_>,
+    ) -> CaeResult<()> {
+        let n3 = 3 * self.core.model.n();
+        if start.len() != n3 || end.len() != n3 {
+            return Err(CaeError::contract("invalid solid trace path"));
+        }
+        let history = self.core.history(p)?;
+        let direction: Vec<f64> = end.iter().zip(start).map(|(a, b)| a - b).collect();
+        if self
+            .core
+            .model
+            .admissible_step(start, &direction, history.params(), 1.0)?
+            < 1.0
+        {
+            return Err(CaeError::contract(
+                "solid trace linear surface path is inadmissible",
+            ));
         }
         Ok(())
     }
@@ -612,8 +743,9 @@ impl FluxDrivenField for SoftSolidField<'_> {
         _before_previous: Option<&[f64]>,
         p: StepParameters<'_>,
     ) -> Vec<f64> {
-
-        self.core.predict(n, previous, p).unwrap_or_else(|_| previous.to_vec())
+        self.core
+            .predict(n, previous, p)
+            .unwrap_or_else(|_| previous.to_vec())
     }
 
     fn residual(
@@ -653,11 +785,22 @@ impl FluxDrivenField for SoftSolidField<'_> {
         flux: &[f64],
         p: StepParameters<'_>,
     ) -> CaeResult<Jacobian> {
-        Ok(Jacobian::Csr(self.core.current_jacobian(n, current, previous, flux, p)?))
+        Ok(Jacobian::Csr(
+            self.core.current_jacobian(n, current, previous, flux, p)?,
+        ))
     }
 
-    fn current_flux_jacobians(&self, n: usize, current: &[f64], previous: &[f64], flux: &[f64], p: StepParameters<'_>) -> CaeResult<(Jacobian, Jacobian)> {
-        let (current, flux) = self.core.current_flux_jacobians(n, current, previous, flux, p)?;
+    fn current_flux_jacobians(
+        &self,
+        n: usize,
+        current: &[f64],
+        previous: &[f64],
+        flux: &[f64],
+        p: StepParameters<'_>,
+    ) -> CaeResult<(Jacobian, Jacobian)> {
+        let (current, flux) = self
+            .core
+            .current_flux_jacobians(n, current, previous, flux, p)?;
         Ok((Jacobian::Csr(current), Jacobian::Csr(flux)))
     }
 
@@ -742,7 +885,6 @@ impl std::fmt::Debug for SoftSolidStepper<'_> {
 }
 
 impl<'m> SoftSolidStepper<'m> {
-
     pub fn new(core: SoftStepCore<'m>, identity: impl Into<String>) -> Result<Self, CaeError> {
         let identity = identity.into();
         if identity.is_empty() {
@@ -794,10 +936,16 @@ impl<'m> SoftSolidStepper<'m> {
             .map_err(|e| CaeError::convergence(format!("soft-solid step Jacobian: {e}")))?;
         let nnz = jac.current.nnz() + jac.previous.nnz() + jac.design.nnz() + jac.flux.nnz();
         let bytes = 16 * nnz + 8 * (key.len() + jac.time_scale.len()) + lu.nbytes();
-        let lin = Arc::new(Linearized { key, jac, lu, bytes });
+        let lin = Arc::new(Linearized {
+            key,
+            jac,
+            lu,
+            bytes,
+        });
         if let Ok(mut cache) = self.linearized.lock() {
             cache.push(Arc::clone(&lin));
-            while cache.len() > 1 && cache.iter().map(|l| l.bytes).sum::<usize>() > self.cache_bytes {
+            while cache.len() > 1 && cache.iter().map(|l| l.bytes).sum::<usize>() > self.cache_bytes
+            {
                 cache.remove(0);
             }
         }
@@ -855,8 +1003,11 @@ impl TimeStepper for SoftSolidStepper<'_> {
             lg.quadrature_defect,
             lg.algorithmic_dissipation,
         ];
-        let ledger: BTreeMap<String, f64> =
-            LEDGER_KEYS.iter().zip(values).map(|(k, v)| ((*k).to_string(), v)).collect();
+        let ledger: BTreeMap<String, f64> = LEDGER_KEYS
+            .iter()
+            .zip(values)
+            .map(|(k, v)| ((*k).to_string(), v))
+            .collect();
         let state = self.core.to_scaled(&sol.state);
         let samples = self.core.observables.values(&h, &sol.state)?;
         Ok(StepRecord {
@@ -884,7 +1035,9 @@ impl TimeStepper for SoftSolidStepper<'_> {
     ) -> CaeResult<StepTangent> {
         self.core.check(d_previous, "previous-state direction")?;
         let lin = self.linearize(n, previous, current, p)?;
-        let err = |e: implexity_linalg::LinalgError| CaeError::contract(format!("soft-solid tangent: {e}"));
+        let err = |e: implexity_linalg::LinalgError| {
+            CaeError::contract(format!("soft-solid tangent: {e}"))
+        };
         let mut b = lin.jac.previous.matvec(d_previous).map_err(err)?;
         if let Some(dx) = d_design {
             if dx.len() != self.core.design_size() {
@@ -924,9 +1077,16 @@ impl TimeStepper for SoftSolidStepper<'_> {
         state_bar: &[f64],
         sample_bar: &[f64],
     ) -> CaeResult<StepCotangent> {
-        self.adjoint_many(n, previous, current, p, &[state_bar.to_vec()], &[sample_bar.to_vec()])?
-            .pop()
-            .ok_or_else(|| CaeError::contract("internal: empty adjoint batch"))
+        self.adjoint_many(
+            n,
+            previous,
+            current,
+            p,
+            &[state_bar.to_vec()],
+            &[sample_bar.to_vec()],
+        )?
+        .pop()
+        .ok_or_else(|| CaeError::contract("internal: empty adjoint batch"))
     }
 
     fn adjoint_many(
@@ -939,10 +1099,14 @@ impl TimeStepper for SoftSolidStepper<'_> {
         sample_bars: &[Vec<f64>],
     ) -> CaeResult<Vec<StepCotangent>> {
         if state_bars.len() != sample_bars.len() {
-            return contract("soft-solid adjoint batch has unequal state and sample cotangent counts");
+            return contract(
+                "soft-solid adjoint batch has unequal state and sample cotangent counts",
+            );
         }
         let lin = self.linearize(n, previous, current, p)?;
-        let err = |e: implexity_linalg::LinalgError| CaeError::contract(format!("soft-solid adjoint: {e}"));
+        let err = |e: implexity_linalg::LinalgError| {
+            CaeError::contract(format!("soft-solid adjoint: {e}"))
+        };
         let mut out = Vec::with_capacity(state_bars.len());
         for (wz, ws) in state_bars.iter().zip(sample_bars) {
             self.core.check(wz, "state cotangent")?;
@@ -955,10 +1119,22 @@ impl TimeStepper for SoftSolidStepper<'_> {
                 .lu
                 .solve_transpose(&rhs)
                 .map_err(|e| CaeError::convergence(format!("soft-solid adjoint solve: {e}")))?;
-            let previous_bar: Vec<f64> =
-                lin.jac.previous.matvec_transpose(&lambda).map_err(err)?.iter().map(|v| -v).collect();
-            let mut design: Vec<f64> =
-                lin.jac.design.matvec_transpose(&lambda).map_err(err)?.iter().map(|v| -v).collect();
+            let previous_bar: Vec<f64> = lin
+                .jac
+                .previous
+                .matvec_transpose(&lambda)
+                .map_err(err)?
+                .iter()
+                .map(|v| -v)
+                .collect();
+            let mut design: Vec<f64> = lin
+                .jac
+                .design
+                .matvec_transpose(&lambda)
+                .map_err(err)?
+                .iter()
+                .map(|v| -v)
+                .collect();
             for (a, b) in design.iter_mut().zip(&cx) {
                 *a += b;
             }
@@ -1004,8 +1180,12 @@ impl SecondOrderStepper for SoftSolidStepper<'_> {
             CaeError::contract(format!("soft-solid second-order adjoint: {e}"))
         };
         let solve = |rhs: &[f64], transpose: bool| {
-            if transpose { lin.lu.solve_transpose(rhs) } else { lin.lu.solve(rhs) }
-                .map_err(|e| CaeError::convergence(format!("soft-solid second-order solve: {e}")))
+            if transpose {
+                lin.lu.solve_transpose(rhs)
+            } else {
+                lin.lu.solve(rhs)
+            }
+            .map_err(|e| CaeError::convergence(format!("soft-solid second-order solve: {e}")))
         };
         let mut b = lin.jac.previous.matvec(d_previous).map_err(err)?;
         if let Some(dx) = d_design {

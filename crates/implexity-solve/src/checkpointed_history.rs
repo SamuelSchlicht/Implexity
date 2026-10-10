@@ -1,6 +1,28 @@
 // SPDX-License-Identifier: Apache-2.0
 // METAPLEXIS-DISCLAIMER-BEGIN sha256=c7c02258f245d1dcd6db1e8066ef4f6bc1bf36430d91bf9aab026671723c058f
-// Open-access statement and disclaimer: see DISCLAIMER.md.
+// # Open-access statement and disclaimer
+//
+// ## Open-access statement
+// Metaplexis Ingenieurgesellschaft GmbH believes that open access to advanced computer-aided engineering (CAE) tools is essential to advancing research. Computational methods are developing rapidly and can explore scales and levels of complexity beyond those previously practical for unaided human workflows. By publishing Implexity, Metaplexis seeks to enable transparent inspection, reproducibility, independent validation, and collaborative scientific and engineering progress.
+//
+// This statement describes Metaplexis’s motivation. It is not a representation or guarantee of the software’s capabilities, accuracy, fitness, safety, or regulatory status.
+//
+// ## Relationship to the license
+// This notice is informational. It does not amend the Apache License, Version 2.0 (the “License”), or impose any additional condition, restriction, or field-of-use limitation. Permissions and conditions for first-party software are governed by the License. Nothing in this notice creates a warranty, guarantee, professional duty, support obligation, or acceptance of additional liability. Third-party material remains governed by its own notices and license terms.
+//
+// ## Engineering and validation status
+// Implexity is engineering software. Bundled models, examples, simulations, optimization outputs, geometry, renderings, and other results may be reduced-order, approximate, screening, exploratory, non-converged, or unvalidated unless expressly stated otherwise. They are not, by themselves, certification, qualification, design approval, a safety case, or professional engineering advice.
+//
+// Users remain responsible for selecting and validating models and data; checking inputs, units, assumptions, boundary conditions, convergence, sensitivities, constraints, materials, geometry, and outputs; obtaining suitably qualified review; and complying with applicable laws, codes, standards, and safety requirements. For any use in which failure could cause death, personal injury, environmental harm, or substantial property damage, users should apply an independently verified engineering and safety process and appropriate safeguards. These statements describe validation limits; they do not prohibit any use permitted by the License.
+//
+// ## Warranty and liability
+// Sections 7 and 8 of the License apply to the maximum extent permitted by applicable law. Nothing in this notice excludes or limits liability where exclusion or limitation is unlawful.
+//
+// Where German law applies, liability remains unaffected for intentional or grossly negligent conduct by Metaplexis, its statutory representatives, or vicarious agents; for culpable injury to life, body, or health; for mandatory liability under the German Product Liability Act (Produkthaftungsgesetz); and, where applicable, for claims within the scope of an expressly assumed guarantee or arising from fraudulent concealment of a defect.
+//
+// In the event of a slightly negligent breach of a material contractual obligation (an obligation whose performance is essential to proper performance of the contract and on whose performance the other party may regularly rely), liability, to the extent legally permissible, is limited to damage foreseeable and typical for the contract. The statutory allocation of the burden of proof remains unchanged.
+//
+// This savings clause does not create liability beyond liability imposed by applicable law or expressly agreed in writing.
 // METAPLEXIS-DISCLAIMER-END
 
 
@@ -319,6 +341,7 @@ pub struct HistoryRun {
     ledger: Vec<BTreeMap<String, f64>>,
     diagnostics: Vec<StepDiagnostics>,
     digests: Vec<[u64; 2]>,
+    derivative_contexts: Vec<Option<String>>,
     policy: CheckpointPolicy,
     storage: RwLock<Storage>,
     stats: Mutex<HistoryRunStats>,
@@ -447,6 +470,17 @@ impl HistoryRun {
         Ok(())
     }
 
+    fn check_derivative_context(
+        &self, stepper: &dyn TimeStepper, p: StepParameters<'_>, k: usize,
+        previous: &[f64], current: &[f64],
+    ) -> CaeResult<()> {
+        let identity = stepper.derivative_context_identity(self.step_number(k), previous, current, p)?;
+        if self.derivative_contexts.get(k - 1) != Some(&identity) {
+            return Err(CaeError::convergence("checkpoint derivative context differs from the forward sweep"));
+        }
+        Ok(())
+    }
+
     fn recompute(
         &self,
         stepper: &dyn TimeStepper,
@@ -462,6 +496,7 @@ impl HistoryRun {
         if !same_samples || state_digest(&record.state) != self.digests[k] {
             return Err(CaeError::convergence(RECOMPUTATION_DIVERGED));
         }
+        self.check_derivative_context(stepper, p, k, previous, &record.state)?;
         Ok(record.state)
     }
 
@@ -496,6 +531,11 @@ enum Plan {
 
 
 
+pub trait HistoryObserver {
+    fn initial(&mut self, step: usize, state: &[f64]) -> CaeResult<()>;
+    fn accepted(&mut self, step: usize, record: &StepRecord) -> CaeResult<()>;
+}
+
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 pub fn run_history(
     stepper: &dyn TimeStepper,
@@ -506,6 +546,21 @@ pub fn run_history(
     stop: Option<&dyn StopRule>,
     policy: CheckpointPolicy,
     budget: &StoreBudget,
+) -> CaeResult<HistoryRun> {
+    run_history_observed(stepper, p, initial, first_step, steps, stop, policy, budget, None)
+}
+
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+pub fn run_history_observed(
+    stepper: &dyn TimeStepper,
+    p: StepParameters<'_>,
+    initial: &[f64],
+    first_step: usize,
+    steps: Option<usize>,
+    stop: Option<&dyn StopRule>,
+    policy: CheckpointPolicy,
+    budget: &StoreBudget,
+    mut observer: Option<&mut dyn HistoryObserver>,
 ) -> CaeResult<HistoryRun> {
     check_parameters(stepper, p)?;
     check_vector(initial, stepper.state_size(), "history initial state")?;
@@ -567,6 +622,7 @@ pub fn run_history(
         Ok(())
     };
     take(0, initial, &mut plan)?;
+    if let Some(observer) = observer.as_mut() { observer.initial(first_step - 1, initial)?; }
     let limit = steps.unwrap_or(usize::MAX);
     let mut cursor = initial.to_vec();
     let mut previous: Vec<f64>;
@@ -574,6 +630,7 @@ pub fn run_history(
     let mut ledger = Vec::new();
     let mut diagnostics = Vec::new();
     let mut digests = vec![state_digest(initial)];
+    let mut derivative_contexts = Vec::new();
     let mut k = 0usize;
     loop {
         k += 1;
@@ -585,6 +642,12 @@ pub fn run_history(
                 Some(rule) => rule.stop(n, &record)?,
                 None => false,
             };
+        let context = stepper.derivative_context_identity(n, &cursor, &record.state, p)?;
+        if context.as_ref().is_some_and(|identity| identity.is_empty()) {
+            return Err(CaeError::contract("history derivative context identity is empty"));
+        }
+        derivative_contexts.push(context);
+        if let Some(observer) = observer.as_mut() { observer.accepted(n, &record)?; }
         let StepRecord { state, samples: s, ledger: l, diagnostics: d } = record;
         digests.push(state_digest(&state));
         samples.extend_from_slice(&s);
@@ -635,6 +698,7 @@ pub fn run_history(
         ledger,
         diagnostics,
         digests,
+        derivative_contexts,
         policy,
         storage: RwLock::new(storage),
         stats: Mutex::new(initial_stats),
@@ -679,6 +743,7 @@ pub fn history_tangent(
             recomputed += 1;
             run.recompute(stepper, p, k, &previous)?
         };
+        run.check_derivative_context(stepper, p, k, &previous, &current)?;
         let t = stepper.tangent(run.step_number(k), &previous, &current, p, &dz, d_design, d_time_scale)?;
         check_vector(&t.state, stepper.state_size(), "step state tangent")?;
         check_vector(&t.samples, n_s, "step sample tangent")?;
@@ -738,6 +803,7 @@ pub fn history_adjoint_many(
     let mut time_scale = vec![0.0; m];
     let mut rows = vec![Vec::with_capacity(n_s); m];
     let mut reverse = |k: usize, previous: &[f64], current: &[f64]| -> CaeResult<()> {
+        run.check_derivative_context(stepper, p, k, previous, current)?;
         for (row, bar) in rows.iter_mut().zip(sample_bars) {
             row.clear();
             row.extend_from_slice(&bar.data[(k - 1) * n_s..k * n_s]);
@@ -942,6 +1008,7 @@ pub fn history_control_pullback_many(
     let mut design = vec![vec![0.0; nx]; m];
     let mut rows = vec![Vec::with_capacity(n_s); m];
     let mut reverse = |k: usize, previous: &[f64], current: &[f64]| -> CaeResult<()> {
+        run.check_derivative_context(stepper, p, k, previous, current)?;
         for (row, bar) in rows.iter_mut().zip(sample_bars) {
             row.clear();
             row.extend_from_slice(&bar.data[(k - 1) * n_s..k * n_s]);

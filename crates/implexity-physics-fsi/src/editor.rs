@@ -1,6 +1,28 @@
 // SPDX-License-Identifier: Apache-2.0
 // METAPLEXIS-DISCLAIMER-BEGIN sha256=c7c02258f245d1dcd6db1e8066ef4f6bc1bf36430d91bf9aab026671723c058f
-// Open-access statement and disclaimer: see DISCLAIMER.md.
+// # Open-access statement and disclaimer
+//
+// ## Open-access statement
+// Metaplexis Ingenieurgesellschaft GmbH believes that open access to advanced computer-aided engineering (CAE) tools is essential to advancing research. Computational methods are developing rapidly and can explore scales and levels of complexity beyond those previously practical for unaided human workflows. By publishing Implexity, Metaplexis seeks to enable transparent inspection, reproducibility, independent validation, and collaborative scientific and engineering progress.
+//
+// This statement describes Metaplexis’s motivation. It is not a representation or guarantee of the software’s capabilities, accuracy, fitness, safety, or regulatory status.
+//
+// ## Relationship to the license
+// This notice is informational. It does not amend the Apache License, Version 2.0 (the “License”), or impose any additional condition, restriction, or field-of-use limitation. Permissions and conditions for first-party software are governed by the License. Nothing in this notice creates a warranty, guarantee, professional duty, support obligation, or acceptance of additional liability. Third-party material remains governed by its own notices and license terms.
+//
+// ## Engineering and validation status
+// Implexity is engineering software. Bundled models, examples, simulations, optimization outputs, geometry, renderings, and other results may be reduced-order, approximate, screening, exploratory, non-converged, or unvalidated unless expressly stated otherwise. They are not, by themselves, certification, qualification, design approval, a safety case, or professional engineering advice.
+//
+// Users remain responsible for selecting and validating models and data; checking inputs, units, assumptions, boundary conditions, convergence, sensitivities, constraints, materials, geometry, and outputs; obtaining suitably qualified review; and complying with applicable laws, codes, standards, and safety requirements. For any use in which failure could cause death, personal injury, environmental harm, or substantial property damage, users should apply an independently verified engineering and safety process and appropriate safeguards. These statements describe validation limits; they do not prohibit any use permitted by the License.
+//
+// ## Warranty and liability
+// Sections 7 and 8 of the License apply to the maximum extent permitted by applicable law. Nothing in this notice excludes or limits liability where exclusion or limitation is unlawful.
+//
+// Where German law applies, liability remains unaffected for intentional or grossly negligent conduct by Metaplexis, its statutory representatives, or vicarious agents; for culpable injury to life, body, or health; for mandatory liability under the German Product Liability Act (Produkthaftungsgesetz); and, where applicable, for claims within the scope of an expressly assumed guarantee or arising from fraudulent concealment of a defect.
+//
+// In the event of a slightly negligent breach of a material contractual obligation (an obligation whose performance is essential to proper performance of the contract and on whose performance the other party may regularly rely), liability, to the extent legally permissible, is limited to damage foreseeable and typical for the contract. The statutory allocation of the burden of proof remains unchanged.
+//
+// This savings clause does not create liability beyond liability imposed by applicable law or expressly agreed in writing.
 // METAPLEXIS-DISCLAIMER-END
 
 
@@ -133,11 +155,11 @@ fn solid() -> Value {
             ("plane_strain", json!({"title": "Plane strain", "type": "boolean"})),
             (
                 "material",
-                json!({"title": "Material", "type": "object", "description": "A soft-matter law object: law neo_hookean | mooney_rivlin | yeoh | ogden | gent | arruda_boyce | neo_hookean_coupled | st_venant_kirchhoff with its parameters, volumetric {function, bulk_Pa}, optional fibres (HGO), prony {beta, tau_s}, density_kg_m3."}),
+                json!({"title": "Material", "type": "object", "description": "A soft-matter law object: law neo_hookean | mooney_rivlin | yeoh | ogden | gent | arruda_boyce | neo_hookean_coupled | st_venant_kirchhoff with its parameters, volumetric {function, bulk_Pa}, optional fibres (HGO), prony {beta, tau_s} or directional_prony {matrix: series|null, fibres: [series|null, ...]}, density_kg_m3. Each series uses {beta, tau_s}. Optional evolution {initial, reference, rates or exposure_rates, sensitivity, interval_s, provenance} sets properties before a new history.", "x-evolution-schema": implexity_physics_solid::soft::evolution::editor_schema()}),
             ),
             (
                 "material_map",
-                json!({"title": "Material map", "type": "array", "description": "Fixed multi-material solid: [{label, region (\"all\", Booleans per voxel, run-length mask or {box_m | boxes_m}), material (a law object) | scale {stiffness (every modulus of the base law), density, prony (\"base\", {beta, tau_s} or {} for none)}}]; later entries override earlier ones; e.g. localized inclusions (stiffer, heavier or more damped regions) or layered bodies."}),
+                json!({"title": "Material map", "type": "array", "description": "Fixed multi-material solid: [{label, region (\"all\", Booleans per voxel, run-length mask or {box_m | boxes_m}), material (a law object) | scale {stiffness (every modulus of the base law), density, prony (\"base\", {beta, tau_s} or {} for none)}}]; Optional fibre_directions sets the region orientations; otherwise the body directions apply. Later entries override earlier entries."}),
             ),
             (
                 "removal_modifier",
@@ -145,7 +167,7 @@ fn solid() -> Value {
             ),
             (
                 "fibre_directions",
-                json!({"title": "Fibre directions", "type": "array", "description": "1..4 XYZ directions for fibre-reinforced laws (base or material map)."}),
+                json!({"title": "Fibre directions", "type": "array", "description": "1..4 XYZ directions. A material-map entry can set its own directions."}),
             ),
             (
                 "formulation",
@@ -268,6 +290,7 @@ fn coupling() -> Value {
                     "strong_newton_krylov",
                 ),
             ),
+            ("initial_prediction", choice("Initial coupling prediction", "Field prediction or a solid solve with frozen fluid force. Strong modes only for frozen force.", &["field", "frozen_flux"], "field")),
             ("substeps", number("Fluid substeps per macro step", "m = dt_s / dt_f.", "1")),
             ("predictor_order", number("Loose predictor order", "0..3.", "1")),
             ("tolerance", number("Coupling tolerance", "Strong modes.", "1")),

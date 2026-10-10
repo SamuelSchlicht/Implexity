@@ -22,7 +22,7 @@
    "structure": {
     "title": "Solid mesh, supports and wall-link interpolation",
     "format": "json",
-    "description": "One-way fixed-wall loading. Explicit link indices and nonnegative weights must reproduce interface positions. Optional thermal_expansion contains per-element coefficient_per_K and stress_free_temperature_K; centroids interpolate only fixed solid-cell temperatures. Zero initial motion and fixed supports. Requires JAX x64."
+    "description": "One-way fixed-wall loading. Explicit link indices and nonnegative weights must reproduce interface positions. Optional thermal_expansion contains per-element coefficient_per_K and stress_free_temperature_K; centroids interpolate only fixed solid-cell temperatures. Zero initial motion and fixed supports."
    }
   }
  },

@@ -1,6 +1,28 @@
 // SPDX-License-Identifier: Apache-2.0
 // METAPLEXIS-DISCLAIMER-BEGIN sha256=c7c02258f245d1dcd6db1e8066ef4f6bc1bf36430d91bf9aab026671723c058f
-// Open-access statement and disclaimer: see DISCLAIMER.md.
+// # Open-access statement and disclaimer
+//
+// ## Open-access statement
+// Metaplexis Ingenieurgesellschaft GmbH believes that open access to advanced computer-aided engineering (CAE) tools is essential to advancing research. Computational methods are developing rapidly and can explore scales and levels of complexity beyond those previously practical for unaided human workflows. By publishing Implexity, Metaplexis seeks to enable transparent inspection, reproducibility, independent validation, and collaborative scientific and engineering progress.
+//
+// This statement describes Metaplexis’s motivation. It is not a representation or guarantee of the software’s capabilities, accuracy, fitness, safety, or regulatory status.
+//
+// ## Relationship to the license
+// This notice is informational. It does not amend the Apache License, Version 2.0 (the “License”), or impose any additional condition, restriction, or field-of-use limitation. Permissions and conditions for first-party software are governed by the License. Nothing in this notice creates a warranty, guarantee, professional duty, support obligation, or acceptance of additional liability. Third-party material remains governed by its own notices and license terms.
+//
+// ## Engineering and validation status
+// Implexity is engineering software. Bundled models, examples, simulations, optimization outputs, geometry, renderings, and other results may be reduced-order, approximate, screening, exploratory, non-converged, or unvalidated unless expressly stated otherwise. They are not, by themselves, certification, qualification, design approval, a safety case, or professional engineering advice.
+//
+// Users remain responsible for selecting and validating models and data; checking inputs, units, assumptions, boundary conditions, convergence, sensitivities, constraints, materials, geometry, and outputs; obtaining suitably qualified review; and complying with applicable laws, codes, standards, and safety requirements. For any use in which failure could cause death, personal injury, environmental harm, or substantial property damage, users should apply an independently verified engineering and safety process and appropriate safeguards. These statements describe validation limits; they do not prohibit any use permitted by the License.
+//
+// ## Warranty and liability
+// Sections 7 and 8 of the License apply to the maximum extent permitted by applicable law. Nothing in this notice excludes or limits liability where exclusion or limitation is unlawful.
+//
+// Where German law applies, liability remains unaffected for intentional or grossly negligent conduct by Metaplexis, its statutory representatives, or vicarious agents; for culpable injury to life, body, or health; for mandatory liability under the German Product Liability Act (Produkthaftungsgesetz); and, where applicable, for claims within the scope of an expressly assumed guarantee or arising from fraudulent concealment of a defect.
+//
+// In the event of a slightly negligent breach of a material contractual obligation (an obligation whose performance is essential to proper performance of the contract and on whose performance the other party may regularly rely), liability, to the extent legally permissible, is limited to damage foreseeable and typical for the contract. The statutory allocation of the burden of proof remains unchanged.
+//
+// This savings clause does not create liability beyond liability imposed by applicable law or expressly agreed in writing.
 // METAPLEXIS-DISCLAIMER-END
 
 
@@ -184,6 +206,9 @@ pub struct DiskStore {
     bytes: u64,
     peak: u64,
     writes: usize,
+    persistent: bool,
+    persisted_slots: std::collections::BTreeSet<usize>,
+    persisted_identity: Option<String>,
 }
 
 impl DiskStore {
@@ -199,7 +224,7 @@ impl DiskStore {
             builder.mode(0o700);
         }
         builder.create(&dir).map_err(|e| io_error("directory creation", &dir, e))?;
-        Ok(Self { dir, budget: budget_bytes, slots: BTreeMap::new(), bytes: 0, peak: 0, writes: 0 })
+        Ok(Self { dir, budget: budget_bytes, slots: BTreeMap::new(), bytes: 0, peak: 0, writes: 0, persistent: false, persisted_slots: Default::default(), persisted_identity: None })
     }
 
     #[must_use]
@@ -224,6 +249,7 @@ impl DiskStore {
 
 impl SnapshotStore for DiskStore {
     fn put(&mut self, slot: usize, step: usize, state: &[f64]) -> CaeResult<()> {
+        if self.persisted_slots.contains(&slot) { return Err(CaeError::contract("published persistent snapshot cannot be overwritten")); }
         let new = StoreBudget::state_bytes(state.len());
         let old = self.slots.get(&slot).map_or(0, |(_, len, _)| StoreBudget::state_bytes(*len));
         let total = self.bytes - old + new;
@@ -296,6 +322,7 @@ impl SnapshotStore for DiskStore {
     }
 
     fn release(&mut self, slot: usize) -> CaeResult<()> {
+        if self.persisted_slots.contains(&slot) { return Err(CaeError::contract("published persistent snapshot cannot be removed")); }
         if let Some((_, len, _)) = self.slots.get(&slot) {
             let bytes = StoreBudget::state_bytes(*len);
             let path = self.path(slot);
@@ -311,9 +338,85 @@ impl SnapshotStore for DiskStore {
     }
 }
 
+
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PersistentSnapshotManifest {
+    schema: String,
+    identity: String,
+    slots: BTreeMap<usize, (usize, usize, [u8; DIGEST])>,
+}
+
+impl DiskStore {
+    pub fn persist_selected(&mut self, identity: &str, selected: &[usize]) -> CaeResult<()> {
+        if identity.is_empty() || selected.is_empty() || self.persisted_identity.as_ref().is_some_and(|old| old != identity) {
+            return Err(CaeError::contract("persistent snapshots require identity and slots"));
+        }
+        let mut slots = BTreeMap::new();
+        for &slot in selected {
+            let value = *self.slots.get(&slot).ok_or_else(|| CaeError::contract("persistent snapshot slot is absent"))?;
+            if slots.insert(slot, value).is_some() { return Err(CaeError::contract("persistent snapshot slot is repeated")); }
+        }
+        let manifest = PersistentSnapshotManifest { schema: "implexity-history-snapshots/1".into(), identity: identity.into(), slots };
+        let bytes = serde_json::to_vec(&manifest).map_err(|e| CaeError::contract(e.to_string()))?;
+        implexity_io::atomic::write_atomic(&self.dir.join("manifest.json"), &bytes)
+            .map_err(|e| CaeError::contract(e.to_string()))?;
+        self.persistent = true;
+        self.persisted_identity = Some(identity.into());
+        self.persisted_slots = manifest.slots.keys().copied().collect();
+        let removed: Vec<_> = self.slots.keys().copied().filter(|slot| !manifest.slots.contains_key(slot)).collect();
+        for slot in removed { self.release(slot)?; }
+        fsync_directory(&self.dir).map_err(|e| io_error("sync", &self.dir, e))?;
+        Ok(())
+    }
+
+    pub fn open_persistent(directory: &Path, identity: &str, budget_bytes: u64, maximum_slots: usize, maximum_state_len: usize) -> CaeResult<Self> {
+        let status = fsguard::stat_nofollow(directory).map_err(|e| io_error("inspection", directory, e))?;
+        if !status.is_dir() || status.is_symlink() || !status.owned || !status.owner_only || identity.is_empty() || maximum_slots == 0 || maximum_state_len == 0 {
+            return Err(CaeError::contract("persistent snapshot directory or limits are invalid"));
+        }
+        let path = directory.join("manifest.json");
+        let file = fsguard::open_nofollow(&path).map_err(|e| io_error("read", &path, e))?;
+        let before = fsguard::stat_file(&file).map_err(|e| io_error("read", &path, e))?;
+        let max_bytes = maximum_slots.checked_mul(512).and_then(|n| n.checked_add(identity.len())).and_then(|n| n.checked_add(512))
+            .ok_or_else(|| CaeError::contract("persistent manifest limit overflow"))?;
+        if !before.is_owned_single_regular() || before.size > max_bytes as u64 { return Err(CaeError::contract("persistent manifest size or ownership is invalid")); }
+        let mut reader = BufReader::new(file);
+        let mut bytes = Vec::new();
+        reader.by_ref().take(max_bytes as u64 + 1).read_to_end(&mut bytes).map_err(|e| io_error("read", &path, e))?;
+        let after = fsguard::stat_file(reader.get_ref()).map_err(|e| io_error("read", &path, e))?;
+        let current = fsguard::stat_nofollow(&path).map_err(|e| io_error("read", &path, e))?;
+        if bytes.len() > max_bytes || before.data_identity() != after.data_identity() || !before.same_object(&current) {
+            return Err(CaeError::contract("persistent manifest changed during read"));
+        }
+        let manifest: PersistentSnapshotManifest = serde_json::from_slice(&bytes).map_err(|e| CaeError::contract(e.to_string()))?;
+        if manifest.schema != "implexity-history-snapshots/1" || manifest.identity != identity || manifest.slots.is_empty() || manifest.slots.len() > maximum_slots {
+            return Err(CaeError::contract("persistent snapshot identity or slot count differs"));
+        }
+        let mut total = 0u64;
+        for (_, len, _) in manifest.slots.values() {
+            if *len == 0 || *len > maximum_state_len { return Err(CaeError::contract("persistent snapshot dimension exceeds its limit")); }
+            total = total.checked_add((*len as u64).checked_mul(8).ok_or_else(|| CaeError::contract("persistent snapshot size overflow"))?)
+                .ok_or_else(|| CaeError::contract("persistent snapshot total overflow"))?;
+        }
+        if total > budget_bytes { return Err(CaeError::contract("persistent snapshots exceed the disk budget")); }
+        let persisted_slots = manifest.slots.keys().copied().collect();
+        let store = Self { dir: directory.into(), budget: budget_bytes, slots: manifest.slots, bytes: total, peak: total, writes: 0, persistent: true, persisted_slots, persisted_identity: Some(identity.into()) };
+        for &slot in store.slots.keys() {
+            let (_, state) = store.get(slot)?;
+            if state.iter().any(|v| !v.is_finite()) { return Err(CaeError::contract("persistent snapshot is nonfinite")); }
+        }
+        Ok(store)
+    }
+
+    pub fn snapshot_steps(&self) -> Vec<(usize, usize)> {
+        self.slots.iter().map(|(&slot, &(step, _, _))| (slot, step)).collect()
+    }
+}
+
 impl Drop for DiskStore {
     fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.dir);
+        if !self.persistent { let _ = std::fs::remove_dir_all(&self.dir); }
     }
 }
 

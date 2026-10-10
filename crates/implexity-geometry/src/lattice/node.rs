@@ -1,6 +1,28 @@
 // SPDX-License-Identifier: Apache-2.0
 // METAPLEXIS-DISCLAIMER-BEGIN sha256=c7c02258f245d1dcd6db1e8066ef4f6bc1bf36430d91bf9aab026671723c058f
-// Open-access statement and disclaimer: see DISCLAIMER.md.
+// # Open-access statement and disclaimer
+//
+// ## Open-access statement
+// Metaplexis Ingenieurgesellschaft GmbH believes that open access to advanced computer-aided engineering (CAE) tools is essential to advancing research. Computational methods are developing rapidly and can explore scales and levels of complexity beyond those previously practical for unaided human workflows. By publishing Implexity, Metaplexis seeks to enable transparent inspection, reproducibility, independent validation, and collaborative scientific and engineering progress.
+//
+// This statement describes Metaplexis’s motivation. It is not a representation or guarantee of the software’s capabilities, accuracy, fitness, safety, or regulatory status.
+//
+// ## Relationship to the license
+// This notice is informational. It does not amend the Apache License, Version 2.0 (the “License”), or impose any additional condition, restriction, or field-of-use limitation. Permissions and conditions for first-party software are governed by the License. Nothing in this notice creates a warranty, guarantee, professional duty, support obligation, or acceptance of additional liability. Third-party material remains governed by its own notices and license terms.
+//
+// ## Engineering and validation status
+// Implexity is engineering software. Bundled models, examples, simulations, optimization outputs, geometry, renderings, and other results may be reduced-order, approximate, screening, exploratory, non-converged, or unvalidated unless expressly stated otherwise. They are not, by themselves, certification, qualification, design approval, a safety case, or professional engineering advice.
+//
+// Users remain responsible for selecting and validating models and data; checking inputs, units, assumptions, boundary conditions, convergence, sensitivities, constraints, materials, geometry, and outputs; obtaining suitably qualified review; and complying with applicable laws, codes, standards, and safety requirements. For any use in which failure could cause death, personal injury, environmental harm, or substantial property damage, users should apply an independently verified engineering and safety process and appropriate safeguards. These statements describe validation limits; they do not prohibit any use permitted by the License.
+//
+// ## Warranty and liability
+// Sections 7 and 8 of the License apply to the maximum extent permitted by applicable law. Nothing in this notice excludes or limits liability where exclusion or limitation is unlawful.
+//
+// Where German law applies, liability remains unaffected for intentional or grossly negligent conduct by Metaplexis, its statutory representatives, or vicarious agents; for culpable injury to life, body, or health; for mandatory liability under the German Product Liability Act (Produkthaftungsgesetz); and, where applicable, for claims within the scope of an expressly assumed guarantee or arising from fraudulent concealment of a defect.
+//
+// In the event of a slightly negligent breach of a material contractual obligation (an obligation whose performance is essential to proper performance of the contract and on whose performance the other party may regularly rely), liability, to the extent legally permissible, is limited to damage foreseeable and typical for the contract. The statutory allocation of the burden of proof remains unchanged.
+//
+// This savings clause does not create liability beyond liability imposed by applicable law or expressly agreed in writing.
 // METAPLEXIS-DISCLAIMER-END
 
 
@@ -16,6 +38,7 @@ use crate::fieldclass::FieldClass;
 use crate::kinds::{StaticInfo, entry, kind_info};
 use crate::lattice::config::{Channels, LatticeConfig};
 use crate::lattice::controls::{CONTROL_SCHEMA, Controls, initial_controls, validate_control};
+use crate::lattice::enrichment::{PARAMETER as DETAIL_PARAMETER, ResidualEnrichment};
 use crate::lattice::freeze::FrozenGeometry;
 use crate::lattice::morphology::Opening;
 use crate::lattice::numerics::{Grids, build_grids, trilerp_at, trilerp_const};
@@ -227,6 +250,7 @@ pub struct LatticeSpec {
     pub analysis_grid: [usize; 3],
     pub geometry_grid: Option<[usize; 3]>,
     pub control_grid: [usize; 3],
+    pub residual_enrichment: Option<ResidualEnrichment>,
     pub period_mm: f64,
     pub thickness_range_mm: [f64; 2],
     pub interface_mm: f64,
@@ -352,12 +376,22 @@ impl LatticeSpec {
         {
             return model_err("thickness_range_mm must be a strictly ordered positive pair");
         }
+        let residual_enrichment = match attrs.remove("residual_enrichment") {
+            None | Some(Attr::Null) => None,
+            Some(a) => Some(ResidualEnrichment::from_wire(
+                &a.to_json(),
+                control_grid,
+                origin_mm,
+                domain_mm,
+            )?),
+        };
         let spec = Self {
             origin_mm,
             domain_mm,
             analysis_grid,
             geometry_grid,
             control_grid,
+            residual_enrichment,
             period_mm,
             thickness_range_mm: [thickness[0], thickness[1]],
             interface_mm,
@@ -414,8 +448,12 @@ impl LatticeSpec {
     #[must_use]
     pub fn config(&self) -> LatticeConfig {
         #[allow(clippy::cast_precision_loss)]
+        let control_grid = self
+            .residual_enrichment
+            .as_ref()
+            .map_or(self.control_grid, |e| e.fine_control_grid());
         let control_dx =
-            std::array::from_fn(|a| self.domain_mm[a] * 1e-3 / (self.control_grid[a] as f64 - 1.0));
+            std::array::from_fn(|a| self.domain_mm[a] * 1e-3 / (control_grid[a] as f64 - 1.0));
         LatticeConfig {
             period: self.period_mm * 1e-3,
             t_min: self.thickness_range_mm[0] * 1e-3,
@@ -449,6 +487,17 @@ impl LatticeSpec {
 
 
     pub fn geometry_fields(&self, controls: &Controls) -> GResult<GeometryFields> {
+        let decoded;
+        let controls = if let Some(e) = &self.residual_enrichment {
+            if controls.grid == self.control_grid {
+                decoded = e.decode(controls, &vec![0.; e.coefficient_count()])?;
+                &decoded
+            } else {
+                controls
+            }
+        } else {
+            controls
+        };
         let grids = self.grids();
         let state = synthesize(controls, &grids, &self.config(), &self.synth_options())?;
         let mut rho = state.fields.rho.clone();
@@ -574,6 +623,9 @@ impl LatticeSpec {
         if let Some(w) = self.minimum_wall_mm {
             out.push(format!("minimum_wall_mm={}", PyObj::Float(w).repr()));
         }
+        if let Some(e) = &self.residual_enrichment {
+            out.push(format!("residual_enrichment={}", e.to_wire()));
+        }
         out
     }
 
@@ -625,7 +677,13 @@ impl LatticeSpec {
             ),
         ]
         .into_iter()
-        .chain(self.minimum_wall_mm.map(|w| ("minimum_wall_mm".into(), json!(w))))
+        .chain(self.minimum_wall_mm.map(|w| ("minimum_wall_mm".into(), json!(w))),
+        )
+        .chain(
+            self.residual_enrichment
+                .as_ref()
+                .map(|e| ("residual_enrichment".into(), e.to_wire())),
+        )
         .collect()
     }
 
@@ -660,6 +718,9 @@ impl LatticeSpec {
             "fixed_regions".into(),
             Attr::List(self.fixed_regions.iter().map(FixedRegion::doc_attr).collect()),
         ));
+        if let Some(e) = &self.residual_enrichment {
+            out.push(("residual_enrichment".into(), Attr::from_json(&e.to_wire())));
+        }
         out
     }
 
@@ -769,6 +830,7 @@ pub struct ControlledLattice {
 }
 
 static INFO: StaticInfo = StaticInfo::new();
+static ENRICHED_INFO: StaticInfo = StaticInfo::new();
 
 impl ControlledLattice {
     pub fn kind_info() -> &'static KindInfo {
@@ -791,6 +853,70 @@ impl ControlledLattice {
         })
     }
 
+    pub fn kind_info_for_attrs(attrs: &BTreeMap<String, Attr>) -> &'static KindInfo {
+        if attrs
+            .get("residual_enrichment")
+            .is_some_and(|a| !matches!(a, Attr::Null))
+        {
+            Self::enriched_kind_info()
+        } else {
+            Self::kind_info()
+        }
+    }
+
+    fn enriched_kind_info() -> &'static KindInfo {
+        ENRICHED_INFO.get(|| {
+            let mut info = Self::kind_info().clone();
+            info.params.push(ParamSpec::with(
+                DETAIL_PARAMETER,
+                None,
+                "1",
+                "Local shape detail coefficients; supports are fixed structural metadata in mm",
+            ));
+            info
+        })
+    }
+    pub fn residual_coefficients(&self, node: &Node) -> GResult<Vec<f64>> {
+        let Some(e) = &self.spec.residual_enrichment else {
+            return Ok(vec![]);
+        };
+        let array = node
+            .param(DETAIL_PARAMETER)
+            .ok_or_else(|| GeometryError::Model("local shape detail coefficients missing".into()))?
+            .as_ndarray()
+            .map_err(|_| {
+                GeometryError::Model("local shape detail coefficients must be a real array".into())
+            })?;
+        if array.shape() != [e.coefficient_count()]
+            || !matches!(array.dtype().kind(), 'f' | 'i' | 'u')
+        {
+            return model_err(
+                "local shape detail coefficients must be a vector matching the fixed support count",
+            );
+        }
+        let values = array.to_f64_vec();
+        e.coefficients(&values)?;
+        Ok(values)
+    }
+    pub fn decoded_controls(&self, node: &Node) -> GResult<Controls> {
+        let base = node_controls(node, self.spec.control_grid)?;
+        if let Some(e) = &self.spec.residual_enrichment {
+            e.decode(&base, &self.residual_coefficients(node)?)
+        } else {
+            Ok(base)
+        }
+    }
+    pub fn split_control_adjoint(&self, fine: &[f64]) -> GResult<Vec<(String, Vec<f64>)>> {
+        if let Some(e) = &self.spec.residual_enrichment {
+            let (base, detail) = e.transpose(fine)?;
+            Ok(vec![
+                ("control".into(), base),
+                (DETAIL_PARAMETER.into(), detail),
+            ])
+        } else {
+            Ok(vec![("control".into(), fine.to_vec())])
+        }
+    }
     fn construct(mut args: ConstructArgs) -> GResult<Node> {
         let spec = LatticeSpec::from_attrs(&mut args.attrs)?;
         if !args.children.is_empty() {
@@ -798,7 +924,24 @@ impl ControlledLattice {
         }
         args.attrs_into_params();
         take_control(&mut args.params, spec.control_grid, 1)?;
-        Node::new(Arc::new(Self { spec }), args.children, args.names, args.params)
+        if let Some(e) = &spec.residual_enrichment {
+            args.params
+                .entry(DETAIL_PARAMETER.into())
+                .or_insert_with(|| {
+                    ParamValue::Array(Arc::new(
+                        NdArray::from_f64(
+                            vec![e.coefficient_count()],
+                            vec![0.; e.coefficient_count()],
+                        )
+                        .unwrap(),
+                    ))
+                });
+        }
+        let node = Node::new(Arc::new(Self { spec }), args.children, args.names, args.params,
+        )?;
+        let owner = node.op().as_any().downcast_ref::<Self>().unwrap();
+        owner.decoded_controls(&node)?;
+        Ok(node)
     }
 
     #[must_use]
@@ -808,7 +951,7 @@ impl ControlledLattice {
 
 
     pub fn geometry_fields(&self, node: &Node) -> GResult<GeometryFields> {
-        self.spec.geometry_fields(&node_controls(node, self.spec.control_grid)?)
+        self.spec.geometry_fields(&self.decoded_controls(node)?)
     }
 }
 
@@ -838,7 +981,11 @@ impl<S: Scalar> Kernel<S> for OwnedLatticeK<S> {
 
 impl NodeOp for ControlledLattice {
     fn info(&self) -> &KindInfo {
-        Self::kind_info()
+        if self.spec.residual_enrichment.is_some() {
+            Self::enriched_kind_info()
+        } else {
+            Self::kind_info()
+        }
     }
     fn struct_tokens(&self) -> Vec<String> {
         self.spec.struct_tokens()
@@ -862,9 +1009,19 @@ impl NodeOp for ControlledLattice {
         let derived = vec![(shape, gf.rho.clone())];
         let vjp: Option<crate::node::DerivedVjp> = if want_vjp {
             let zero = vec![0.0; gf.rho.len()];
+            let enrichment = self.spec.residual_enrichment.clone();
             Some(Box::new(move |adj: &[Vec<f64>]| {
                 let a = adj.first().map_or(&zero, |v| v);
-                Ok(vec![("control".to_string(), gf.vjp(a, &zero)?)])
+                let fine = gf.vjp(a, &zero)?;
+                if let Some(e) = &enrichment {
+                    let (base, detail) = e.transpose(&fine)?;
+                    Ok(vec![
+                        ("control".into(), base),
+                        (DETAIL_PARAMETER.into(), detail),
+                    ])
+                } else {
+                    Ok(vec![("control".into(), fine)])
+                }
             }))
         } else {
             None
@@ -918,6 +1075,36 @@ pub(crate) fn descriptors(origin: [f64; 3], spacing: [f64; 3], what: &str) -> Ve
     ]
 }
 
+impl ControlledLattice {
+    pub fn analysis_fine_vjp(
+        &self,
+        node: &Node,
+        adj_rho: &[f64],
+        adj_phase: &[f64],
+    ) -> GResult<Vec<f64>> {
+        let gf = self.geometry_fields(node)?;
+        if self.spec.analysis_grid == self.spec.geometry_shape() {
+            return gf.vjp(adj_rho, adj_phase);
+        }
+        let pts = self.spec.cell_points(self.spec.analysis_grid);
+        if adj_rho.len() != pts.len() || adj_phase.len() != pts.len() {
+            return Err(GeometryError::Value(
+                "field adjoint does not match the analysis grid".into(),
+            ));
+        }
+
+        let (gr, gp) = sample_transpose(
+            &self.spec,
+            &gf.rho,
+            &gf.phase_fraction,
+            &pts,
+            adj_rho,
+            adj_phase,
+        )?;
+        gf.vjp(&gr, &gp)
+    }
+}
+
 impl OccupancySource for ControlledLattice {
     fn derived_field_specs(&self) -> Vec<Value> {
         derived_specs()
@@ -961,21 +1148,18 @@ impl OccupancySource for ControlledLattice {
         }
         let pts = self.spec.cell_points(self.spec.analysis_grid);
         let (rho, phase_fraction) =
-            pts.iter().map(|p| self.spec.sample_const::<f64>(&gf.rho, &gf.phase_fraction, *p)).unzip();
+            pts.iter().map(|p| {
+                self.spec.sample_const::<f64>(&gf.rho, &gf.phase_fraction, *p)
+            }).unzip();
         Ok(CellFields { shape: self.spec.analysis_grid, rho, phase_fraction })
     }
     fn analysis_vjp(&self, node: &Node, adj_rho: &[f64], adj_phase: &[f64]) -> GResult<Vec<f64>> {
-        let gf = self.geometry_fields(node)?;
-        if self.spec.analysis_grid == self.spec.geometry_shape() {
-            return gf.vjp(adj_rho, adj_phase);
+        let fine = self.analysis_fine_vjp(node, adj_rho, adj_phase)?;
+        if let Some(e) = &self.spec.residual_enrichment {
+            Ok(e.transpose(&fine)?.0)
+        } else {
+            Ok(fine)
         }
-        let pts = self.spec.cell_points(self.spec.analysis_grid);
-        if adj_rho.len() != pts.len() || adj_phase.len() != pts.len() {
-            return Err(GeometryError::Value("field adjoint does not match the analysis grid".into()));
-        }
-
-        let (gr, gp) = sample_transpose(&self.spec, &gf.rho, &gf.phase_fraction, &pts, adj_rho, adj_phase)?;
-        gf.vjp(&gr, &gp)
     }
 }
 

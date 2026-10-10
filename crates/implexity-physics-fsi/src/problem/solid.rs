@@ -1,8 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
 // METAPLEXIS-DISCLAIMER-BEGIN sha256=c7c02258f245d1dcd6db1e8066ef4f6bc1bf36430d91bf9aab026671723c058f
-// Open-access statement and disclaimer: see DISCLAIMER.md.
+// # Open-access statement and disclaimer
+//
+// ## Open-access statement
+// Metaplexis Ingenieurgesellschaft GmbH believes that open access to advanced computer-aided engineering (CAE) tools is essential to advancing research. Computational methods are developing rapidly and can explore scales and levels of complexity beyond those previously practical for unaided human workflows. By publishing Implexity, Metaplexis seeks to enable transparent inspection, reproducibility, independent validation, and collaborative scientific and engineering progress.
+//
+// This statement describes Metaplexis’s motivation. It is not a representation or guarantee of the software’s capabilities, accuracy, fitness, safety, or regulatory status.
+//
+// ## Relationship to the license
+// This notice is informational. It does not amend the Apache License, Version 2.0 (the “License”), or impose any additional condition, restriction, or field-of-use limitation. Permissions and conditions for first-party software are governed by the License. Nothing in this notice creates a warranty, guarantee, professional duty, support obligation, or acceptance of additional liability. Third-party material remains governed by its own notices and license terms.
+//
+// ## Engineering and validation status
+// Implexity is engineering software. Bundled models, examples, simulations, optimization outputs, geometry, renderings, and other results may be reduced-order, approximate, screening, exploratory, non-converged, or unvalidated unless expressly stated otherwise. They are not, by themselves, certification, qualification, design approval, a safety case, or professional engineering advice.
+//
+// Users remain responsible for selecting and validating models and data; checking inputs, units, assumptions, boundary conditions, convergence, sensitivities, constraints, materials, geometry, and outputs; obtaining suitably qualified review; and complying with applicable laws, codes, standards, and safety requirements. For any use in which failure could cause death, personal injury, environmental harm, or substantial property damage, users should apply an independently verified engineering and safety process and appropriate safeguards. These statements describe validation limits; they do not prohibit any use permitted by the License.
+//
+// ## Warranty and liability
+// Sections 7 and 8 of the License apply to the maximum extent permitted by applicable law. Nothing in this notice excludes or limits liability where exclusion or limitation is unlawful.
+//
+// Where German law applies, liability remains unaffected for intentional or grossly negligent conduct by Metaplexis, its statutory representatives, or vicarious agents; for culpable injury to life, body, or health; for mandatory liability under the German Product Liability Act (Produkthaftungsgesetz); and, where applicable, for claims within the scope of an expressly assumed guarantee or arising from fraudulent concealment of a defect.
+//
+// In the event of a slightly negligent breach of a material contractual obligation (an obligation whose performance is essential to proper performance of the contract and on whose performance the other party may regularly rely), liability, to the extent legally permissible, is limited to damage foreseeable and typical for the contract. The statutory allocation of the burden of proof remains unchanged.
+//
+// This savings clause does not create liability beyond liability imposed by applicable law or expressly agreed in writing.
 // METAPLEXIS-DISCLAIMER-END
-
 
 use serde_json::{Value, json};
 
@@ -36,7 +57,12 @@ pub const SOLID_KEYS: [&str; 17] = [
     "provenance",
 ];
 
-pub const INTEGRATORS: [&str; 4] = ["avf_midpoint", "generalized_alpha", "newmark", "quasistatic"];
+pub const INTEGRATORS: [&str; 4] = [
+    "avf_midpoint",
+    "generalized_alpha",
+    "newmark",
+    "quasistatic",
+];
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ContactPlane {
@@ -73,8 +99,16 @@ impl Motion {
     #[must_use]
     pub fn signal(&self) -> (f64, f64) {
         match self {
-            Self::Harmonic { frequency_hz, phase_rad, .. }
-            | Self::HarmonicRotation { frequency_hz, phase_rad, .. } => (*frequency_hz, *phase_rad),
+            Self::Harmonic {
+                frequency_hz,
+                phase_rad,
+                ..
+            }
+            | Self::HarmonicRotation {
+                frequency_hz,
+                phase_rad,
+                ..
+            } => (*frequency_hz, *phase_rad),
         }
     }
 
@@ -82,7 +116,12 @@ impl Motion {
     pub fn pattern(&self, x: [f64; 3]) -> [f64; 3] {
         match self {
             Self::Harmonic { amplitude_m, .. } => *amplitude_m,
-            Self::HarmonicRotation { axis, centre_m, amplitude_rad, .. } => {
+            Self::HarmonicRotation {
+                axis,
+                centre_m,
+                amplitude_rad,
+                ..
+            } => {
                 let r = [x[0] - centre_m[0], x[1] - centre_m[1], x[2] - centre_m[2]];
                 [
                     amplitude_rad * (axis[1] * r[2] - axis[2] * r[1]),
@@ -104,7 +143,11 @@ pub struct Support {
 fn motion_of(v: &Value, path: &str) -> CaeResult<(Motion, Value)> {
     let kind = kind_of(v, path, &["harmonic", "harmonic_rotation"])?;
     if kind == "harmonic" {
-        let mut m = Section::new(v, path, &["kind", "amplitude_m", "frequency_hz", "phase_rad"])?;
+        let mut m = Section::new(
+            v,
+            path,
+            &["kind", "amplitude_m", "frequency_hz", "phase_rad"],
+        )?;
         m.put("kind", json!("harmonic"));
         let motion = Motion::Harmonic {
             amplitude_m: m.triple("amplitude_m")?,
@@ -113,8 +156,18 @@ fn motion_of(v: &Value, path: &str) -> CaeResult<(Motion, Value)> {
         };
         return Ok((motion, m.finish()));
     }
-    let mut m =
-        Section::new(v, path, &["kind", "axis", "centre_m", "amplitude_rad", "frequency_hz", "phase_rad"])?;
+    let mut m = Section::new(
+        v,
+        path,
+        &[
+            "kind",
+            "axis",
+            "centre_m",
+            "amplitude_rad",
+            "frequency_hz",
+            "phase_rad",
+        ],
+    )?;
     m.put("kind", json!("harmonic_rotation"));
     let axis = unit(m.triple_or("axis", [0.0, 0.0, 1.0])?, &m.at("axis"))?;
     m.put("axis", json!(axis));
@@ -166,7 +219,10 @@ fn unit(v: [f64; 3], what: &str) -> CaeResult<[f64; 3]> {
 }
 
 fn scheme(s: &mut Section<'_>) -> CaeResult<Scheme> {
-    let v = s.raw("integrator").cloned().unwrap_or_else(|| json!({"kind": "avf_midpoint"}));
+    let v = s
+        .raw("integrator")
+        .cloned()
+        .unwrap_or_else(|| json!({"kind": "avf_midpoint"}));
     let path = s.at("integrator");
     let kind = kind_of(&v, &path, &INTEGRATORS)?;
     let (scheme, normal) = match kind {
@@ -198,7 +254,6 @@ fn scheme(s: &mut Section<'_>) -> CaeResult<Scheme> {
     Ok(scheme)
 }
 
-
 #[allow(clippy::too_many_lines)]
 pub fn parse(v: &Value, fluid_density: f64) -> CaeResult<(SolidSpec, Value)> {
     let mut s = Section::new(v, "solid", &SOLID_KEYS)?;
@@ -215,29 +270,56 @@ pub fn parse(v: &Value, fluid_density: f64) -> CaeResult<(SolidSpec, Value)> {
     if plane_strain && shape[2] != 1 {
         return refuse("solid.plane_strain needs exactly one voxel layer along z");
     }
-    let mv = strip_nulls(s.raw("material").ok_or_else(|| CaeError::contract("solid.material is required"))?);
-    let mut material =
-        implexity_physics_solid::soft::problem::material(&mv).map_err(|e| e.context("solid.material"))?;
+    let mv = strip_nulls(
+        s.raw("material")
+            .ok_or_else(|| CaeError::contract("solid.material is required"))?,
+    );
+    let mut material = implexity_physics_solid::soft::problem::material(&mv)
+        .map_err(|e| e.context("solid.material"))?;
     s.put("material", mv.clone());
-    let (mut material_map, map_normal) = material_map::parse(s.raw("material_map"), &mv, &material, &grid)?;
+    let (mut material_map, map_normal) =
+        material_map::parse(s.raw("material_map"), &mv, &material, &grid)?;
     s.put("material_map", map_normal);
     let (removal_modifier, modifier_normal) =
         removal_zone::parse_modifier(s.raw("removal_modifier"), &mv, &grid)?;
     s.put("removal_modifier", modifier_normal);
     let fibre_directions = if material_map.materials.iter().any(|m| m.fibres.is_some()) {
-        let raw = s.raw("fibre_directions").ok_or_else(|| {
-            CaeError::contract("solid.fibre_directions is required for a fibre-reinforced material")
-        })?;
-        let rows = raw
-            .as_array()
-            .filter(|a| (1..=4).contains(&a.len()))
-            .ok_or_else(|| CaeError::contract("solid.fibre_directions must list 1..4 XYZ directions"))?;
-        let mut out = Vec::with_capacity(rows.len());
-        for r in rows {
-            let t = s.numbers_of("fibre_directions", r, Some(3))?;
-            out.push(unit([t[0], t[1], t[2]], "solid.fibre_directions")?);
+        let fallback_needed = material_map
+            .materials
+            .iter()
+            .enumerate()
+            .any(|(i, m)| m.fibres.is_some() && material_map.fibre_directions[i].is_none());
+        let rows = match s.raw("fibre_directions") {
+            None if !fallback_needed => None,
+            Some(v) => Some(
+                v.as_array()
+                    .filter(|a| (1..=4).contains(&a.len()))
+                    .ok_or_else(|| {
+                        CaeError::contract("solid.fibre_directions must list 1..4 XYZ directions")
+                    })?,
+            ),
+            None => {
+                return refuse(
+                    "solid.fibre_directions is required for a material without regional directions",
+                );
+            }
+        };
+        let mut out = Vec::new();
+        if let Some(rows) = rows {
+            for r in rows {
+                let t = s.numbers_of("fibre_directions", r, Some(3))?;
+                out.push(unit([t[0], t[1], t[2]], "solid.fibre_directions")?);
+            }
+            s.put("fibre_directions", json!(out));
         }
-        s.put("fibre_directions", json!(out));
+        for (i, m) in material_map.materials.iter().enumerate() {
+            if let Some(p) = &m.directional_prony {
+                let dirs = material_map.fibre_directions[i].as_ref().unwrap_or(&out);
+                if p.fibres.len() != dirs.len() {
+                    return refuse("directional_prony requires one spectrum per fibre direction");
+                }
+            }
+        }
         out
     } else {
         if s.has("fibre_directions") {
@@ -245,14 +327,19 @@ pub fn parse(v: &Value, fluid_density: f64) -> CaeResult<(SolidSpec, Value)> {
         }
         Vec::new()
     };
-    let formulation = match s.choice_or("formulation", "mixed_up", &["displacement", "mixed_up"])?.as_str() {
+    let formulation = match s
+        .choice_or("formulation", "mixed_up", &["displacement", "mixed_up"])?
+        .as_str()
+    {
         "displacement" => {
             if s.has("stabilization") {
                 return refuse("solid.stabilization applies to the mixed_up formulation only");
             }
             Formulation::Displacement
         }
-        _ => Formulation::Mixed { stabilization: s.number_or("stabilization", 1.0, positive, "positive")? },
+        _ => Formulation::Mixed {
+            stabilization: s.number_or("stabilization", 1.0, positive, "positive")?,
+        },
     };
     let lumped_mass = s.choice_or("mass", "consistent", &["consistent", "lumped"])? == "lumped";
     let mut r = s.child_or_empty("rayleigh", &["alpha_mass_s_inv", "beta_stiffness_s"])?;
@@ -284,10 +371,14 @@ pub fn parse(v: &Value, fluid_density: f64) -> CaeResult<(SolidSpec, Value)> {
         };
         let components = match c.raw("components") {
             None => [true; 3],
-            Some(Value::Array(a)) if a.len() == 3 && a.iter().all(Value::is_boolean) => {
-                [a[0] == Value::Bool(true), a[1] == Value::Bool(true), a[2] == Value::Bool(true)]
-            }
-            Some(Value::Array(a)) if a.len() <= 3 && a.iter().all(|x| x.as_u64().is_some_and(|i| i < 3)) => {
+            Some(Value::Array(a)) if a.len() == 3 && a.iter().all(Value::is_boolean) => [
+                a[0] == Value::Bool(true),
+                a[1] == Value::Bool(true),
+                a[2] == Value::Bool(true),
+            ],
+            Some(Value::Array(a))
+                if a.len() <= 3 && a.iter().all(|x| x.as_u64().is_some_and(|i| i < 3)) =>
+            {
                 let mut f = [false; 3];
                 for x in a {
                     #[allow(clippy::cast_possible_truncation)]
@@ -317,15 +408,28 @@ pub fn parse(v: &Value, fluid_density: f64) -> CaeResult<(SolidSpec, Value)> {
                 Some(motion)
             }
         };
-        supports.push(Support { selection, components, motion });
+        supports.push(Support {
+            selection,
+            components,
+            motion,
+        });
         normal.push(c.finish());
     }
     s.put("supports", Value::Array(normal));
     let mut contact_planes = Vec::new();
     let mut normal = Vec::new();
     for (v, path) in s.list("contact_planes", 8)? {
-        let mut c =
-            Section::new(v, &path, &["normal", "offset_m", "activation_m", "stiffness_pa", "region"])?;
+        let mut c = Section::new(
+            v,
+            &path,
+            &[
+                "normal",
+                "offset_m",
+                "activation_m",
+                "stiffness_pa",
+                "region",
+            ],
+        )?;
         let n = unit(c.triple("normal")?, &c.at("normal"))?;
         c.put("normal", json!(n));
         let region = match c.raw("region") {
@@ -360,11 +464,22 @@ pub fn parse(v: &Value, fluid_density: f64) -> CaeResult<(SolidSpec, Value)> {
     }
     s.put("foundations", Value::Array(normal));
     let scheme = scheme(&mut s)?;
-    let mut nw =
-        s.child_or_empty("newton", &["max_iterations", "relative_tolerance", "factorization_reuse"])?;
+    let mut nw = s.child_or_empty(
+        "newton",
+        &[
+            "max_iterations",
+            "relative_tolerance",
+            "factorization_reuse",
+        ],
+    )?;
     let newton = NewtonOptions {
         max_iterations: nw.integer_or("max_iterations", 25, 1..=500)?,
-        relative_tolerance: nw.number_or("relative_tolerance", 1e-10, |x| x > 0.0 && x < 1.0, "in (0, 1)")?,
+        relative_tolerance: nw.number_or(
+            "relative_tolerance",
+            1e-10,
+            |x| x > 0.0 && x < 1.0,
+            "in (0, 1)",
+        )?,
     };
     let factorization_reuse = match nw.raw("factorization_reuse") {
         None | Some(Value::Bool(false)) => {
@@ -373,7 +488,10 @@ pub fn parse(v: &Value, fluid_density: f64) -> CaeResult<(SolidSpec, Value)> {
         }
         Some(Value::Bool(true)) => {
             let d = FactorizationReuse::default();
-            nw.put("factorization_reuse", json!({"contraction": d.contraction, "max_reuse": d.max_reuse}));
+            nw.put(
+                "factorization_reuse",
+                json!({"contraction": d.contraction, "max_reuse": d.max_reuse}),
+            );
             Some(d)
         }
         Some(_) => {
@@ -393,8 +511,12 @@ pub fn parse(v: &Value, fluid_density: f64) -> CaeResult<(SolidSpec, Value)> {
         }
     };
     s.put("newton", nw.finish());
-    let inertia_compensation =
-        s.number_or("inertia_compensation", 0.0, |x| (0.0..=1.0).contains(&x), "in [0, 1]")?;
+    let inertia_compensation = s.number_or(
+        "inertia_compensation",
+        0.0,
+        |x| (0.0..=1.0).contains(&x),
+        "in [0, 1]",
+    )?;
     let material_density_kg_m3 = material.density;
     if inertia_compensation > 0.0 {
         let reduced = material.density - inertia_compensation * fluid_density;

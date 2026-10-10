@@ -1,8 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
 // METAPLEXIS-DISCLAIMER-BEGIN sha256=c7c02258f245d1dcd6db1e8066ef4f6bc1bf36430d91bf9aab026671723c058f
-// Open-access statement and disclaimer: see DISCLAIMER.md.
+// # Open-access statement and disclaimer
+//
+// ## Open-access statement
+// Metaplexis Ingenieurgesellschaft GmbH believes that open access to advanced computer-aided engineering (CAE) tools is essential to advancing research. Computational methods are developing rapidly and can explore scales and levels of complexity beyond those previously practical for unaided human workflows. By publishing Implexity, Metaplexis seeks to enable transparent inspection, reproducibility, independent validation, and collaborative scientific and engineering progress.
+//
+// This statement describes Metaplexis’s motivation. It is not a representation or guarantee of the software’s capabilities, accuracy, fitness, safety, or regulatory status.
+//
+// ## Relationship to the license
+// This notice is informational. It does not amend the Apache License, Version 2.0 (the “License”), or impose any additional condition, restriction, or field-of-use limitation. Permissions and conditions for first-party software are governed by the License. Nothing in this notice creates a warranty, guarantee, professional duty, support obligation, or acceptance of additional liability. Third-party material remains governed by its own notices and license terms.
+//
+// ## Engineering and validation status
+// Implexity is engineering software. Bundled models, examples, simulations, optimization outputs, geometry, renderings, and other results may be reduced-order, approximate, screening, exploratory, non-converged, or unvalidated unless expressly stated otherwise. They are not, by themselves, certification, qualification, design approval, a safety case, or professional engineering advice.
+//
+// Users remain responsible for selecting and validating models and data; checking inputs, units, assumptions, boundary conditions, convergence, sensitivities, constraints, materials, geometry, and outputs; obtaining suitably qualified review; and complying with applicable laws, codes, standards, and safety requirements. For any use in which failure could cause death, personal injury, environmental harm, or substantial property damage, users should apply an independently verified engineering and safety process and appropriate safeguards. These statements describe validation limits; they do not prohibit any use permitted by the License.
+//
+// ## Warranty and liability
+// Sections 7 and 8 of the License apply to the maximum extent permitted by applicable law. Nothing in this notice excludes or limits liability where exclusion or limitation is unlawful.
+//
+// Where German law applies, liability remains unaffected for intentional or grossly negligent conduct by Metaplexis, its statutory representatives, or vicarious agents; for culpable injury to life, body, or health; for mandatory liability under the German Product Liability Act (Produkthaftungsgesetz); and, where applicable, for claims within the scope of an expressly assumed guarantee or arising from fraudulent concealment of a defect.
+//
+// In the event of a slightly negligent breach of a material contractual obligation (an obligation whose performance is essential to proper performance of the contract and on whose performance the other party may regularly rely), liability, to the extent legally permissible, is limited to damage foreseeable and typical for the contract. The statutory allocation of the burden of proof remains unchanged.
+//
+// This savings clause does not create liability beyond liability imposed by applicable law or expressly agreed in writing.
 // METAPLEXIS-DISCLAIMER-END
-
 
 use std::collections::BTreeMap;
 
@@ -11,7 +32,9 @@ use implexity_core::error::{CaeError, CaeResult};
 use super::cache::{CacheEntry, design_key, step_key};
 use super::derivatives::{CoupledPoint, Linearization};
 use super::linear::{CurrentFactor, KrylovLimits, add_into, dot, negated, norm, norm_inf};
-use super::{CouplingMode, FluxDrivenField, MultirateStepper, SubcycleRecord, SubcycledField, contract};
+use super::{
+    CouplingMode, FluxDrivenField, MultirateStepper, SubcycleRecord, SubcycledField, contract,
+};
 use crate::interface_quasi_newton::{IqnIls, SecantInverse};
 use crate::newton_krylov::ExactKrylovPolicy;
 use crate::time_stepper::{StepDiagnostics, StepParameters, StepRecord};
@@ -44,14 +67,20 @@ pub(super) struct FieldSolve {
     pub(super) z: Vec<f64>,
     pub(super) iterations: usize,
     pub(super) residual: f64,
+    pub(super) reference: f64,
 }
 
 fn finite(label: &str, v: &[f64], size: usize) -> CaeResult<()> {
     if v.len() != size {
-        return Err(contract(format!("multirate coupling: {label} has length {}, expected {size}", v.len())));
+        return Err(contract(format!(
+            "multirate coupling: {label} has length {}, expected {size}",
+            v.len()
+        )));
     }
     if v.iter().any(|x| !x.is_finite()) {
-        return Err(contract(format!("multirate coupling: {label} must be finite")));
+        return Err(contract(format!(
+            "multirate coupling: {label} must be finite"
+        )));
     }
     Ok(())
 }
@@ -78,7 +107,9 @@ impl<A: SubcycledField, B: FluxDrivenField> MultirateStepper<A, B> {
     }
 
     pub(super) fn trace_of(&self, z_b: &[f64]) -> CaeResult<Vec<f64>> {
-        self.trace.matvec(z_b).map_err(|e| contract(format!("multirate coupling: trace operator: {e}")))
+        self.trace
+            .matvec(z_b)
+            .map_err(|e| contract(format!("multirate coupling: trace operator: {e}")))
     }
 
     pub(super) fn trace_transpose(&self, t: &[f64]) -> CaeResult<Vec<f64>> {
@@ -108,34 +139,67 @@ impl<A: SubcycledField, B: FluxDrivenField> MultirateStepper<A, B> {
         out
     }
 
-    fn admitted_b_trial(&self, n: usize, current: &[f64], direction: &[f64], previous: &[f64], p: StepParameters<'_>) -> CaeResult<f64> {
-        let alpha=self.b.admissible_step(n,current,direction,previous,p,1.0)?;
-        if !alpha.is_finite() || alpha<=0.0 || alpha>1.0 {
+    fn admitted_b_trial(
+        &self,
+        n: usize,
+        current: &[f64],
+        direction: &[f64],
+        previous: &[f64],
+        p: StepParameters<'_>,
+    ) -> CaeResult<f64> {
+        let alpha = self
+            .b
+            .admissible_step(n, current, direction, previous, p, 1.0)?;
+        if !alpha.is_finite() || alpha <= 0.0 || alpha > 1.0 {
             return Err(contract("multirate coupling: invalid field path limit"));
         }
         Ok(alpha)
     }
 
-    fn check_b_time_path(&self, n: usize, previous: &[f64], current: &[f64], p: StepParameters<'_>) -> CaeResult<()> {
-        let direction: Vec<f64> = current.iter().zip(previous).map(|(a,b)|a-b).collect();
-        if self.admitted_b_trial(n,previous,&direction,previous,p)?<1.0 {
-            return Err(contract("multirate coupling: physical field path is inadmissible"));
+    fn check_b_time_path(
+        &self,
+        n: usize,
+        previous: &[f64],
+        current: &[f64],
+        p: StepParameters<'_>,
+    ) -> CaeResult<()> {
+        let direction: Vec<f64> = current.iter().zip(previous).map(|(a, b)| a - b).collect();
+        if self.admitted_b_trial(n, previous, &direction, previous, p)? < 1.0 {
+            return Err(contract(
+                "multirate coupling: physical field path is inadmissible",
+            ));
         }
         Ok(())
     }
 
-    fn add_admitted_b_trial(&self, n: usize, current: &mut [f64], direction: &[f64], previous: &[f64], p: StepParameters<'_>) -> CaeResult<()> {
-        let alpha=self.admitted_b_trial(n,current,direction,previous,p)?;
-        if alpha==1.0 {add_into(current,direction);} else {
-            for (a,b) in current.iter_mut().zip(direction) {*a+=alpha*b;}
+    fn add_admitted_b_trial(
+        &self,
+        n: usize,
+        current: &mut [f64],
+        direction: &[f64],
+        previous: &[f64],
+        p: StepParameters<'_>,
+    ) -> CaeResult<()> {
+        let alpha = self.admitted_b_trial(n, current, direction, previous, p)?;
+        if alpha == 1.0 {
+            add_into(current, direction);
+        } else {
+            for (a, b) in current.iter_mut().zip(direction) {
+                *a += alpha * b;
+            }
         }
         Ok(())
     }
 
-    pub(super) fn predict_b(&self, n: usize, b_prev: &[f64], p: StepParameters<'_>) -> CaeResult<Vec<f64>> {
+    pub(super) fn predict_b(
+        &self,
+        n: usize,
+        b_prev: &[f64],
+        p: StepParameters<'_>,
+    ) -> CaeResult<Vec<f64>> {
         let pred = self.b.predict(n, b_prev, None, p);
         finite("field-B predictor", &pred, self.n_b)?;
-        self.check_b_time_path(n,b_prev,&pred,p)?;
+        self.check_b_time_path(n, b_prev, &pred, p)?;
         Ok(pred)
     }
 
@@ -147,13 +211,20 @@ impl<A: SubcycledField, B: FluxDrivenField> MultirateStepper<A, B> {
         d_e: &[f64],
         p: StepParameters<'_>,
     ) -> CaeResult<SubcycleRecord> {
-        self.b.check_trace_path(n,d_s,d_e,p)?;
-        let rec = self.a.subcycle(n, a_prev, d_s, d_e, p)?;
+        self.b.check_trace_path(n, d_s, d_e, p)?;
+        let context = self.b.subcycle_context(n,d_s,d_e,p)?;
+        let rec = self.a.subcycle_with_context(n, a_prev, d_s, d_e, p,context.as_deref())?;
         finite("field-A end state", &rec.state, self.n_a)?;
         finite("field-A flux", &rec.flux, self.n_t)?;
-        finite("field-A samples", &rec.samples, self.sample_names.len() - self.ns_b)?;
+        finite(
+            "field-A samples",
+            &rec.samples,
+            self.sample_names.len() - self.ns_b,
+        )?;
         if !rec.pairing.is_finite() {
-            return Err(contract("multirate coupling: field-A interface pairing must be finite"));
+            return Err(contract(
+                "multirate coupling: field-A interface pairing must be finite",
+            ));
         }
         Ok(rec)
     }
@@ -175,11 +246,48 @@ impl<A: SubcycledField, B: FluxDrivenField> MultirateStepper<A, B> {
             )));
         }
         if r.iter().any(|v| !v.is_finite()) {
-            return Err(CaeError::newton("multirate coupling: field-B residual is not finite"));
+            return Err(CaeError::newton(
+                "multirate coupling: field-B residual is not finite",
+            ));
         }
         Ok(r)
     }
 
+    fn reconstruct_b_increment(
+        &self, n: usize, current: &[f64], previous: &[f64], flux: &[f64],
+        p: StepParameters<'_>, direction: &mut [f64],
+    ) -> CaeResult<bool> {
+        let constraints = self.b.newton_direction_constraints(n, current, previous, flux, p, direction)?;
+        let mut declared = BTreeMap::new();
+        for (index, value) in constraints {
+            if index >= direction.len() || !value.is_finite() {
+                return Err(contract("invalid exact Newton increment coordinate"));
+            }
+            if declared.insert(index, value).is_some_and(|old| old != value) {
+                return Err(contract("inconsistent exact Newton increment coordinates"));
+            }
+        }
+        let changed = declared.iter().any(|(&index, &value)| direction[index] != value);
+        for (index, value) in declared {direction[index] = value;}
+        Ok(changed)
+    }
+
+    fn certify_reconstructed_increment(
+        &self, current_action: &[f64], flux_action: Option<&[f64]>, rhs: &[f64], rtol: f64,
+    ) -> CaeResult<()> {
+        finite("exact increment current action", current_action, rhs.len())?;
+        if let Some(action) = flux_action {finite("exact increment flux action", action, rhs.len())?;}
+        let residual: Vec<_> = current_action.iter().zip(rhs).enumerate()
+            .map(|(i, (&a, &b))| a + flux_action.map_or(0., |v| v[i]) - b).collect();
+        let scale = norm(current_action) + flux_action.map_or(0., norm) + norm(rhs);
+        let residual_norm = norm(&residual);
+        let tolerance = rtol * norm(rhs) + ROUNDING_FLOOR * scale;
+        if !scale.is_finite() || !residual_norm.is_finite() || !tolerance.is_finite()
+            || residual_norm > tolerance {
+            return Err(CaeError::convergence("exact Newton increment reconstruction violates the selected linear system"));
+        }
+        Ok(())
+    }
 
     pub(super) fn solve_field_b(
         &self,
@@ -196,7 +304,7 @@ impl<A: SubcycledField, B: FluxDrivenField> MultirateStepper<A, B> {
         let (mut z, mut r) = match guess {
             Some(g) => {
                 finite("field-B Newton guess", g, self.n_b)?;
-                self.check_b_time_path(n,b_prev,g,p)?;
+                self.check_b_time_path(n, b_prev, g, p)?;
                 let r = self.residual_b(n, g, b_prev, flux, p)?;
                 (g.to_vec(), r)
             }
@@ -204,13 +312,19 @@ impl<A: SubcycledField, B: FluxDrivenField> MultirateStepper<A, B> {
         };
         let explicit = self.b.explicit();
         let mut factor: Option<CurrentFactor> = None;
+        let mut factor_matrix: Option<crate::matrix::Jacobian> = None;
         let mut iterations = 0usize;
         loop {
             let rn = norm(&r);
             if rn == 0.0 || rn <= tol {
-                self.check_b_time_path(n,b_prev,&z,p)?;
-                self.b.check_state_domain(n,&z,b_prev,p)?;
-                return Ok(FieldSolve { z, iterations, residual: rn });
+                self.check_b_time_path(n, b_prev, &z, p)?;
+                self.b.check_state_domain(n, &z, b_prev, p)?;
+                return Ok(FieldSolve {
+                    z,
+                    iterations,
+                    residual: rn,
+                    reference,
+                });
             }
             if explicit && iterations == 1 {
                 return Err(contract(format!(
@@ -226,32 +340,79 @@ impl<A: SubcycledField, B: FluxDrivenField> MultirateStepper<A, B> {
             }
             if factor.is_none() || !explicit {
                 let jac = self.b.current_jacobian(n, &z, b_prev, flux, p)?;
-                factor = Some(CurrentFactor::new(&jac, self.n_b, self.b.local_elimination_groups()?)?);
+                factor = Some(CurrentFactor::new(
+                    &jac,
+                    self.n_b,
+                    self.b.local_elimination_groups()?,
+                )?);
+                factor_matrix = Some(jac);
             }
             let Some(f) = factor.as_ref() else {
-                return Err(contract("multirate coupling: field-B factorization missing"));
+                return Err(contract(
+                    "multirate coupling: field-B factorization missing",
+                ));
             };
             let mut delta = f.solve(&negated(&r), false)?;
             let mut alternatives = 0usize;
             loop {
-                let Some(matrix) = self.b.newton_alternative(n, &z, b_prev, flux, p, &delta, alternatives)? else { break; };
+                let Some(matrix) =
+                    self.b
+                        .newton_alternative(n, &z, b_prev, flux, p, &delta, alternatives)?
+                else {
+                    break;
+                };
                 if alternatives >= self.newton.max_iterations {
-                    return Err(contract("field-B generalized Newton alternatives exhausted"));
+                    return Err(contract(
+                        "field-B generalized Newton alternatives exhausted",
+                    ));
                 }
-                let alternate_factor = CurrentFactor::new(&matrix, self.n_b, self.b.local_elimination_groups()?)?;
+                let alternate_factor =
+                    CurrentFactor::new(&matrix, self.n_b, self.b.local_elimination_groups()?)?;
                 delta = alternate_factor.solve(&negated(&r), false)?;
                 factor = Some(alternate_factor);
+                factor_matrix = Some(matrix);
                 alternatives += 1;
+            }
+            if self.reconstruct_b_increment(n, &z, b_prev, flux, p, &mut delta)? {
+                let matrix = factor_matrix.as_ref().ok_or_else(|| contract("exact increment matrix missing"))?;
+                self.certify_reconstructed_increment(&matrix.apply(&delta, false)?, None, &negated(&r), self.linear.relative_tolerance)?;
             }
             iterations += 1;
             if norm_inf(&delta) <= ROUNDING_FLOOR * (1.0 + norm_inf(&z)) {
-                self.check_b_time_path(n,b_prev,&z,p)?;
-                self.b.check_state_domain(n,&z,b_prev,p)?;
-                return Ok(FieldSolve { z, iterations, residual: rn });
+                self.check_b_time_path(n, b_prev, &z, p)?;
+                self.b.check_state_domain(n, &z, b_prev, p)?;
+                return Ok(FieldSolve {
+                    z,
+                    iterations,
+                    residual: rn,
+                    reference,
+                });
             }
             self.add_admitted_b_trial(n, &mut z, &delta, b_prev, p)?;
             r = self.residual_b(n, &z, b_prev, flux, p)?;
         }
+    }
+
+    pub fn frozen_flux_prediction(
+        &self,
+        n: usize,
+        previous: &[f64],
+        flux: &[f64],
+        p: StepParameters<'_>,
+    ) -> CaeResult<super::FrozenFluxPrediction> {
+        self.check_parameters(p)?;
+        self.check_state("previous state", previous)?;
+        finite("frozen flux", flux, self.n_t)?;
+        let (field_previous, _, _) = self.split(previous);
+        let result = self.solve_field_b(n, field_previous, flux, p, None)?;
+        let trace = self.trace_of(&result.z)?;
+        Ok(super::FrozenFluxPrediction {
+            field_state: result.z,
+            trace,
+            iterations: result.iterations,
+            residual_norm: result.residual,
+            reference_residual_norm: result.reference,
+        })
     }
 
     pub(super) fn cached(&self, key: &[u8; 32]) -> Option<CacheEntry> {
@@ -266,8 +427,10 @@ impl<A: SubcycledField, B: FluxDrivenField> MultirateStepper<A, B> {
 
     fn check_admitted(&self, design: &[f64]) -> CaeResult<()> {
         let key = design_key(design);
-        let admitted =
-            self.admitted.lock().map_err(|_| contract("multirate coupling: admission lock poisoned"))?;
+        let admitted = self
+            .admitted
+            .lock()
+            .map_err(|_| contract("multirate coupling: admission lock poisoned"))?;
         if admitted.contains(&key) {
             Ok(())
         } else {
@@ -278,9 +441,15 @@ impl<A: SubcycledField, B: FluxDrivenField> MultirateStepper<A, B> {
         }
     }
 
-    pub fn admitted_loose_prediction(&self, previous: &[f64], p: StepParameters<'_>) -> CaeResult<Vec<f64>> {
+    pub fn admitted_loose_prediction(
+        &self,
+        previous: &[f64],
+        p: StepParameters<'_>,
+    ) -> CaeResult<Vec<f64>> {
         if !matches!(self.options.mode, CouplingMode::Loose { .. }) {
-            return Err(contract("loose prediction requires the authored loose coupling mode"));
+            return Err(contract(
+                "loose prediction requires the authored loose coupling mode",
+            ));
         }
         self.check_parameters(p)?;
         self.check_state("previous", previous)?;
@@ -296,7 +465,9 @@ impl<A: SubcycledField, B: FluxDrivenField> MultirateStepper<A, B> {
         p: StepParameters<'_>,
     ) -> CaeResult<(Vec<f64>, Vec<f64>, SubcycleRecord)> {
         if n == 0 || !matches!(self.options.mode, CouplingMode::Loose { .. }) {
-            return Err(contract("loose subcycle requires an authored loose mode and positive macro index"));
+            return Err(contract(
+                "loose subcycle requires an authored loose mode and positive macro index",
+            ));
         }
         self.check_parameters(p)?;
         self.check_state("previous", previous)?;
@@ -312,7 +483,10 @@ impl<A: SubcycledField, B: FluxDrivenField> MultirateStepper<A, B> {
         self.check_admitted(s.p.design)?;
         let d_e = self.predicted_trace(s.d_s, lags);
         let rec = self.run_a(s.n, s.a_prev, s.d_s, &d_e, s.p)?;
-        let guess = s.hit.filter(|h| h.trace_end == d_e).map(|h| h.field_b.as_slice());
+        let guess = s
+            .hit
+            .filter(|h| h.trace_end == d_e)
+            .map(|h| h.field_b.as_slice());
         let solve = self.solve_field_b(s.n, s.b_prev, &rec.flux, s.p, guess)?;
         let diagnostics = StepDiagnostics {
             newton_iterations: solve.iterations,
@@ -320,7 +494,27 @@ impl<A: SubcycledField, B: FluxDrivenField> MultirateStepper<A, B> {
             residual_norm: solve.residual,
             ..StepDiagnostics::default()
         };
-        Ok(Converged { field_b: solve.z, rec, trace_end: d_e, reference: 0.0, diagnostics })
+        Ok(Converged {
+            field_b: solve.z,
+            rec,
+            trace_end: d_e,
+            reference: 0.0,
+            diagnostics,
+        })
+    }
+
+    fn initial_b_prediction(&self, s: &StepInputs<'_>) -> CaeResult<(Vec<f64>, usize)> {
+        let predicted = self.predict_b(s.n, s.b_prev, s.p)?;
+        match self.initial_prediction {
+            super::InitialCouplingPrediction::Field => Ok((predicted, 0)),
+            super::InitialCouplingPrediction::FrozenFlux => {
+                let trace = self.trace_of(&predicted)?;
+                let fluid = self.run_a(s.n, s.a_prev, s.d_s, &trace, s.p)?;
+                let solved =
+                    self.solve_field_b(s.n, s.b_prev, &fluid.flux, s.p, Some(&predicted))?;
+                Ok((solved.z, solved.iterations))
+            }
+        }
     }
 
     fn quasi_newton_step(
@@ -331,8 +525,10 @@ impl<A: SubcycledField, B: FluxDrivenField> MultirateStepper<A, B> {
         reuse_steps: usize,
         initial_relaxation: f64,
     ) -> CaeResult<Converged> {
-        let mut memory =
-            self.memory.lock().map_err(|_| contract("multirate coupling: IQN memory lock poisoned"))?;
+        let mut memory = self
+            .memory
+            .lock()
+            .map_err(|_| contract("multirate coupling: IQN memory lock poisoned"))?;
         if memory.is_none() {
             *memory = Some(
                 IqnIls::new(self.n_t, reuse_steps, self.secant_filter)?
@@ -342,11 +538,22 @@ impl<A: SubcycledField, B: FluxDrivenField> MultirateStepper<A, B> {
         let Some(iqn) = memory.as_mut() else {
             return Err(contract("multirate coupling: IQN memory missing"));
         };
-        let (mut d, mut guess) = match s.hit {
-            Some(h) => (h.trace_end.clone(), Some(h.field_b.clone())),
-            None => (self.trace_of(&self.predict_b(s.n, s.b_prev, s.p)?)?, None),
+        let (mut d, mut guess, prediction_iterations) = match s.hit {
+            Some(h) => (h.trace_end.clone(), Some(h.field_b.clone()), 0),
+            None => {
+                let (predicted, iterations) = self.initial_b_prediction(s)?;
+                let trace = self.trace_of(&predicted)?;
+                let guess =
+                    if self.initial_prediction == super::InitialCouplingPrediction::FrozenFlux {
+                        Some(predicted)
+                    } else {
+                        None
+                    };
+                (trace, guess, iterations)
+            }
         };
         let mut diagnostics = StepDiagnostics::default();
+        diagnostics.newton_iterations += prediction_iterations;
         loop {
             let rec = self.run_a(s.n, s.a_prev, s.d_s, &d, s.p)?;
             let solve = self.solve_field_b(s.n, s.b_prev, &rec.flux, s.p, guess.as_deref())?;
@@ -361,7 +568,13 @@ impl<A: SubcycledField, B: FluxDrivenField> MultirateStepper<A, B> {
             if rn == 0.0 || rn <= tolerance * reference || norm_inf(&r) <= floor {
                 iqn.end_step();
                 diagnostics.residual_norm = rn;
-                return Ok(Converged { field_b: solve.z, rec, trace_end: d, reference: 0.0, diagnostics });
+                return Ok(Converged {
+                    field_b: solve.z,
+                    rec,
+                    trace_end: d,
+                    reference: 0.0,
+                    diagnostics,
+                });
             }
             if diagnostics.coupling_iterations >= max_iterations {
                 iqn.end_step();
@@ -387,15 +600,22 @@ impl<A: SubcycledField, B: FluxDrivenField> MultirateStepper<A, B> {
     ) -> CaeResult<Converged> {
         let mut secant =
             SecantInverse::new(self.n_t, 0, self.secant_filter)?.with_max_columns(krylov.restart);
-        let (mut z, mut reference) = match s.hit {
-            Some(h) => (h.field_b.clone(), Some(h.reference)),
-            None => (self.predict_b(s.n, s.b_prev, s.p)?, None),
+        let (mut z, mut reference, prediction_iterations) = match s.hit {
+            Some(h) => (h.field_b.clone(), Some(h.reference), 0),
+            None => {
+                let (predicted, iterations) = self.initial_b_prediction(s)?;
+                (predicted, None, iterations)
+            }
         };
-        let limits =
-            KrylovLimits { rtol: krylov.rtol, restart: krylov.restart, max_iterations: krylov.maxiter };
+        let limits = KrylovLimits {
+            rtol: krylov.rtol,
+            restart: krylov.restart,
+            max_iterations: krylov.maxiter,
+        };
         let mut diagnostics = StepDiagnostics::default();
+        diagnostics.newton_iterations += prediction_iterations;
         loop {
-            self.check_b_time_path(s.n,s.b_prev,&z,s.p)?;
+            self.check_b_time_path(s.n, s.b_prev, &z, s.p)?;
             let d_e = self.trace_of(&z)?;
             let rec = self.run_a(s.n, s.a_prev, s.d_s, &d_e, s.p)?;
             let g = self.residual_b(s.n, &z, s.b_prev, &rec.flux, s.p)?;
@@ -403,7 +623,13 @@ impl<A: SubcycledField, B: FluxDrivenField> MultirateStepper<A, B> {
             let reference = *reference.get_or_insert_with(|| gn.max(norm(&rec.flux)));
             if gn == 0.0 || gn <= tolerance * reference {
                 diagnostics.residual_norm = gn;
-                return Ok(Converged { field_b: z, rec, trace_end: d_e, reference, diagnostics });
+                return Ok(Converged {
+                    field_b: z,
+                    rec,
+                    trace_end: d_e,
+                    reference,
+                    diagnostics,
+                });
             }
             if diagnostics.coupling_iterations >= max_iterations {
                 return Err(CaeError::newton(format!(
@@ -415,30 +641,52 @@ impl<A: SubcycledField, B: FluxDrivenField> MultirateStepper<A, B> {
             }
             let jac = self.b.jacobians(s.n, &z, s.b_prev, &rec.flux, s.p)?;
             let mut lin = Linearization::new(self, jac, rec.flux.clone())?;
-            let point = CoupledPoint { n: s.n, a_prev: s.a_prev, d_s: s.d_s, d_e: &d_e, p: s.p };
-            let (mut delta, krylov_iterations) =
-                self.coupled_solve(&point, &lin, &negated(&g), &mut secant, limits)?;
+            let mut point = CoupledPoint::new(s.n,s.a_prev,s.d_s,&d_e,s.p,self.b.numerical_trace_derivative_extension(s.n, &z, s.b_prev, s.p)?);
+            let (mut delta, krylov_iterations, mut flux_direction) =
+                self.coupled_solve_with_flux(&point, &lin, &negated(&g), &mut secant, limits)?;
             diagnostics.krylov_iterations += krylov_iterations;
             let mut attempt = 0;
-            while let Some(current) = self.b.newton_alternative(
-                s.n, &z, s.b_prev, &rec.flux, s.p, &delta, attempt,
-            )? {
+            while let Some(current) = self
+                .b
+                .newton_alternative(s.n, &z, s.b_prev, &rec.flux, s.p, &delta, attempt)?
+            {
                 attempt += 1;
                 if attempt > self.newton.max_iterations {
-                    return Err(contract("field-B Newton branch selection did not terminate"));
+                    return Err(contract(
+                        "field-B Newton branch selection did not terminate",
+                    ));
                 }
+                point.set_trace_extension(self
+                    .b
+                    .numerical_trace_derivative_extension_for_direction(s.n, &z, s.b_prev, s.p, &delta)?);
                 lin.jac.current = current;
                 lin = Linearization::new(self, lin.jac, rec.flux.clone())?;
                 secant = SecantInverse::new(self.n_t, 0, self.secant_filter)?
                     .with_max_columns(krylov.restart);
-                let solved = self.coupled_solve(&point, &lin, &negated(&g), &mut secant, limits)?;
+                let solved = self.coupled_solve_with_flux(&point, &lin, &negated(&g), &mut secant, limits)?;
                 delta = solved.0;
                 diagnostics.krylov_iterations += solved.1;
+                flux_direction = solved.2;
+            }
+            let raw_delta = delta.clone();
+            if self.reconstruct_b_increment(s.n, &z, s.b_prev, &rec.flux, s.p, &mut delta)? {
+                let difference: Vec<_> = delta.iter().zip(&raw_delta).map(|(a,b)| a-b).collect();
+                if self.trace_of(&difference)?.iter().any(|&v| v != 0.) {
+                    let trace = self.trace_of(&delta)?;
+                    flux_direction = self.a_tangent(&point, &vec![0.; self.n_a], &vec![0.; self.n_t], &trace, None, 0.)?.flux;
+                }
+                self.certify_reconstructed_increment(&lin.jac.current.apply(&delta, false)?, Some(&lin.jac.flux.apply(&flux_direction, false)?), &negated(&g), limits.rtol)?;
             }
             diagnostics.coupling_iterations += 1;
             if norm_inf(&delta) <= ROUNDING_FLOOR * (1.0 + norm_inf(&z)) {
                 diagnostics.residual_norm = gn;
-                return Ok(Converged { field_b: z, rec, trace_end: d_e, reference, diagnostics });
+                return Ok(Converged {
+                    field_b: z,
+                    rec,
+                    trace_end: d_e,
+                    reference,
+                    diagnostics,
+                });
             }
             self.add_admitted_b_trial(s.n, &mut z, &delta, s.b_prev, s.p)?;
         }
@@ -456,8 +704,21 @@ impl<A: SubcycledField, B: FluxDrivenField> MultirateStepper<A, B> {
         let d_s = self.trace_of(b_prev)?;
         let key = step_key(n, previous, p);
         let hit = self.cached(&key);
-        let inputs = StepInputs { n, b_prev, a_prev, d_s: &d_s, p, hit: hit.as_ref() };
-        let Converged { field_b, rec, trace_end, reference, mut diagnostics } = match &self.options.mode {
+        let inputs = StepInputs {
+            n,
+            b_prev,
+            a_prev,
+            d_s: &d_s,
+            p,
+            hit: hit.as_ref(),
+        };
+        let Converged {
+            field_b,
+            rec,
+            trace_end,
+            reference,
+            mut diagnostics,
+        } = match &self.options.mode {
             CouplingMode::Loose { .. } => self.loose_step(&inputs, lags)?,
             CouplingMode::StrongQuasiNewton {
                 tolerance,
@@ -471,17 +732,24 @@ impl<A: SubcycledField, B: FluxDrivenField> MultirateStepper<A, B> {
                 *reuse_steps,
                 *initial_relaxation,
             )?,
-            CouplingMode::StrongNewtonKrylov { tolerance, max_iterations, krylov } => {
-                self.newton_krylov_step(&inputs, *tolerance, *max_iterations, krylov)?
-            }
+            CouplingMode::StrongNewtonKrylov {
+                tolerance,
+                max_iterations,
+                krylov,
+            } => self.newton_krylov_step(&inputs, *tolerance, *max_iterations, krylov)?,
         };
         finite("field-B end state", &field_b, self.n_b)?;
-        self.check_b_time_path(n,b_prev,&field_b,p)?;
+        self.check_b_time_path(n, b_prev, &field_b, p)?;
         self.b.check_state_domain(n, &field_b, b_prev, p)?;
         let samples_b = self.b.samples(n, &field_b, b_prev, p)?;
         finite("field-B samples", &samples_b, self.ns_b)?;
         let d_end = self.trace_of(&field_b)?;
-        let work_b: f64 = rec.flux.iter().zip(d_end.iter().zip(&d_s)).map(|(f, (e, s))| f * (e - s)).sum();
+        let work_b: f64 = rec
+            .flux
+            .iter()
+            .zip(d_end.iter().zip(&d_s))
+            .map(|(f, (e, s))| f * (e - s))
+            .sum();
         let mut ledger: BTreeMap<String, f64> = rec.ledger.clone();
         for key in [
             LEDGER_INTERFACE_WORK_A,
@@ -497,11 +765,21 @@ impl<A: SubcycledField, B: FluxDrivenField> MultirateStepper<A, B> {
         }
         ledger.insert(LEDGER_INTERFACE_WORK_A.to_string(), rec.pairing);
         ledger.insert(LEDGER_INTERFACE_WORK_B.to_string(), work_b);
-        ledger.insert(LEDGER_INTERFACE_WORK_DEFECT.to_string(), rec.pairing - work_b);
-        ledger.insert(LEDGER_COUPLING_RESIDUAL.to_string(), diagnostics.residual_norm);
-        for (key,value) in self.b.step_ledger(n,&field_b,b_prev,p)? {
-            if !value.is_finite() || ledger.contains_key(&key) { return Err(contract(format!("multirate coupling: invalid or duplicate field-B ledger key {key:?}"))); }
-            ledger.insert(key,value);
+        ledger.insert(
+            LEDGER_INTERFACE_WORK_DEFECT.to_string(),
+            rec.pairing - work_b,
+        );
+        ledger.insert(
+            LEDGER_COUPLING_RESIDUAL.to_string(),
+            diagnostics.residual_norm,
+        );
+        for (key, value) in self.b.step_ledger(n, &field_b, b_prev, p)? {
+            if !value.is_finite() || ledger.contains_key(&key) {
+                return Err(contract(format!(
+                    "multirate coupling: invalid or duplicate field-B ledger key {key:?}"
+                )));
+            }
+            ledger.insert(key, value);
         }
         let mut state = Vec::with_capacity(self.total_state());
         state.extend_from_slice(&field_b);
@@ -511,8 +789,21 @@ impl<A: SubcycledField, B: FluxDrivenField> MultirateStepper<A, B> {
         samples.extend_from_slice(&rec.samples);
         diagnostics.newton_iterations += rec.diagnostics.newton_iterations;
         diagnostics.krylov_iterations += rec.diagnostics.krylov_iterations;
-        self.remember(key, CacheEntry { field_b, trace_end, flux: rec.flux, reference });
-        Ok(StepRecord { state, samples, ledger, diagnostics })
+        self.remember(
+            key,
+            CacheEntry {
+                field_b,
+                trace_end,
+                flux: rec.flux,
+                reference,
+            },
+        );
+        Ok(StepRecord {
+            state,
+            samples,
+            ledger,
+            diagnostics,
+        })
     }
 
     pub(super) fn initial(&self, design: &[f64]) -> CaeResult<Vec<f64>> {
@@ -546,9 +837,6 @@ impl<A: SubcycledField, B: FluxDrivenField> MultirateStepper<A, B> {
         Ok(out)
     }
 
-
-
-
     pub fn interface_schur_ratio(
         &self,
         design: &[f64],
@@ -556,11 +844,16 @@ impl<A: SubcycledField, B: FluxDrivenField> MultirateStepper<A, B> {
         modes: &[Vec<f64>],
         mass_action: &dyn Fn(&[f64]) -> Vec<f64>,
     ) -> CaeResult<Vec<f64>> {
-        let p = StepParameters { design, time_scale: 1.0 };
+        let p = StepParameters {
+            design,
+            time_scale: 1.0,
+        };
         self.check_parameters(p)?;
         self.check_state("state", state)?;
         if modes.is_empty() {
-            return Err(contract("multirate coupling: the Schur-ratio preflight needs at least one mode"));
+            return Err(contract(
+                "multirate coupling: the Schur-ratio preflight needs at least one mode",
+            ));
         }
         let n = 1;
         let (b_prev, a_prev, _) = self.split(state);
@@ -568,9 +861,13 @@ impl<A: SubcycledField, B: FluxDrivenField> MultirateStepper<A, B> {
         let pred = self.predict_b(n, b_prev, p)?;
         let d_e = self.trace_of(&pred)?;
         let rec = self.run_a(n, a_prev, &d_s, &d_e, p)?;
-        let (_, flux_jacobian) = self.b.current_flux_jacobians(n, &pred, b_prev, &rec.flux, p)?;
+        let (_, flux_jacobian) = self
+            .b
+            .current_flux_jacobians(n, &pred, b_prev, &rec.flux, p)?;
         if flux_jacobian.shape() != (self.n_b, self.n_t) {
-            return Err(contract("multirate coupling: field-B flux Jacobian has the wrong shape"));
+            return Err(contract(
+                "multirate coupling: field-B flux Jacobian has the wrong shape",
+            ));
         }
         let zero_a = vec![0.0; self.n_a];
         let zero_t = vec![0.0; self.n_t];
@@ -578,8 +875,9 @@ impl<A: SubcycledField, B: FluxDrivenField> MultirateStepper<A, B> {
         for (i, phi) in modes.iter().enumerate() {
             finite(&format!("mode {i}"), phi, self.n_b)?;
             let e_phi = self.trace_of(phi)?;
-            let tan =
-                self.a.subcycle_tangent(n, a_prev, &d_s, &d_e, p, &zero_a, &zero_t, &e_phi, None, 0.0)?;
+            let tan = self.a.subcycle_tangent(
+                n, a_prev, &d_s, &d_e, p, &zero_a, &zero_t, &e_phi, None, 0.0,
+            )?;
             finite("field-A flux tangent", &tan.flux, self.n_t)?;
             let added = flux_jacobian.apply(&tan.flux, false)?;
             let inertia = mass_action(phi);
@@ -608,14 +906,14 @@ impl<A: SubcycledField, B: FluxDrivenField> MultirateStepper<A, B> {
                     offending.join(", ")
                 )));
             }
-            let mut admitted =
-                self.admitted.lock().map_err(|_| contract("multirate coupling: admission lock poisoned"))?;
+            let mut admitted = self
+                .admitted
+                .lock()
+                .map_err(|_| contract("multirate coupling: admission lock poisoned"))?;
             admitted.insert(design_key(design));
         }
         Ok(ratios)
     }
-
-
 
     pub fn admit_work_defect(&self, cumulative_defect: f64, energy_scale: f64) -> CaeResult<f64> {
         if !(energy_scale.is_finite() && energy_scale > 0.0 && cumulative_defect.is_finite()) {

@@ -8,7 +8,7 @@
   "Explicit grid or implicit geometry-defined porous design; finite resistance is not impermeable geometry. Without solid_thermal all drag heat returns to gas.",
   "Optional solid heat storage/conduction, one-way porous-reaction mechanics and calibrated fatigue observer; no resolved compressible wall traction or constitutive ageing feedback.",
   "A conservative positivity cap may further increase collision relaxation; limiter activity is reported. This is not an entropy guarantee.",
-  "Fixed-horizon derivatives are admitted only away from kinetic-sensor and positivity active-set switches. Requires JAX x64."
+  "Fixed-horizon derivatives are admitted only away from kinetic-sensor and positivity active-set switches."
  ],
  "properties": {
   "shape": {
