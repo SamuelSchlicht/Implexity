@@ -192,6 +192,10 @@ pub fn managed_provider_worker(args: &[String]) -> i32 {
             Err(e) => return Err(JobError::of("JSONDecodeError", e.to_string()).into()),
         };
         request.insert("artifact_root".into(), artifact_root(runtime, artifact_output));
+        if mode != "preflight" {
+            let root = crate::dynamic_capture::prepare(&runtime.partial_directory)?;
+            implexity_runtime::dynamic_frames::capture::install(Some(root));
+        }
         runtime.checkpoint("running")?;
         let result = execute(&Value::Object(request), &mode)?;
         runtime.checkpoint("finalizing")?;
@@ -411,4 +415,3 @@ pub fn accelerated_provider_job(args: &[String]) -> i32 {
         }
     }
 }
-
