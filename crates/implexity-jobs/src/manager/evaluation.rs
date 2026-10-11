@@ -248,9 +248,7 @@ impl ManagedProviderEvaluationCapsule {
             command.push("--artifact-output".into());
         }
         let started = (|| -> JobResult<ManagedEvaluationControl> {
-            let policy = ManagedEvaluationPolicy::with_timeout(self.timeout)?;
-            let policy =
-                ManagedEvaluationPolicy { memory_limit_bytes: self.memory_limit, ..policy }.checked()?;
+            let policy = ManagedEvaluationPolicy::with_limits(self.timeout, self.memory_limit)?;
             let me = Arc::clone(self);
             let validator: crate::managed_evaluation::TerminalValidator =
                 Arc::new(move |partial: &Path| me.validate_terminal(partial).map_err(|e| e.describe()));

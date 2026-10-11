@@ -651,8 +651,8 @@ impl ModelOptimizeManager {
             design.insert(name, arr);
         }
         let check = || -> Result<(), String> {
-            if !design.contains_key("model:control") {
-                return Err("mandatory model:control is missing".into());
+            if design.is_empty() {
+                return Err("authoritative design state is empty".into());
             }
             let free = meta.get("free").as_array().cloned().unwrap_or_default();
             let expected: BTreeMap<String, Vec<u64>> = free

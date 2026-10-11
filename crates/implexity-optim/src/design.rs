@@ -336,10 +336,7 @@ pub fn load_design(path: &Path) -> CaeResult<NamedArrays> {
             .ok_or_else(|| CaeError::contract("native snapshot omitted a declared design array"))?;
         design.insert(r.clone(), a);
     }
-    let layout = DesignLayout::from_values(&design)?;
-    if !layout.names.iter().any(|n| n == TOPOLOGY_COORDINATE) {
-        return Err(CaeError::contract(format!("named design snapshot omits {TOPOLOGY_COORDINATE}")));
-    }
+    DesignLayout::from_values(&design)?;
     Ok(design)
 }
 
@@ -363,4 +360,3 @@ pub fn names_value(names: &[String]) -> Value {
 pub fn empty_object() -> Value {
     Value::Object(Map::new())
 }
-

@@ -196,6 +196,10 @@ pub struct ManagedEvaluationPolicy {
 impl ManagedEvaluationPolicy {
 
     pub fn with_timeout(timeout_s: Option<f64>) -> MResult<Self> {
+        Self::with_limits(timeout_s, None)
+    }
+
+    pub fn with_limits(timeout_s: Option<f64>, memory_limit_bytes: Option<i64>) -> MResult<Self> {
         Self {
             timeout_s,
             cooperative_grace_s: 0.5,
@@ -203,7 +207,7 @@ impl ManagedEvaluationPolicy {
             kill_grace_s: 1.0,
             poll_interval_s: 0.05,
             telemetry_interval_s: 0.25,
-            memory_limit_bytes: None,
+            memory_limit_bytes,
         }
         .checked()
     }
