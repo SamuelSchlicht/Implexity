@@ -988,6 +988,37 @@ fn analysis_shape(
     }
 }
 
+fn nonspatial_result_fields(
+    fields: &BTreeMap<String, FieldValue>,
+    declared: Option<&Value>,
+) -> CaeResult<bool> {
+    let Some(declared) = declared.and_then(Value::as_object) else {
+        return Ok(false);
+    };
+    if fields.is_empty() || declared.len() != fields.len() {
+        return Ok(false);
+    }
+    for (name, field) in fields {
+        let Some(meta) = declared.get(name).and_then(Value::as_object) else {
+            return Ok(false);
+        };
+        let axis = match meta.get("association").and_then(Value::as_str) {
+            Some("sample") => "sample",
+            Some("state") => "packed_state",
+            _ => return Ok(false),
+        };
+        if meta.get("axes") != Some(&serde_json::json!([axis]))
+            || meta.contains_key("registration")
+        {
+            return contract("nonspatial provider field layout is invalid");
+        }
+        if !matches!(field, FieldValue::Array(a) if a.ndim() == 1 && !a.is_empty()) {
+            return contract("nonspatial provider fields require nonempty one-dimensional arrays");
+        }
+    }
+    Ok(true)
+}
+
 fn arrays_to_npy(arrays: &BTreeMap<String, ArrayD<f64>>) -> BTreeMap<String, NpyArray> {
     arrays.iter().map(|(k, v)| (k.clone(), NpyArray::from_f64(v))).collect()
 }
@@ -1044,9 +1075,10 @@ fn evaluate_in_effort_scope(
     ) {
         eprintln!("dynamic result capture skipped: {e}");
     }
-    let shape = analysis_shape(provider, problem, design)?;
+    let nonspatial = nonspatial_result_fields(&result.fields, result.diagnostics.get("field_metadata"))?;
+    let shape = if nonspatial { Vec::new() } else { analysis_shape(provider, problem, design)? };
     let (arrays, field_meta) = cell_fields(&result.fields, &shape, result.diagnostics.get("field_metadata"))?;
-    let mut registration = problem_registration(provider, problem, &shape)?;
+    let mut registration = if nonspatial { None } else { problem_registration(provider, problem, &shape)? };
     if registration.is_none() {
         let declared: Vec<&Value> = field_meta
             .values()
@@ -1507,4 +1539,3 @@ pub fn main(args: &[String]) -> i32 {
         }
     }
 }
-

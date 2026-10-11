@@ -228,6 +228,22 @@ impl NativeContinuousHistoryProvider {
         );
         let mut info = problem_diagnostics(p)?;
         info.insert(
+            "field_metadata".into(),
+            Value::Object(
+                fields
+                    .keys()
+                    .map(|name| {
+                        let metadata = if name == "native:final_packed_state" {
+                            json!({"association":"state","axes":["packed_state"]})
+                        } else {
+                            json!({"association":"sample","axes":["sample"]})
+                        };
+                        (name.clone(), metadata)
+                    })
+                    .collect(),
+            ),
+        );
+        info.insert(
             "transport_models".into(),
             json!({
                 "continuum_wale":p.document.problem.transport.continuum.wale.is_some(),
