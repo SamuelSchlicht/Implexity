@@ -82,3 +82,68 @@ pub(crate) fn measured_wall_anchor_with_construction<S: TransientGasScalar>(
         left_slot, face_position_m, face_normal, centroid, volume, &vertices, &planes, proof,
     )
 }
+
+fn local_support_data<S: TransientGasScalar>(
+    support: &NativeGasConvexSupport<S>,
+    anchor_m: [f64; 3],
+) -> CaeResult<(S, [S; 3], Vec<[S; 3]>, Vec<([S; 3], [S; 3], S)>)> {
+    if anchor_m.iter().any(|v| !v.is_finite()) {
+        return Err(CaeError::contract("native wall support frame is nonfinite"));
+    }
+    let faces = support.polygons.iter()
+        .map(|p| {
+            let mut face = p.clone();
+            face.vertices_m = crate::native_cut_cell_partition::polygon_vertices_in_frame(p, anchor_m);
+            face.plane_origin_m = crate::native_cut_cell_partition::polygon_plane_origin_in_frame(p, anchor_m);
+            face.local_geometry = None;
+            face
+        })
+        .collect::<Vec<_>>();
+    let (volume, moment) = crate::native_cut_cell_partition::measure(&faces)?;
+    if !volume.finite_first_order() || volume.value() <= 0. {
+        return Err(CaeError::contract("native wall convex support volume is not positive"));
+    }
+    let centroid = moment.map(|v| v / volume);
+    let vertices = faces.iter().filter(|p| !p.support_only)
+        .flat_map(|p| p.vertices_m.iter().copied()).collect();
+    let planes = faces.iter()
+        .map(|p| (p.outward_normal, p.plane_origin_m, p.plane_offset_m)).collect();
+    Ok((volume, centroid, vertices, planes))
+}
+pub fn measured_wall_anchor_in_frame<S: TransientGasScalar>(
+    support: &NativeGasConvexSupport<S>,
+    component: usize,
+    convex_part: usize,
+    left_slot: usize,
+    face_position_m: [S; 3],
+    local_face_position_m: [S; 3],
+    anchor_m: [f64; 3],
+    face_normal: [S; 3],
+) -> CaeResult<QuadraticWallInteriorAnchor<S>> {
+    if support.component != component || support.convex_part != convex_part {
+        return Err(CaeError::contract("native wall convex support ownership differs"));
+    }
+    let (volume, centroid, vertices, planes) = local_support_data(support, anchor_m)?;
+    QuadraticWallInteriorAnchor::from_measured_convex_support(
+        left_slot, local_face_position_m, face_normal, centroid, volume, &vertices, &planes,
+    )?.in_world_frame(anchor_m, face_position_m)
+}
+pub(crate) fn measured_wall_anchor_in_frame_with_construction<S: TransientGasScalar>(
+    support: &NativeGasConvexSupport<S>,
+    component: usize,
+    convex_part: usize,
+    left_slot: usize,
+    face_position_m: [S; 3],
+    local_face_position_m: [S; 3],
+    anchor_m: [f64; 3],
+    face_normal: [S; 3],
+    proof: &crate::native_geometry_construction_error::ConvexSupportConstructionProof,
+) -> CaeResult<QuadraticWallInteriorAnchor<S>> {
+    if support.component != component || support.convex_part != convex_part {
+        return Err(CaeError::contract("native wall convex support ownership differs"));
+    }
+    let (volume, centroid, vertices, planes) = local_support_data(support, anchor_m)?;
+    QuadraticWallInteriorAnchor::from_certified_measured_convex_support(
+        left_slot, local_face_position_m, face_normal, centroid, volume, &vertices, &planes, proof,
+    )?.in_world_frame(anchor_m, face_position_m)
+}

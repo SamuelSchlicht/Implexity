@@ -24,7 +24,6 @@
 #
 # This savings clause does not create liability beyond liability imposed by applicable law or expressly agreed in writing.
 # METAPLEXIS-DISCLAIMER-END
-
 version = 4
 
 [[package]]

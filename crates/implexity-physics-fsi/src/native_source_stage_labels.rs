@@ -29,14 +29,14 @@ use crate::gas_geometry_time::GeometryTimeBase;
 use crate::gas_gap_mass::GasMassScalar;
 use crate::gas_transient_kinetic::TransientGasScalar;
 use crate::native_cut_cell_refinement::{self,CutTetraSubdomain,RefinedCutCellPartition};
-use crate::native_source_face_windows::{NativeSourceFaceWindows,SourceWindowKind,FixedGridPlane};
+use crate::native_source_face_windows::{NativeSourceFaceWindows,SourceWindowKind,FixedGridPlane,NativeGridAffineSource};
 use crate::native_union_slot_index::UnionSlotIndex;
 use crate::native_source_facet_index::SourceFacetIndex;
 use implexity_ad::Scalar;
 use implexity_core::{CaeError,CaeResult};
 fn fail(message:&str)->CaeError{CaeError::contract(message)}
 pub(crate) struct NativeSourceStageLabels<'a,'g,S:GeometryTimeBase>{source:&'a NativeSourceFaceWindows<'g,S>,refined:RefinedCutCellPartition<f64>,component_slots:Vec<usize>,authority:std::sync::Arc<()>}
-pub(crate) struct PreparedSourceStageLabels<'p,'a,'g,S:GeometryTimeBase>{owner:&'p NativeSourceStageLabels<'a,'g,S>,index:UnionSlotIndex<'p>,facets:SourceFacetIndex<'a,'g,S>,axis_planes:[&'a[FixedGridPlane];3],native_parents:[std::collections::BTreeMap<[usize;3],Vec<usize>>;2]}
+pub(crate) struct PreparedSourceStageLabels<'p,'a,'g,S:GeometryTimeBase>{owner:&'p NativeSourceStageLabels<'a,'g,S>,index:UnionSlotIndex<'p>,facets:SourceFacetIndex<'a,'g,S>,axis_planes:[&'a[FixedGridPlane];3],native_parents:std::sync::Arc<[std::collections::BTreeMap<[usize;3],Vec<usize>>;2]>}
 #[derive(Clone,Debug)]
 pub(crate) struct NativeWallOwned{invocation:crate::native_union_arrangement::OutputSweepInvocation,authority:std::sync::Arc<()>,window:usize,fluid:usize,cell:usize,component:usize,part:usize,plane:usize,geometry_bits:Vec<u64>}
 impl PartialEq for NativeWallOwned{fn eq(&self,other:&Self)->bool{self.invocation==other.invocation&&std::sync::Arc::ptr_eq(&self.authority,&other.authority)&&self.window==other.window&&self.fluid==other.fluid&&self.cell==other.cell&&self.component==other.component&&self.part==other.part&&self.plane==other.plane&&self.geometry_bits==other.geometry_bits}}
@@ -46,7 +46,7 @@ pub(crate) enum SourceFaceLabel{NativeWall{fluid:usize},NativeWallOwned(NativeWa
 impl<'a,'g,S:GeometryTimeBase> NativeSourceStageLabels<'a,'g,S>{
  pub(crate) fn new(source:&'a NativeSourceFaceWindows<'g,S>)->CaeResult<Self>{
   let adapter=source.adapter();let base=adapter.owner.partition(source.stage_trace(),source.stage_design())?;
-  let tets=source.stage_tets().iter().map(|t|CutTetraSubdomain{region:t.region,vertex_ids:t.vertex_ids,vertices_m:t.vertices_m.map(|p|p.map(|v|v.value()))}).collect::<Vec<_>>();
+  let tets=source.stage_tets().iter().map(|t|CutTetraSubdomain{region:t.region,vertex_ids:t.vertex_ids,vertices_m:t.vertices_m.map(|p|p.map(|v|v.value())),local_geometry:t.local_geometry.as_ref().map(|g|g.map_scalars(|v|v.value()))}).collect::<Vec<_>>();
   let refined=native_cut_cell_refinement::refine(&base,&tets)?;let aggregated=adapter.layout.aggregate(&refined)?;
   Ok(Self{source,refined,component_slots:aggregated.component_slots,authority:std::sync::Arc::new(())})
  }
@@ -118,7 +118,7 @@ impl<'p,'a,'g,S:GeometryTimeBase> PreparedSourceStageLabels<'p,'a,'g,S>{
   if(0..3).any(|k|(origin[k]+u[k]*uv[0]+v[k]*uv[1]).to_bits()!=point[k].to_bits()){return Err(fail("affine grid point is not bound to its actual source window"));}
   let mut ijk=[0usize;3];for axis in 0..3{
    let planes=self.axis_planes[axis];if planes.len()!=grid.shape[axis]+1{return Err(fail("affine grid plane coverage differs"));}
-   let sign=|coordinate:f64|receipt.affine_sign(corners.map(|p|p[axis]),coordinate).map_err(fail);
+   let sign=|coordinate:f64|{let values=source.grid_affine_corners(window,axis,coordinate)?.unwrap_or_else(||corners.map(|p|p[axis]));receipt.affine_sign(values,coordinate).map_err(fail)};
    let(mut lo,mut hi)=(0,planes.len());let mut equal=None;
    while lo<hi{let mid=lo+(hi-lo)/2;match sign(planes[mid].coordinate_m())?{1=>lo=mid+1,-1=>hi=mid,0=>{equal=Some(mid);break;},_=>return Err(fail("affine grid sign is invalid"))}}
    let index=if let Some(i)=equal{if inward[axis]<0.{i.checked_sub(1)}else if inward[axis]>0.{Some(i)}else{return Err(fail("source face lies on an unresolved exact affine grid tangent incidence"));}}else{lo.checked_sub(1)};
@@ -136,7 +136,7 @@ impl<'p,'a,'g,S:GeometryTimeBase> PreparedSourceStageLabels<'p,'a,'g,S>{
   if(0..3).any(|k|(origin[k]+u[k]*uv[0]+v[k]*uv[1]).to_bits()!=point[k].to_bits()){return Err(fail("affine grid point is not bound to its actual source window"));}
   let mut ijk=[0usize;3];for axis in 0..3{
    let planes=self.axis_planes[axis];if planes.len()!=grid.shape[axis]+1{return Err(fail("affine grid plane coverage differs"));}
-   let sign=|coordinate:f64|crate::native_affine_grid_sign::sign(corners.map(|p|p[axis]),uv,coordinate);
+   let sign=|coordinate:f64|{let values=source.grid_affine_corners(window,axis,coordinate)?.unwrap_or_else(||corners.map(|p|p[axis]));crate::native_affine_grid_sign::sign(values,uv,coordinate)};
    let(mut lo,mut hi)=(0,planes.len());let mut equal=None;
    while lo<hi{let mid=lo+(hi-lo)/2;match sign(planes[mid].coordinate_m())?{1=>lo=mid+1,-1=>hi=mid,0=>{equal=Some(mid);break;},_=>return Err(fail("affine grid sign is invalid"))}}
    let index=if let Some(i)=equal{if inward[axis]<0.{i.checked_sub(1)}else if inward[axis]>0.{Some(i)}else{return Err(fail("source face lies on an unresolved exact affine grid tangent incidence"));}}else{lo.checked_sub(1)};
@@ -154,7 +154,7 @@ impl<'p,'a,'g,S:GeometryTimeBase> PreparedSourceStageLabels<'p,'a,'g,S>{
   if uv.iter().chain(point.iter()).any(|v|!v.is_finite())||facet.vertices.iter().flatten().any(|v|!v.finite_first_order()||v.geometry_first_order_directions().is_none()){return Err(fail("source support geometry is invalid"));}
   for corner in 0..3{if crate::native_affine_grid_sign::barycentric_sign(uv,corner)?!=1{return Err(fail("source support UV is not strictly interior"));}}
   if (0..3).any(|k|(corners[0][k]+(corners[1][k]-corners[0][k])*uv[0]+(corners[2][k]-corners[0][k])*uv[1]).to_bits()!=point[k].to_bits()){return Err(fail("source support point differs from its owned window"));}
-  Ok(SourceAxisSupportQuery{refined:&self.owner.refined,corners,uv,point,sweep:None})
+  Ok(SourceAxisSupportQuery{refined:&self.owner.refined,source_grid:source,window,corners,uv,point,sweep:None})
  }
  fn source_sweep_query<'q>(&'q self,window:usize,uv:[f64;2],point:[f64;3],receipt:&'q crate::native_union_arrangement::SweepPointReceipt)->CaeResult<SourceAxisSupportQuery<'q>>{
   receipt.validate_uv(uv).map_err(fail)?;let source=self.source();let facet=source.windows().get(window).ok_or_else(||fail("source support window is absent"))?.facet();
@@ -162,7 +162,7 @@ impl<'p,'a,'g,S:GeometryTimeBase> PreparedSourceStageLabels<'p,'a,'g,S>{
   if uv.iter().chain(point.iter()).any(|v|!v.is_finite())||facet.vertices.iter().flatten().any(|v|!v.finite_first_order()||v.geometry_first_order_directions().is_none()){return Err(fail("source support geometry is invalid"));}
   for corner in 0..3{if receipt.barycentric_sign(corner).map_err(fail)?!=1{return Err(fail("source support UV is not strictly interior"));}}
   if (0..3).any(|k|(corners[0][k]+(corners[1][k]-corners[0][k])*uv[0]+(corners[2][k]-corners[0][k])*uv[1]).to_bits()!=point[k].to_bits()){return Err(fail("source support point differs from its owned window"));}
-  Ok(SourceAxisSupportQuery{refined:&self.owner.refined,corners,uv,point,sweep:Some(receipt)})
+  Ok(SourceAxisSupportQuery{refined:&self.owner.refined,source_grid:source,window,corners,uv,point,sweep:Some(receipt)})
  }
  fn classify_window_sweep(&self,window:usize,uv:[f64;2],point:[f64;3],normal:[f64;3],receipt:&crate::native_union_arrangement::SweepPointReceipt)->CaeResult<Option<SourceFaceLabel>>{
  let query=self.source_sweep_query(window,uv,point,receipt)?;
@@ -199,23 +199,32 @@ impl<'p,'a,'g,S:GeometryTimeBase> PreparedSourceStageLabels<'p,'a,'g,S>{
 
 
 
-pub(crate) struct SourceAxisSupportQuery<'a>{refined:&'a RefinedCutCellPartition<f64>,corners:[[f64;3];3],uv:[f64;2],point:[f64;3],sweep:Option<&'a crate::native_union_arrangement::SweepPointReceipt>}
+pub(crate) struct SourceAxisSupportQuery<'a>{refined:&'a RefinedCutCellPartition<f64>,source_grid:&'a dyn NativeGridAffineSource,window:usize,corners:[[f64;3];3],uv:[f64;2],point:[f64;3],sweep:Option<&'a crate::native_union_arrangement::SweepPointReceipt>}
 impl SourceAxisSupportQuery<'_>{
+ pub(crate) fn validate_owner(&self,refined:&RefinedCutCellPartition<f64>,point:[f64;3])->CaeResult<()>{if !std::ptr::eq(self.refined,refined)||(0..3).any(|k|self.point[k].to_bits()!=point[k].to_bits()){return Err(fail("source support query ownership differs"));}Ok(())}
+ pub(crate) fn axis_face_sign(&self,refined:&RefinedCutCellPartition<f64>,point:[f64;3],face:&crate::native_cut_cell_partition::CutPolygon<f64>)->CaeResult<Option<i8>>{
+  self.validate_owner(refined,point)?;
+  if face.outward_normal.iter().chain(face.plane_origin_m.iter()).any(|v|!v.is_finite())||!face.plane_offset_m.is_finite(){return Err(fail("source support plane is non-finite"));}
+  if face.plane_offset_m!=0.{return Ok(None);}
+  let Some(axis)=(0..3).find(|&a|face.outward_normal[a].abs()==1.&&(0..3).all(|k|k==a||face.outward_normal[k]==0.))else{return Ok(None)};
+  let values=if matches!(face.boundary,crate::native_cut_cell_partition::CutBoundary::Cell{axis:owned_axis,..} if owned_axis==axis){self.source_grid.grid_affine_corners(self.window,axis,face.plane_origin_m[axis])?.unwrap_or_else(||self.corners.map(|p|p[axis]))}else{self.corners.map(|p|p[axis])};
+  let sign=if let Some(receipt)=self.sweep{receipt.affine_sign(values,face.plane_origin_m[axis]).map_err(fail)?}else{crate::native_affine_grid_sign::sign(values,self.uv,face.plane_origin_m[axis])?};
+  Ok(Some(if face.outward_normal[axis]<0.{-sign}else{sign}))
+ }
+ pub(crate) fn local_face_sign(&self,refined:&RefinedCutCellPartition<f64>,point:[f64;3],face:&crate::native_cut_cell_partition::CutPolygon<f64>)->CaeResult<Option<i8>>{
+  self.validate_owner(refined,point)?;
+  let Some(local)=&face.local_geometry else{return Ok(None)};
+  if self.source_grid.source_owns_physical_plane(self.window,face)?{return Ok(Some(0));}
+  let Some(corners)=self.source_grid.source_local_corners(self.window,local.anchor())?else{return Ok(None)};
+  let sign=if let Some(receipt)=self.sweep{receipt.exact_framed_affine_plane_sign(face.outward_normal,corners,local.anchor(),local.plane_origin(),local.anchor(),face.plane_offset_m).map_err(fail)?}else{crate::native_exact_affine_predicate::exact_framed_affine_plane_sign(face.outward_normal,corners,self.uv,local.anchor(),local.plane_origin(),local.anchor(),face.plane_offset_m).map_err(fail)?};
+  Ok(Some(sign))
+ }
  pub(crate) fn rejects(&self,refined:&RefinedCutCellPartition<f64>,point:[f64;3],part:&[crate::native_cut_cell_partition::CutPolygon<f64>])->CaeResult<bool>{
-  if !std::ptr::eq(self.refined,refined)||(0..3).any(|k|self.point[k].to_bits()!=point[k].to_bits()){return Err(fail("source support query ownership differs"));}
-  let corners=self.corners;let uv=self.uv;
-  for face in part{
-   if face.outward_normal.iter().chain(face.plane_origin_m.iter()).any(|v|!v.is_finite())||!face.plane_offset_m.is_finite(){return Err(fail("source support plane is non-finite"));}
-   if face.plane_offset_m!=0.{continue;}
-   let Some(axis)=(0..3).find(|&a|face.outward_normal[a].abs()==1.&&(0..3).all(|k|k==a||face.outward_normal[k]==0.))else{continue};
-   let outside=if let Some(receipt)=self.sweep{receipt.affine_sign(corners.map(|p|p[axis]),face.plane_origin_m[axis]).map_err(fail)?as f64*face.outward_normal[axis]>0.}else{outside_axis(corners,uv,axis,face.outward_normal[axis],face.plane_origin_m[axis])?};if outside{return Ok(true);}
-  }Ok(false)
+  self.validate_owner(refined,point)?;
+  for face in part{let sign=match self.local_face_sign(refined,point,face)?{Some(sign)=>Some(sign),None=>self.axis_face_sign(refined,point,face)?};if sign.is_some_and(|sign|sign>0){return Ok(true);}}Ok(false)
  }
  }
-fn outside_axis(corners:[[f64;3];3],uv:[f64;2],axis:usize,normal:f64,coordinate:f64)->CaeResult<bool>{
- if axis>=3||(normal!=1.&&normal!= -1.)||corners.iter().flatten().chain(uv.iter()).chain(std::iter::once(&coordinate)).any(|v|!v.is_finite()){return Err(fail("source axis halfspace is invalid"));}
- Ok(crate::native_affine_grid_sign::sign(corners.map(|p|p[axis]),uv,coordinate)? as f64*normal>0.)
-}
+
 
 
 
@@ -224,10 +233,7 @@ fn wall_geometry_bits<T:TransientGasScalar>(uv:[T;2],point:[T;3],normal:[T;3])->
  let mut bits=Vec::new();for v in uv.into_iter().chain(point).chain(normal){if !v.finite_first_order(){return Err(fail("source wall quadrature scalar is nonfinite"));}let directions=v.geometry_first_order_directions().ok_or_else(||fail("source wall quadrature scalar has opaque directions"))?;bits.push(v.value().to_bits());bits.push(directions.len() as u64);bits.extend(directions.into_iter().map(f64::to_bits));}Ok(bits)
 }
 
-fn source_native_parents<T:GeometryTimeBase>(source:&NativeSourceFaceWindows<'_,T>)->[std::collections::BTreeMap<[usize;3],Vec<usize>>;2]{
- let mut parents:[std::collections::BTreeMap<[usize;3],Vec<usize>>;2]=std::array::from_fn(|_|std::collections::BTreeMap::new());
- for body in 0..2{for(i,t)in source.adapter().owner.capacity_owner().elements[body].iter().enumerate(){for face in [[0,1,2],[0,1,3],[0,2,3],[1,2,3]]{let mut nodes=face.map(|k|t[k]);nodes.sort();parents[body].entry(nodes).or_default().push(i);}}}parents
-}
+fn source_native_parents<T:GeometryTimeBase>(source:&NativeSourceFaceWindows<'_,T>)->std::sync::Arc<[std::collections::BTreeMap<[usize;3],Vec<usize>>;2]>{source.native_plane_parent_index()}
 struct NativeGridSupportAlias<'a>{axis:usize,index:usize,coordinate:f64,solid_sign:f64,grid:&'a crate::native_gap_column_owner::NativeGapColumnGrid}
 fn exact_scalar_equal<S:TransientGasScalar>(a:S,b:S)->bool{
  if !a.finite_first_order()||!b.finite_first_order(){return false;}
@@ -243,8 +249,16 @@ impl<'a> NativeGridSupportAlias<'a>{
   let mut selected=None;
   for plane in source.grid_planes(){
    let axis=plane.axis();let coordinate=plane.coordinate_m();
-   if !vertices.iter().all(|p|exact_scalar_equal(p[axis],crate::gas_geometry_time::GeometryTime::<S>::from_f64(coordinate))){continue;}
    if !raw[axis].finite_first_order()||raw[axis].value()==0.||!(0..3).filter(|k|*k!=axis).all(|k|exact_scalar_equal(raw[k],crate::gas_geometry_time::GeometryTime::<S>::zero())){continue;}
+   if !vertices.iter().all(|p|exact_scalar_equal(p[axis],crate::gas_geometry_time::GeometryTime::<S>::from_f64(coordinate))){
+    let mut certified=true;
+    for corner in 0..3{let Some(proof)=source.native_grid_corner_incidence(window,plane,corner)? else{certified=false;break;};if !exact_scalar_equal(proof.distance(source,window,plane,corner)?,crate::gas_geometry_time::GeometryTime::<S>::zero()){return Err(fail("native grid support incidence proof differs"));}}
+    if !certified{continue;}
+    let length=raw.iter().copied().map(|v|v*v).fold(crate::gas_geometry_time::GeometryTime::<S>::zero(),|a,b|a+b).sqrt();
+    let normal=crate::native_normalization::normalize(raw,length,crate::native_normalization::NormalFormula::SourcePlane);
+    let sign=if raw[axis].value()>0.{1.}else{-1.};
+    if !(0..3).all(|k|exact_scalar_equal(normal[k],crate::gas_geometry_time::GeometryTime::<S>::from_f64(if k==axis{sign}else{0.}))){continue;}
+   }
    if selected.is_some(){return Ok(None);}
    let grid=&source.adapter().owner.capacity_owner().grid;
    selected=Some(Self{axis,index:plane.index(),coordinate,solid_sign:if raw[axis].value()>0.{1.}else{-1.},grid});

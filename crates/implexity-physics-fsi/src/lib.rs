@@ -141,6 +141,7 @@ pub(crate) mod native_gas_wall_transfer;
 pub(crate) mod patch_unilateral_contact;
 pub(crate) mod reference_traction;
 pub(crate) mod native_geometry_construction_error;
+pub(crate) mod native_geometry_source;
 pub(crate) mod native_gas_union_slot_labels;
 
 pub mod kinetic_gas_mobility;

@@ -65,12 +65,12 @@ impl NativeSurfaceBinding{
  }
 }
 
-pub struct NativeNodalBinding{nodes:[Vec<NodeBinding>;2],phase:CsrMatrix,meshes:[implexity_physics_solid::soft_fsi::voxel::KuhnMesh;2],density:[Vec<f64>;2],state_size:usize,flux_size:usize,identity:String,design_identity:String}
+pub struct NativeNodalBinding{reference_grids:[implexity_physics_solid::soft_fsi::voxel::VoxelGrid;2],nodes:[Vec<NodeBinding>;2],phase:CsrMatrix,meshes:[implexity_physics_solid::soft_fsi::voxel::KuhnMesh;2],density:[Vec<f64>;2],state_size:usize,flux_size:usize,identity:String,design_identity:String}
 impl NativeNodalBinding{
  pub fn new(model:&MovingFsiPairModel,pair:&PairSolidField<'_>,design:&[f64])->CaeResult<Self>{
   if design.len()!=pair.design_size()||design.iter().any(|x|!x.is_finite()){return Err(fail("native full-surface physical design shape"));}
-  let mut nodes:[Vec<NodeBinding>;2]=std::array::from_fn(|_|vec![]);let(mut ri,mut ci,mut values)=(vec![],vec![],vec![]);let(mut so,mut fo,mut doff,mut row)=(0,0,0,0);let mut meshes=vec![];
-  for b in 0..2{let grid=&model.native_body(b)?.problem.solid.grid;let field=pair.body_field(b)?;if !std::ptr::eq(field.core().model(),&model.native_body(b)?.soft){return Err(fail("native nodal borrowed body resource identity"));}if grid.voxel_count()>field.design_size(){return Err(fail("native full-surface material prefix"));}if design[doff..doff+grid.voxel_count()].iter().any(|x|!(0. ..=1.).contains(x)){return Err(fail("native nodal material density domain"));}let scale=field.core().scale();
+  let mut nodes:[Vec<NodeBinding>;2]=std::array::from_fn(|_|vec![]);let(mut ri,mut ci,mut values)=(vec![],vec![],vec![]);let(mut so,mut fo,mut doff,mut row)=(0,0,0,0);let mut meshes=vec![];let mut reference_grids=vec![];
+  for b in 0..2{let grid=&model.native_body(b)?.problem.solid.grid;reference_grids.push(grid.clone());let field=pair.body_field(b)?;if !std::ptr::eq(field.core().model(),&model.native_body(b)?.soft){return Err(fail("native nodal borrowed body resource identity"));}if grid.voxel_count()>field.design_size(){return Err(fail("native full-surface material prefix"));}if design[doff..doff+grid.voxel_count()].iter().any(|x|!(0. ..=1.).contains(x)){return Err(fail("native nodal material density domain"));}let scale=field.core().scale();
    for id in 0..grid.node_count(){let mut state=[0;3];let mut inv=[0.;3];for a in 0..3{let(c,v)=field.trace_operator().row(3*id+a);if c.len()!=1||v!=[1.]||c[0]>=scale.len()||!scale[c[0]].is_finite()||scale[c[0]]<=0.{return Err(fail("native full-surface displacement trace"));}state[a]=so+c[0];inv[a]=1./scale[c[0]];}
     nodes[b].push(NodeBinding{reference_m:grid.node_position(id),state,inverse_state_scale:inv,force_flux:[fo+3*id,fo+3*id+1,fo+3*id+2]});let ijk=grid.node_ijk(id);let mut incident=vec![];
     for x in 0..2{for y in 0..2{for z in 0..2{let s=[x,y,z];let mut v=[0;3];let mut ok=true;for a in 0..3{if ijk[a]<s[a]{ok=false;break;}v[a]=ijk[a]-s[a];if v[a]>=grid.shape[a]{ok=false;break;}}if ok{incident.push(grid.voxel_index(v));}}}}
@@ -81,12 +81,13 @@ impl NativeNodalBinding{
   if so!=pair.state_size()||fo!=pair.trace_operator().nrows()||doff!=design.len(){return Err(fail("native full-surface paired layout"));}
   let phase=CsrMatrix::from_triplets(row,design.len(),&ri,&ci,&values).map_err(|e|CaeError::contract(e.to_string()))?;let mut flat=vec![0.;row];for(r,x)in flat.iter_mut().enumerate(){let(c,v)=phase.row(r);for(&i,&a)in c.iter().zip(v){*x+=a*design[i];}}
   let split=nodes[0].len();let density=[flat[..split].to_vec(),flat[split..].to_vec()];let identity=implexity_core::json::canonical_sha256(&serde_json::json!({"model_identity":model.identity(),"node_bindings":nodes.iter().map(|body|body.iter().map(|n|serde_json::json!({"reference_m":n.reference_m,"state":n.state,"inverse_state_scale":n.inverse_state_scale,"force_flux":n.force_flux})).collect::<Vec<_>>()).collect::<Vec<_>>(),"design":design,"state_size":so,"flux_size":fo}));
-  Ok(Self{nodes,phase,meshes:meshes.try_into().map_err(|_|fail("native nodal mesh pair"))?,density,state_size:so,flux_size:fo,identity,design_identity:implexity_core::json::canonical_sha256(&serde_json::json!(design))})
+  Ok(Self{reference_grids:reference_grids.try_into().map_err(|_|fail("native nodal reference grid pair"))?,nodes,phase,meshes:meshes.try_into().map_err(|_|fail("native nodal mesh pair"))?,density,state_size:so,flux_size:fo,identity,design_identity:implexity_core::json::canonical_sha256(&serde_json::json!(design))})
  }
  pub fn identity(&self)->&str{&self.identity}
  pub fn nodes(&self)->&[Vec<NodeBinding>;2]{&self.nodes}
  pub fn phase(&self)->&CsrMatrix{&self.phase}
  pub fn meshes(&self)->&[implexity_physics_solid::soft_fsi::voxel::KuhnMesh;2]{&self.meshes}
+ pub(crate) fn reference_grids(&self)->&[implexity_physics_solid::soft_fsi::voxel::VoxelGrid;2]{&self.reference_grids}
  pub fn density(&self)->&[Vec<f64>;2]{&self.density}
  pub fn state_size(&self)->usize{self.state_size}
  pub fn flux_size(&self)->usize{self.flux_size}

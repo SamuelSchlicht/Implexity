@@ -55,7 +55,7 @@ pub fn network_geometry_path<S: GeometryTimeBase>(
     path: &NativeGasGeometryPath<S>,
     averaging_windows_s: &[S],
 ) -> CaeResult<QuadraticGasNetworkGeometry<S>> {
-    geometry_parts(
+    let mut geometry = geometry_parts(
         path.step_s,
         &path.faces,
         &path.left_centroid_to_face_m,
@@ -63,7 +63,25 @@ pub fn network_geometry_path<S: GeometryTimeBase>(
         &path.old_geometry,
         &path.current_geometry,
         averaging_windows_s,
-    )
+    )?;
+    if path.wall_interior_anchors.len() != geometry.faces.len() {
+        return Err(CaeError::contract("native wall anchor face layout differs"));
+    }
+    for (face, anchor) in geometry.faces.iter_mut().zip(&path.wall_interior_anchors) {
+        if let Some(anchor) = anchor {
+            if !matches!(face.boundary, Some(QuadraticGasBoundary::DiffuseWall)) || face.area_m2.value() <= 0. {
+                return Err(CaeError::contract("native wall anchor requires a positive wall face"));
+            }
+            anchor.validate_face(face.left, anchor.face_position_m(), face.outward_unit_normal)?;
+            face.centroid_m = anchor.face_position_m();
+            let frame = path.current_geometry.aggregated.local_centroids_m[face.left].map_or([0.; 3], |p| p.0);
+            let center = path.current_geometry.aggregated.centroid_in_frame(face.left, frame)?;
+            let position = anchor.face_point_in_frame_m(frame);
+            face.local_centroid_m = Some((frame, position));
+            face.left_centroid_to_face_m = std::array::from_fn(|k| position[k] - center[k]);
+        }
+    }
+    Ok(geometry)
 }
 
 fn geometry_parts<S: GeometryTimeBase>(
@@ -98,6 +116,7 @@ fn geometry_parts<S: GeometryTimeBase>(
                 (None, Some(QuadraticGasBoundary::DiffuseWall))
             }
         };
+        let local_centroid_m = current_geometry.aggregated.local_centroids_m[face.left].map(|(frame, center)| (frame, std::array::from_fn(|k| center[k] + left_centroid_to_face_m[index][k])));
         faces.push(QuadraticGasNetworkFace {
             left: face.left,
             right,
@@ -105,8 +124,9 @@ fn geometry_parts<S: GeometryTimeBase>(
             area_m2: face.area_m2,
             outward_unit_normal: face.normal,
             centroid_m: std::array::from_fn(|axis| {
-                left_centroid[axis] + left_centroid_to_face_m[index][axis]
+                local_centroid_m.map_or_else(|| left_centroid[axis] + left_centroid_to_face_m[index][axis], |(a,p)| p[axis] + S::from_f64(a[axis]))
             }),
+            local_centroid_m,
             left_centroid_to_face_m: left_centroid_to_face_m[index],
             right_centroid_to_face_m: right_centroid_to_face_m[index],
             right_periodic_image: [0; 3],
@@ -119,6 +139,7 @@ fn geometry_parts<S: GeometryTimeBase>(
         previous_volume_m3: old_geometry.aggregated.volumes_m3.clone(),
         volume_m3: current_geometry.aggregated.volumes_m3.clone(),
         cell_centroid_m: centroids.clone(),
+        cell_local_centroid_m: Some(current_geometry.aggregated.local_centroids_m.clone()),
         cell_central_covariance_m2: current_geometry.aggregated.central_covariance_m2.clone(),
         faces,
         physical_step_s: step_s,

@@ -73,6 +73,7 @@ pub(super) fn issue<S: GeometryTimeBase>(
     let design: Vec<_> = design.iter().copied().map(TrackedScalar::from_control).collect();
     let all_recipes: Vec<_> = support.corner_constructions.iter().flatten().chain(&support.wall_constructions).collect();
     let charts = std::cell::RefCell::new(std::collections::BTreeMap::new());
+    let replay_frame=std::cell::Cell::new(None::<[f64;3]>);
     let layered = |id: usize| {
         let source = all_recipes.iter().flat_map(|c| &c.layered_sources).chain(&support.plane_layered_sources).find(|v|v.0==id)
             .ok_or_else(||fail("wall construction layered feature is absent"))?;
@@ -82,18 +83,20 @@ pub(super) fn issue<S: GeometryTimeBase>(
             let p = adapter.kinematics.mapped_chart_from_trace(chart,&trace,&design,|p,_|Ok(p))?;
             charts.borrow_mut().insert(chart,p);
         }
-        let p = *charts.borrow().get(&chart).ok_or_else(||fail("wall construction chart is absent"))?;
-        Ok(std::array::from_fn(|k|p[corner][k]+(p[corner+3][k]-p[corner][k])*(layer as f64/adapter.layers as f64)))
+        let p =if let Some(anchor)=replay_frame.get(){adapter.kinematics.mapped_chart_from_reference(chart,&trace,&design,|body,node|owner.node_reference_in_frame(body,node,anchor),|p,_|Ok(p))?}else{*charts.borrow().get(&chart).ok_or_else(||fail("wall construction chart is absent"))?};
+        Ok(std::array::from_fn::<_,3,_>(|k|p[corner][k]+(p[corner+3][k]-p[corner][k])*(layer as f64/adapter.layers as f64)))
     };
     let mut polygons = Vec::new();
     for ((polygon, recipes), proofs) in support.polygons.iter().zip(&support.corner_constructions).zip(&point_proofs) {
         let cell = recipes.first().or_else(||support.wall_constructions.first())
             .ok_or_else(||fail("wall construction cell recipe is absent"))?.cell;
-        let (mut n,o,mut b) = corner_replay::native_plane(owner,cell,&polygon.boundary,&trace,&design,|region| {
+        let frame=polygon.local_geometry.as_ref().map(|g|g.anchor());
+        replay_frame.set(frame);
+        let (mut n,o,mut b) = corner_replay::native_plane_in_frame(owner,cell,&polygon.boundary,frame,&trace,&design,|region| {
             let ids = all_recipes.iter().flat_map(|c| &c.tet_vertices).chain(&support.plane_tet_vertices)
                 .find(|v|v.0==region).ok_or_else(||fail("wall construction tet feature is absent"))?.1;
             let [a,b,c,d] = ids.map(&layered);
-            Ok(crate::native_cut_cell_refinement::CutTetraSubdomain{region,vertex_ids:Some(ids),vertices_m:[a?,b?,c?,d?]})
+            Ok(crate::native_cut_cell_refinement::CutTetraSubdomain{region,vertex_ids:Some(ids),vertices_m:[a?,b?,c?,d?],local_geometry:None})
         })?;
         let orientation = (0..3).map(|k|n[k].value()*polygon.outward_normal[k].value()).sum::<f64>();
         let scale=TrackedScalar::from_f64(if orientation < 0. {-1.}else{1.});
@@ -101,16 +104,21 @@ pub(super) fn issue<S: GeometryTimeBase>(
         for k in 0..3 {
             let proof=n[k].construction_proof()?;
             TrackedScalar::from_bound(polygon.outward_normal[k],&proof).map_err(|e|fail(&format!("wall support normal binding axis={k} boundary={:?}: {e}",polygon.boundary)))?;
-            let proof=o[k].construction_proof()?;
+            let proof=(o[k]+frame.map_or(0.,|a|a[k])).construction_proof()?;
             TrackedScalar::from_bound(polygon.plane_origin_m[k],&proof).map_err(|e|fail(&format!("wall support origin binding axis={k} boundary={:?}: {e}",polygon.boundary)))?;
         }
         TrackedScalar::from_bound(polygon.plane_offset_m,&b.construction_proof()?).map_err(|e|fail(&format!("wall support offset binding boundary={:?}: {e}",polygon.boundary)))?;
         let mut vertices=Vec::new();
-        for (point,proof) in polygon.vertices_m.iter().zip(proofs) {
+        let points=polygon.local_geometry.as_ref().map_or(polygon.vertices_m.as_slice(),|g|g.vertices());
+        for (point,proof) in points.iter().zip(proofs) {
             vertices.push([TrackedScalar::from_bound(point[0],&proof[0])?,TrackedScalar::from_bound(point[1],&proof[1])?,TrackedScalar::from_bound(point[2],&proof[2])?]);
         }
-        polygons.push(CutPolygon{support_only:polygon.support_only,vertices_m:vertices,outward_normal:n,plane_origin_m:o,plane_offset_m:b,boundary:polygon.boundary.clone()});
+        let mut local_geometry=polygon.local_geometry.as_ref().map(|g|g.map_scalars(TrackedScalar::from_control));
+        if let Some(local)=local_geometry.as_mut(){local.vertices_m=vertices.clone();local.plane_origin_m=o;}
+        let vertices=vertices.into_iter().map(|p|std::array::from_fn(|k|p[k]+frame.map_or(0.,|a|a[k]))).collect();
+        polygons.push(CutPolygon{support_only:polygon.support_only,vertices_m:vertices,outward_normal:n,plane_origin_m:std::array::from_fn(|k|o[k]+frame.map_or(0.,|a|a[k])),plane_offset_m:b,boundary:polygon.boundary.clone(),local_geometry});
     }
+    replay_frame.set(None);
     let (volume,moment,centroid)=measure_native_parent_bound(adapter,support,&polygons)?;
     volume.construction_proof().map_err(|e|fail(&format!("wall support volume construction: {e}")))?;
     for c in centroid {c.construction_proof().map_err(|e|fail(&format!("wall support centroid construction: {e}")))?;}

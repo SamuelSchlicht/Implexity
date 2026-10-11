@@ -48,6 +48,7 @@ pub(crate) mod wall_support_construction;
 pub(crate) use wall_support_construction::centred_centroid_bound;
 mod layered_aperture_dispatch;
 mod source_wall_support;
+mod boundary_moments;
 struct AuthenticatedApertureJets<S: TransientGasScalar> {
     apertures: Vec<Option<crate::native_cut_cell_partition::CutCellAperture<S>>>,
 }
@@ -60,15 +61,19 @@ fn aperture_leaf_bits<S:TransientGasScalar>(a:S,b:S)->bool {
 fn aperture_polygon_bits<S:TransientGasScalar>(a:&[[S;3]],b:&[[S;3]])->bool {
     a.len()==b.len() && a.iter().zip(b).all(|(a,b)| (0..3).all(|k|aperture_leaf_bits(a[k],b[k])))
 }
+fn aperture_local_bits<S:TransientGasScalar>(a:&Option<crate::native_cut_cell_partition::CutLocalGeometry<S>>, b:&Option<crate::native_cut_cell_partition::CutLocalGeometry<S>>)->bool {
+    match (a,b) { (None,None)=>true, (Some(a),Some(b))=>a.same_owner_bits(b), _=>false }
+}
 fn aperture_face_bits<S:TransientGasScalar>(a:&crate::native_cut_cell_partition::CutPolygon<S>,b:&crate::native_cut_cell_partition::CutPolygon<S>)->bool {
     a.boundary==b.boundary && a.support_only==b.support_only && aperture_polygon_bits(&a.vertices_m,&b.vertices_m)
     && (0..3).all(|k|aperture_leaf_bits(a.outward_normal[k],b.outward_normal[k]) && aperture_leaf_bits(a.plane_origin_m[k],b.plane_origin_m[k]))
-    && aperture_leaf_bits(a.plane_offset_m,b.plane_offset_m)
+    && aperture_leaf_bits(a.plane_offset_m,b.plane_offset_m) && aperture_local_bits(&a.local_geometry,&b.local_geometry)
 }
 fn aperture_owner_bits<S:TransientGasScalar>(a:&crate::native_cut_cell_partition::CutCellAperture<S>,b:&crate::native_cut_cell_partition::CutCellAperture<S>)->bool {
     a.left==b.left && a.right==b.right && a.outside_cell==b.outside_cell && a.axis==b.axis && a.polygon_parts==b.polygon_parts
     && (0..3).all(|k|aperture_leaf_bits(a.normal[k],b.normal[k])) && aperture_leaf_bits(a.area_m2,b.area_m2)
     && a.polygons.len()==b.polygons.len() && a.polygons.iter().zip(&b.polygons).all(|(a,b)|aperture_polygon_bits(a,b))
+    && match (&a.local_polygons,&b.local_polygons) { (None,None)=>true, (Some(a),Some(b))=>a.len()==b.len() && a.iter().zip(b).all(|(a,b)|a.same_owner_bits(b)), _=>false }
 }
 fn authenticate_convex_aperture<S:TransientGasScalar>(refined:&RefinedCutCellPartition<S>,actual:&crate::native_cut_cell_partition::CutCellAperture<S>,source:&crate::native_cut_cell_refinement::ApertureClipSource<S>)->CaeResult<()> {
     let(left,right,lp,rp,lf,rf)=source.owners();
@@ -88,20 +93,29 @@ impl<S:TransientGasScalar> AuthenticatedApertureJets<S> {
             if let Some(facet)=source.macro_facet(){
                 let(tets,grid)=macro_owner.ok_or_else(||fail("macro facet requires original macro source owner"))?;
                 let actual_bounds=grid.cell_bounds(facet.cell)?;if !(0..2).all(|side|(0..3).all(|axis|actual_bounds[side][axis].to_bits()==facet.bounds[side][axis].to_bits())){return Err(fail("macro facet original grid bounds differ"));}
+                if let Some((frame,bounds))=facet.local_bounds {let actual=grid.cell_bounds_in_frame(facet.cell,frame)?;if !(0..2).all(|side|(0..3).all(|axis|actual[side][axis].to_bits()==bounds[side][axis].to_bits())){return Err(fail("macro facet original local grid bounds differ"));}}
                 let region=facet.regions.0.or(facet.regions.1).ok_or_else(||fail("macro facet original region absent"))?;
                 let tet=tets.iter().find(|t|t.region==region).ok_or_else(||fail("macro facet original tetrahedron absent"))?;
                 let ids=tet.vertex_ids.ok_or_else(||fail("macro facet original identifiers absent"))?;
                 let faces=[[0,1,2],[0,1,3],[0,2,3],[1,2,3]];
                 let face=faces.iter().position(|local|{let mut actual=local.map(|i|ids[i]);actual.sort();actual==facet.vertex_ids}).ok_or_else(||fail("macro facet original identifiers differ"))?;
-                let mut triangle=native_cut_cell_refinement::canonical_face(tet,face)?;
-                let u:[S;3]=std::array::from_fn(|k|triangle[1][k]-triangle[0][k]);let v:[S;3]=std::array::from_fn(|k|triangle[2][k]-triangle[0][k]);let n=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];
                 let remaining=(0..4).find(|i|!faces[face].contains(i)).unwrap();
-                let inward=(0..3).map(|k|n[k]*(tet.vertices_m[remaining][k]-triangle[0][k])).fold(S::zero(),|a,b|a+b).value()>0.;if inward!=facet.regions.0.is_none(){triangle.swap(1,2);}
+                let (mut triangle,vertices)=if let Some(local)=&facet.local_triangle {
+                    if local.anchor_m.iter().any(|v|!v.is_finite()) || local.incidences.len()!=3 || local.incidences.iter().any(|row|!row.is_empty()) || local.plane_incidence.is_some(){return Err(fail("macro facet local source recipe differs"));}
+                    (native_cut_cell_refinement::canonical_face_in_frame(tet,face,local.anchor_m)?,tet.vertices_in_frame(local.anchor_m))
+                }else{(native_cut_cell_refinement::canonical_face(tet,face)?,tet.vertices_m)};
+                let u:[S;3]=std::array::from_fn(|k|triangle[1][k]-triangle[0][k]);let v:[S;3]=std::array::from_fn(|k|triangle[2][k]-triangle[0][k]);let n=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];
+                let inward=(0..3).map(|k|n[k]*(vertices[remaining][k]-triangle[0][k])).fold(S::zero(),|a,b|a+b).value()>0.;if inward!=facet.regions.0.is_none(){triangle.swap(1,2);}
+                if let Some(local)=&facet.local_triangle {
+                    let original_origin=if let Some(support)=tet.local_geometry.as_ref().and_then(|g|g.native_supports.as_ref()).and_then(|supports|supports[face].as_ref()){crate::native_cut_cell_partition::plane_origin_in_frame(&support.plane()?,local.anchor_m)}else{triangle[0]};
+                    if !aperture_polygon_bits(&triangle,&local.vertices_m) || !(0..3).all(|k|aperture_leaf_bits(original_origin[k],local.plane_origin_m[k])){return Err(fail("macro facet original local scalar leaves differ"));}
+                    triangle=triangle.map(|point|std::array::from_fn(|k|point[k]+S::from_f64(local.anchor_m[k])));
+                }
                 if !aperture_polygon_bits(&triangle,&facet.triangle){return Err(fail("macro facet original scalar leaves differ"));}
                 let other_region=if facet.regions.0==Some(region){facet.regions.1}else{facet.regions.0};
                 let shared=tets.iter().filter(|t|t.region!=region).filter(|t|t.vertex_ids.is_some_and(|ids|facet.vertex_ids.iter().all(|id|ids.contains(id)))).collect::<Vec<_>>();
                 if match other_region{Some(other)=>shared.len()!=1||shared[0].region!=other,None=>!shared.is_empty()}{return Err(fail("macro facet original neighboring ownership differs"));}
-                for other in shared{let other_ids=other.vertex_ids.unwrap();for id in facet.vertex_ids{let a=ids.iter().position(|v|*v==id).unwrap();let b=other_ids.iter().position(|v|*v==id).unwrap();if !(0..3).all(|k|aperture_leaf_bits(tet.vertices_m[a][k],other.vertices_m[b][k])){return Err(fail("macro facet original neighboring scalar leaves differ"));}}}
+                for other in shared{let other_ids=other.vertex_ids.unwrap();for id in facet.vertex_ids{let a=ids.iter().position(|v|*v==id).unwrap();let b=other_ids.iter().position(|v|*v==id).unwrap();let same=if facet.local_triangle.is_some(){let(aa,ap)=tet.local_geometry.as_ref().map_or(([0.;3],tet.vertices_m[a]),|g|(g.anchor_m,g.vertices_m[a]));let(ba,bp)=other.local_geometry.as_ref().map_or(([0.;3],other.vertices_m[b]),|g|(g.anchor_m,g.vertices_m[b]));crate::native_cut_cell_partition::framed_point_same(ap,aa,bp,ba)}else{(0..3).all(|k|aperture_leaf_bits(tet.vertices_m[a][k],other.vertices_m[b][k]))};if !same{return Err(fail("macro facet original neighboring scalar leaves differ"));}}}
                 let right=actual.right.ok_or_else(||fail("macro facet right owner absent"))?;
                 let regions=(*refined.regions.get(actual.left).ok_or_else(||fail("macro facet left region absent"))?,*refined.regions.get(right).ok_or_else(||fail("macro facet right region absent"))?);
                 let left_cell=refined.partition.components.get(actual.left).ok_or_else(||fail("macro facet left component absent"))?.cell;
@@ -211,6 +225,7 @@ enum NativeCornerKind {
 struct NativeCornerConstruction<S: Scalar> {
     cell: usize,
     retained: [f64; 3],
+    frame: Option<[f64;3]>,
     actual: [S; 3],
     active: Vec<crate::native_cut_cell_partition::CutBoundary>,
     kind: NativeCornerKind,
@@ -1021,62 +1036,449 @@ impl NativeGasGeometryAdapter {
                 .fold(ReverseScalar::from_f64(0.), |a, b| a + b))
         })
     }
-    fn canonicalize_source_facets<S:TransientGasScalar>(&self,refined:&mut RefinedCutCellPartition<S>,tets:&[CutTetraSubdomain<S>])->CaeResult<()> {
+    fn canonicalize_source_facets<S: TransientGasScalar>(
+        &self,
+        refined: &mut RefinedCutCellPartition<S>,
+        tets: &[CutTetraSubdomain<S>],
+    ) -> CaeResult<()> {
         use crate::native_cut_cell_partition;
-        use crate::native_cut_cell_partition::{CutBoundary,CutCellAperture,Plane};
+        use crate::native_cut_cell_partition::{CutBoundary, CutCellAperture, CutPolygon, Plane};
         use crate::native_cut_cell_refinement::ApertureClipSource;
-        let mut groups:std::collections::BTreeMap<(usize,usize,Option<(usize,usize)>),Vec<usize>>=std::collections::BTreeMap::new();
-        for (index,a) in refined.partition.apertures.iter().enumerate(){if a.axis.is_none(){if let Some(right)=a.right{if refined.regions[a.left].is_some()||refined.regions[right].is_some(){let owner=match(refined.regions[a.left],refined.regions[right]){(Some(region),None)|(None,Some(region))=>refined.aperture_sources[index].as_ref().and_then(|source|{let(_,_,_,_,lf,rf)=source.owners();match(source.source()[lf].boundary.clone(),source.target()[rf].boundary.clone()){(CutBoundary::Subdomain{region:r,face},CutBoundary::Subdomain{region:s,face:g})if r==region&&s==r&&g==face=>Some((r,face)),_=>None}}),_=>None};groups.entry((a.left,right,owner)).or_default().push(index);}}}}
-        let mut replacements=std::collections::BTreeMap::new();let mut discarded=std::collections::BTreeSet::new();
-        let face_indices=[[0,1,2],[0,1,3],[0,2,3],[1,2,3]];
-        for ((left,right,boundary_owner),indices) in groups {
-            let regions=(refined.regions[left],refined.regions[right]);
-            if refined.partition.components[left].cell!=refined.partition.components[right].cell{return Err(fail("macro facet component cells differ"));}
-            let cell=refined.partition.components[left].cell;
-            let Some(region)=regions.0.or(regions.1) else{continue;};
-            let tet=tets.iter().find(|t|t.region==region).ok_or_else(||fail("macro facet actual region is absent"))?;
-            let Some(ids)=tet.vertex_ids else{continue;};
-            let mut candidates=Vec::new();
-            for (face,local) in face_indices.iter().enumerate(){
-                let mut face_ids=local.map(|i|ids[i]);face_ids.sort();
-                let mut shared=Vec::new();
-                for other in tets.iter().filter(|t|t.region!=region){if let Some(other_ids)=other.vertex_ids{for (other_face,other_local) in face_indices.iter().enumerate(){let mut f=other_local.map(|i|other_ids[i]);f.sort();if f==face_ids{shared.push((other,other_face));}}}}
-                if boundary_owner.is_some_and(|owner|owner!=(region,face)){continue;}
-                let admitted=match (regions.0,regions.1){(Some(a),Some(b))=>shared.len()==1&&shared[0].0.region==if region==a{b}else{a},_=>shared.is_empty()};
-                if !admitted{continue;}
-                if shared.iter().any(|(other,_)|face_ids.iter().any(|id|{let a=ids.iter().position(|v|v==id).unwrap();let b=other.vertex_ids.unwrap().iter().position(|v|v==id).unwrap();!(0..3).all(|k|aperture_leaf_bits(tet.vertices_m[a][k],other.vertices_m[b][k]))})){return Err(fail("macro facet shared source leaves differ"));}
-                if regions.0.is_none()||regions.1.is_none(){
-                    if !indices.iter().all(|index|refined.aperture_sources[*index].as_ref().is_some_and(|source|{let(_,_,_,_,lf,rf)=source.owners();source.source().iter().any(|p|p.boundary==CutBoundary::Subdomain{region,face})&&source.target().iter().any(|p|p.boundary==CutBoundary::Subdomain{region,face})})){continue;}
+        let mut groups: std::collections::BTreeMap<
+            (usize, usize, Option<(usize, usize)>),
+            Vec<usize>,
+        > = std::collections::BTreeMap::new();
+        for (index, a) in refined.partition.apertures.iter().enumerate() {
+            if a.axis.is_none() {
+                if let Some(right) = a.right {
+                    if refined.regions[a.left].is_some() || refined.regions[right].is_some() {
+                        let owner = match (refined.regions[a.left], refined.regions[right]) {
+                            (Some(region), None) | (None, Some(region)) => {
+                                refined.aperture_sources[index].as_ref().and_then(|source| {
+                                    let (_, _, _, _, lf, rf) = source.owners();
+                                    match (
+                                        source.source()[lf].boundary.clone(),
+                                        source.target()[rf].boundary.clone(),
+                                    ) {
+                                        (
+                                            CutBoundary::Subdomain { region: r, face },
+                                            CutBoundary::Subdomain { region: s, face: g },
+                                        ) if r == region && s == r && g == face => Some((r, face)),
+                                        _ => None,
+                                    }
+                                })
+                            }
+                            _ => None,
+                        };
+                        groups
+                            .entry((a.left, right, owner))
+                            .or_default()
+                            .push(index);
+                    }
                 }
-                candidates.push((face,face_ids));
             }
-            if candidates.len()!=1{continue;}
-            let (face,face_ids)=candidates[0];
-            let mut triangle=native_cut_cell_refinement::canonical_face(tet,face)?;
-            let remaining=(0..4).find(|i|!face_indices[face].contains(i)).unwrap();
-            let sub=|a:[S;3],b:[S;3]|-> [S;3]{std::array::from_fn(|k|a[k]-b[k])};
-            let u=sub(triangle[1],triangle[0]);let v=sub(triangle[2],triangle[0]);let mut n=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];
-            let inward=(0..3).map(|k|n[k]*(tet.vertices_m[remaining][k]-triangle[0][k])).fold(S::zero(),|a,b|a+b).value()>0.;
-            if inward != regions.0.is_none(){triangle.swap(1,2);n=n.map(|v|-v);}
-            let norm=(0..3).map(|k|n[k]*n[k]).fold(S::zero(),|a,b|a+b).sqrt();if norm.value()<=0.{return Err(fail("macro facet source is rank deficient"));}let normal=n.map(|v|v/norm);
-            let bounds=self.owner.capacity_owner().grid.cell_bounds(cell)?;let mut polygon=triangle.to_vec();
-            for axis in 0..3{for side in 0..2{let plane=Plane{normal:std::array::from_fn(|k|S::from_f64(if k==axis{if side==0{1.}else{-1.}}else{0.})),origin:bounds[side].map(S::from_f64),offset:S::zero(),boundary:CutBoundary::Cell{axis,side}};polygon=native_cut_cell_partition::clip_polygon(&polygon,&plane,refined.partition.arithmetic_length_m)?;}}
-            if !native_cut_cell_partition::positive_polygon(&polygon,refined.partition.arithmetic_length_m){continue;}
-            let measure=|polygons:&[Vec<[S;3]>]|->[f64;13]{let mut out=[0.;13];for p in polygons{for i in 1..p.len().saturating_sub(1){let q=[p[0],p[i],p[i+1]];let u=sub(q[1],q[0]);let v=sub(q[2],q[0]);let c=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];let sign=if (0..3).map(|k|c[k]*normal[k]).fold(S::zero(),|a,b|a+b).value()<0.{-1.}else{1.};out[0]+=(0..3).map(|k|c[k]*c[k]).fold(S::zero(),|a,b|a+b).sqrt().value()*0.5;for k in 0..3{let vector=c[k].value()*0.5*sign;out[k+1]+=vector;for j in 0..3{out[4+k*3+j]+=vector*((q[0][j].value()-triangle[0][j].value())+(q[1][j].value()-triangle[0][j].value())+(q[2][j].value()-triangle[0][j].value()))/3.;}}}}out};
-            let expected=measure(&[polygon.clone()]);let mut actual=[0.;13];let mut patches=Vec::new();
-            for index in &indices{let a=&refined.partition.apertures[*index];let source=refined.aperture_sources[*index].as_ref().ok_or_else(||fail("macro facet original clip source is absent"))?;authenticate_convex_aperture(refined,a,source)?;let m=measure(&a.polygons);for k in 0..13{actual[k]+=m[k];}patches.push(source.clone());}
-            let all_polygons=std::iter::once(&polygon).chain(indices.iter().flat_map(|index|refined.partition.apertures[*index].polygons.iter())).collect::<Vec<_>>();
-            let perimeter=all_polygons.iter().map(|p|(0..p.len()).map(|i|(0..3).map(|k|{let d=p[i][k].value()-p[(i+1)%p.len()][k].value();d*d}).sum::<f64>().sqrt()).sum::<f64>()).sum::<f64>().next_up();
-            let radius=all_polygons.iter().flat_map(|p|p.iter()).flat_map(|p|(0..3).map(|k|(p[k].value()-triangle[0][k].value()).abs())).fold(0f64,f64::max).next_up();
-            let area_scale=(expected[0].abs()+actual[0].abs()).next_up();
-            let area_bound=(4096.*f64::EPSILON*area_scale+8.*refined.partition.arithmetic_length_m*perimeter).next_up();
-            if (0..13).any(|k|{let bound=if k<4{area_bound}else{(area_bound*radius+area_scale*8.*refined.partition.arithmetic_length_m+4096.*f64::EPSILON*(expected[k].abs()+actual[k].abs())).next_up()};(expected[k]-actual[k]).abs()>bound}){return Err(fail("macro facet union does not cover the admitted source face"));}
-            let aperture=CutCellAperture{left,right:Some(right),outside_cell:None,axis:None,normal,area_m2:native_cut_cell_partition::area(&polygon),polygons:vec![polygon],polygon_parts:vec![]};
-            let source=ApertureClipSource::from_macro_facet(patches,triangle,face_ids,regions,cell,bounds,aperture.clone())?;
-            replacements.insert(indices[0],(aperture,source));discarded.extend(indices.iter().skip(1).copied());
         }
-        let old_apertures=std::mem::take(&mut refined.partition.apertures);let old_sources=std::mem::take(&mut refined.aperture_sources);
-        for (index,(a,s)) in old_apertures.into_iter().zip(old_sources).enumerate(){if discarded.contains(&index){continue;}if let Some((a,s))=replacements.remove(&index){refined.partition.apertures.push(a);refined.aperture_sources.push(Some(s));}else{refined.partition.apertures.push(a);refined.aperture_sources.push(s);}}
+        let mut replacements = std::collections::BTreeMap::new();
+        let mut discarded = std::collections::BTreeSet::new();
+        let face_indices = [[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3]];
+        for ((left, right, boundary_owner), indices) in groups {
+            let regions = (refined.regions[left], refined.regions[right]);
+            if refined.partition.components[left].cell != refined.partition.components[right].cell {
+                return Err(fail("macro facet component cells differ"));
+            }
+            let cell = refined.partition.components[left].cell;
+            let Some(region) = regions.0.or(regions.1) else {
+                continue;
+            };
+            let tet = tets
+                .iter()
+                .find(|t| t.region == region)
+                .ok_or_else(|| fail("macro facet actual region is absent"))?;
+            let Some(ids) = tet.vertex_ids else {
+                continue;
+            };
+            let mut candidates = Vec::new();
+            for (face, local) in face_indices.iter().enumerate() {
+                let mut face_ids = local.map(|i| ids[i]);
+                face_ids.sort();
+                let mut shared = Vec::new();
+                for other in tets.iter().filter(|t| t.region != region) {
+                    if let Some(other_ids) = other.vertex_ids {
+                        for (other_face, other_local) in face_indices.iter().enumerate() {
+                            let mut f = other_local.map(|i| other_ids[i]);
+                            f.sort();
+                            if f == face_ids {
+                                shared.push((other, other_face));
+                            }
+                        }
+                    }
+                }
+                if boundary_owner.is_some_and(|owner| owner != (region, face)) {
+                    continue;
+                }
+                let admitted = match (regions.0, regions.1) {
+                    (Some(a), Some(b)) => {
+                        shared.len() == 1 && shared[0].0.region == if region == a { b } else { a }
+                    }
+                    _ => shared.is_empty(),
+                };
+                if !admitted {
+                    continue;
+                }
+                if shared.iter().any(|(other, _)| {
+                    face_ids.iter().any(|id| {
+                        let a = ids.iter().position(|v| v == id).unwrap();
+                        let b = other
+                            .vertex_ids
+                            .unwrap()
+                            .iter()
+                            .position(|v| v == id)
+                            .unwrap();
+                        !(0..3).all(|k| {
+                            let pa = tet.vertices_in_frame(tet.frame_anchor())[a];
+                            let pb = other.vertices_in_frame(other.frame_anchor())[b];
+                            let sign =
+                                crate::native_exact_affine_predicate::exact_framed_plane_sign(
+                                    std::array::from_fn(|j| if j == k { 1. } else { 0. }),
+                                    pa.map(|v| v.value()),
+                                    tet.frame_anchor(),
+                                    pb.map(|v| v.value()),
+                                    other.frame_anchor(),
+                                    0.,
+                                );
+                            let jets = match (
+                                pa[k].geometry_first_order_directions(),
+                                pb[k].geometry_first_order_directions(),
+                            ) {
+                                (Some(a), Some(b)) => {
+                                    a.len() == b.len()
+                                        && a.iter()
+                                            .zip(b)
+                                            .all(|(a, b)| a.is_finite() && b.is_finite() && *a == b)
+                                }
+                                _ => false,
+                            };
+                            sign == Ok(0) && jets
+                        })
+                    })
+                }) {
+                    return Err(fail("macro facet shared source leaves differ"));
+                }
+                if regions.0.is_none() || regions.1.is_none() {
+                    if !indices.iter().all(|index| {
+                        refined.aperture_sources[*index]
+                            .as_ref()
+                            .is_some_and(|source| {
+                                let (_, _, _, _, lf, rf) = source.owners();
+                                source
+                                    .source()
+                                    .iter()
+                                    .any(|p| p.boundary == CutBoundary::Subdomain { region, face })
+                                    && source.target().iter().any(|p| {
+                                        p.boundary == CutBoundary::Subdomain { region, face }
+                                    })
+                            })
+                    }) {
+                        continue;
+                    }
+                }
+                candidates.push((face, face_ids));
+            }
+            if candidates.len() != 1 {
+                continue;
+            }
+            let (face, face_ids) = candidates[0];
+            let anchor = tet.frame_anchor();
+            let local_vertices = tet.vertices_in_frame(anchor);
+            let mut order = face_indices[face];
+            order.sort_by_key(|i| ids[*i]);
+            let mut triangle = order.map(|i| local_vertices[i]);
+            let receipt_triangle = triangle;
+            let receipt_ids = order.map(|i| ids[i]);
+            let remaining = (0..4).find(|i| !face_indices[face].contains(i)).unwrap();
+            let sub = |a: [S; 3], b: [S; 3]| -> [S; 3] { std::array::from_fn(|k| a[k] - b[k]) };
+            let u = sub(triangle[1], triangle[0]);
+            let v = sub(triangle[2], triangle[0]);
+            let mut n = [
+                u[1] * v[2] - u[2] * v[1],
+                u[2] * v[0] - u[0] * v[2],
+                u[0] * v[1] - u[1] * v[0],
+            ];
+            let inward = (0..3)
+                .map(|k| n[k] * (local_vertices[remaining][k] - triangle[0][k]))
+                .fold(S::zero(), |a, b| a + b)
+                .value()
+                > 0.;
+            if inward != regions.0.is_none() {
+                triangle.swap(1, 2);
+                n = n.map(|v| -v);
+            }
+            let norm = (0..3)
+                .map(|k| n[k] * n[k])
+                .fold(S::zero(), |a, b| a + b)
+                .sqrt();
+            if norm.value() <= 0. {
+                return Err(fail("macro facet source is rank deficient"));
+            }
+            let mut normal = n.map(|v| v / norm);
+            let support=tet.local_geometry.as_ref().and_then(|g|g.native_supports.as_ref()).and_then(|supports|supports[face].clone());
+            let (plane_origin,plane_offset)=if let Some(support)=&support {
+                let plane=support.plane()?;let aligned=(0..3).map(|k|plane.normal[k]*normal[k]).fold(S::zero(),|a,b|a+b).value()>0.;
+                normal=if aligned{plane.normal}else{plane.normal.map(|v|-v)};
+                (native_cut_cell_partition::plane_origin_in_frame(&plane,anchor),if aligned{plane.offset}else{-plane.offset})
+            }else{(triangle[0],S::zero())};
+            let bounds = self.owner.capacity_owner().grid.cell_bounds(cell)?;
+            let local_bounds = self.owner.capacity_owner().grid.cell_bounds_in_frame(cell,anchor)?;
+            let world_triangle =
+                triangle.map(|p| std::array::from_fn(|k| p[k] + S::from_f64(anchor[k])));
+            let mut source_face = CutPolygon {
+                support_only: false,
+                local_geometry: None,
+                vertices_m: world_triangle.to_vec(),
+                outward_normal: normal,
+                plane_origin_m: std::array::from_fn(|k|plane_origin[k]+S::from_f64(anchor[k])),
+                plane_offset_m: plane_offset,
+                boundary: CutBoundary::Subdomain { region, face },
+            };
+            native_cut_cell_partition::bind_polygon_frame(&mut source_face, anchor)?;
+            let local = source_face
+                .local_geometry
+                .as_mut()
+                .ok_or_else(|| fail("macro facet local source is absent"))?;
+            local.vertices_m = triangle.to_vec();
+            local.plane_origin_m = plane_origin;
+            let local_triangle = source_face.local_geometry.clone();
+            let mut source_receipt = native_cut_cell_partition::SubdomainPlaneFace::new(
+                region, face, Some(receipt_ids), receipt_triangle, normal, plane_offset,
+            );
+            source_receipt.set_anchor(anchor);
+            if let Some(sources)=tet.local_geometry.as_ref().and_then(|g|g.chart_sources.as_ref()){source_receipt.set_chart_sources(order.map(|i|sources[i].clone()));}
+            if let Some(support)=support{source_receipt.set_native_support(support);}
+            let source_plane = Plane {
+                native_levelset: None,
+                native_face: None,
+                subdomain_face: Some(source_receipt),
+                normal,
+                origin: std::array::from_fn(|k|plane_origin[k]+S::from_f64(anchor[k])),
+                local_origin: Some((anchor, plane_origin)),
+                offset: plane_offset,
+                boundary: CutBoundary::Subdomain { region, face },
+            };
+            for vertex in 0..3 {
+                native_cut_cell_partition::seed_vertex_plane(&mut source_face, vertex, &source_plane)?;
+            }
+            let mut clipped = Some(source_face);
+            for axis in 0..3 {
+                for side in 0..2 {
+                    let plane = Plane { native_levelset:None, subdomain_face: None, native_face: None,
+                        normal: std::array::from_fn(|k| {
+                            S::from_f64(if k == axis {
+                                if side == 0 {
+                                    1.
+                                } else {
+                                    -1.
+                                }
+                            } else {
+                                0.
+                            })
+                        }),
+                        origin: std::array::from_fn(|k|S::from_f64(local_bounds[side][k]+anchor[k])),
+                        offset: S::zero(),
+                        boundary: CutBoundary::Cell { axis, side },
+                        local_origin: Some((anchor,local_bounds[side].map(S::from_f64))),
+                    };
+                    if let Some(polygon) = clipped.take() {
+                        clipped = native_cut_cell_partition::clip(
+                            &[polygon],
+                            &plane,
+                            refined.partition.arithmetic_length_m,
+                        )?
+                        .into_iter()
+                        .find(|p| p.boundary == CutBoundary::Subdomain { region, face });
+                    }
+                }
+            }
+            let Some(clipped) = clipped else {
+                continue;
+            };
+            if !native_cut_cell_partition::local_positive_polygon(&clipped) {
+                continue;
+            }
+            let polygon = native_cut_cell_partition::polygon_vertices_in_frame(&clipped, anchor);
+            let measure = |polygons: &[Vec<[S; 3]>]| -> [f64; 13] {
+                let mut out = [0.; 13];
+                for p in polygons {
+                    for i in 1..p.len().saturating_sub(1) {
+                        let q = [p[0], p[i], p[i + 1]];
+                        let u = sub(q[1], q[0]);
+                        let v = sub(q[2], q[0]);
+                        let c = [
+                            u[1] * v[2] - u[2] * v[1],
+                            u[2] * v[0] - u[0] * v[2],
+                            u[0] * v[1] - u[1] * v[0],
+                        ];
+                        let sign = if (0..3)
+                            .map(|k| c[k] * normal[k])
+                            .fold(S::zero(), |a, b| a + b)
+                            .value()
+                            < 0.
+                        {
+                            -1.
+                        } else {
+                            1.
+                        };
+                        out[0] += (0..3)
+                            .map(|k| c[k] * c[k])
+                            .fold(S::zero(), |a, b| a + b)
+                            .sqrt()
+                            .value()
+                            * 0.5;
+                        for k in 0..3 {
+                            let vector = c[k].value() * 0.5 * sign;
+                            out[k + 1] += vector;
+                            for j in 0..3 {
+                                out[4 + k * 3 + j] += vector
+                                    * ((q[0][j].value() - triangle[0][j].value())
+                                        + (q[1][j].value() - triangle[0][j].value())
+                                        + (q[2][j].value() - triangle[0][j].value()))
+                                    / 3.;
+                            }
+                        }
+                    }
+                }
+                out
+            };
+            let expected = measure(&[polygon.clone()]);
+            let mut actual = [0.; 13];
+            let mut patches = Vec::new();
+            let mut actual_polygons = Vec::new();
+            for index in &indices {
+                let a = &refined.partition.apertures[*index];
+                let source = refined.aperture_sources[*index]
+                    .as_ref()
+                    .ok_or_else(|| fail("macro facet original clip source is absent"))?;
+                authenticate_convex_aperture(refined, a, source)?;
+                let polygons = if let Some(local) = &a.local_polygons {
+                    if local.len() != a.polygons.len() {
+                        return Err(fail("macro facet local aperture shape"));
+                    }
+                    local
+                        .iter()
+                        .map(|p| {
+                            p.vertices()
+                                .iter()
+                                .map(|v| {
+                                    std::array::from_fn(|k| {
+                                        v[k] + S::from_f64(p.anchor()[k] - anchor[k])
+                                    })
+                                })
+                                .collect()
+                        })
+                        .collect::<Vec<Vec<[S; 3]>>>()
+                } else {
+                    a.polygons
+                        .iter()
+                        .map(|p| {
+                            p.iter()
+                                .map(|v| std::array::from_fn(|k| v[k] - S::from_f64(anchor[k])))
+                                .collect()
+                        })
+                        .collect()
+                };
+                let m = measure(&polygons);
+                for k in 0..13 {
+                    actual[k] += m[k];
+                }
+                actual_polygons.extend(polygons);
+                patches.push(source.clone());
+            }
+            let all_polygons = std::iter::once(&polygon)
+                .chain(actual_polygons.iter())
+                .collect::<Vec<_>>();
+            let perimeter = all_polygons
+                .iter()
+                .map(|p| {
+                    (0..p.len())
+                        .map(|i| {
+                            (0..3)
+                                .map(|k| {
+                                    let d = p[i][k].value() - p[(i + 1) % p.len()][k].value();
+                                    d * d
+                                })
+                                .sum::<f64>()
+                                .sqrt()
+                        })
+                        .sum::<f64>()
+                })
+                .sum::<f64>()
+                .next_up();
+            let radius = all_polygons
+                .iter()
+                .flat_map(|p| p.iter())
+                .flat_map(|p| (0..3).map(|k| (p[k].value() - triangle[0][k].value()).abs()))
+                .fold(0f64, f64::max)
+                .next_up();
+            let area_scale = (expected[0].abs() + actual[0].abs()).next_up();
+            let area_bound = (4096. * f64::EPSILON * area_scale
+                + 8. * refined.partition.arithmetic_length_m * perimeter)
+                .next_up();
+            if (0..13).any(|k| {
+                let bound = if k < 4 {
+                    area_bound
+                } else {
+                    (area_bound * radius
+                        + area_scale * 8. * refined.partition.arithmetic_length_m
+                        + 4096. * f64::EPSILON * (expected[k].abs() + actual[k].abs()))
+                    .next_up()
+                };
+                (expected[k] - actual[k]).abs() > bound
+            }) {
+                return Err(fail(
+                    "macro facet union does not cover the admitted source face",
+                ));
+            }
+            let aperture = CutCellAperture {
+                left,
+                right: Some(right),
+                outside_cell: None,
+                axis: None,
+                normal,
+                area_m2: native_cut_cell_partition::local_polygon_area(&clipped),
+                polygons: vec![clipped.vertices_m.clone()],
+                polygon_parts: vec![],
+                local_polygons: Some(vec![clipped
+                    .local_geometry
+                    .clone()
+                    .ok_or_else(|| fail("macro facet clipped local geometry is absent"))?]),
+            };
+            let source = ApertureClipSource::from_macro_facet(
+                patches,
+                world_triangle,
+                local_triangle,
+                face_ids,
+                regions,
+                cell,
+                bounds,
+                Some((anchor,local_bounds)),
+                aperture.clone(),
+            )?;
+            replacements.insert(indices[0], (aperture, source));
+            discarded.extend(indices.iter().skip(1).copied());
+        }
+        let old_apertures = std::mem::take(&mut refined.partition.apertures);
+        let old_sources = std::mem::take(&mut refined.aperture_sources);
+        for (index, (a, s)) in old_apertures.into_iter().zip(old_sources).enumerate() {
+            if discarded.contains(&index) {
+                continue;
+            }
+            if let Some((a, s)) = replacements.remove(&index) {
+                refined.partition.apertures.push(a);
+                refined.aperture_sources.push(Some(s));
+            } else {
+                refined.partition.apertures.push(a);
+                refined.aperture_sources.push(s);
+            }
+        }
         Ok(())
     }
 
@@ -1087,6 +1489,33 @@ impl NativeGasGeometryAdapter {
     ) -> CaeResult<NativeGasGeometryEndpoint<S>> {
         let tets = self.chart_subdomains(trace, design)?;
         self.endpoint_with_regions(trace, design, &tets)
+    }
+    fn mapped_chart_in_frame<S:Scalar>(&self,chart:usize,trace:&[S],design:&[S],anchor:[f64;3])->CaeResult<[[S;3];6]>{
+        let owner=self.owner.capacity_owner();self.kinematics.mapped_chart_from_reference(chart,trace,design,|body,node|owner.node_reference_in_frame(body,node,anchor),|p,_|Ok(p))
+    }
+    fn chart_native_supports<S:TransientGasScalar>(&self,points:&[crate::native_geometry_source::NativeChartPointSource<S>;4],trace:&[S],design:&[S],anchor:[f64;3],incidence:&[std::collections::BTreeMap<usize,Vec<usize>>;2])->CaeResult<[Option<crate::native_cut_cell_partition::SubdomainNativeSupport<S>>;4]> {
+        use crate::native_cut_cell_partition::SubdomainNativeSupport;
+        let owner=self.owner.capacity_owner();let mut supports=std::array::from_fn(|_|None);
+        for (face,ids) in [[0,1,2],[0,1,3],[0,2,3],[1,2,3]].into_iter().enumerate() {
+            let features=ids.iter().map(|i|points[*i].boundary_feature()).collect::<Option<Vec<_>>>();let Some(features)=features else{continue;};
+            let Some(first)=features[0].points.first()else{continue;};let body=first.body;
+            if body>=2 || features.iter().flat_map(|f|&f.points).any(|p|p.body!=body){continue;}
+            let mut nodes=features.iter().flat_map(|f|f.points.iter().map(|p|p.node)).collect::<Vec<_>>();nodes.sort_unstable();nodes.dedup();
+            if nodes.len()>4 || nodes.is_empty(){continue;}
+            for &element in incidence[body].get(&nodes[0]).into_iter().flatten() {
+                if nodes.iter().any(|id|!owner.elements[body][element].contains(id)){continue;}
+                let source=owner.element_coefficient_source(body,element,trace)?;
+                let mut rho=[S::zero();4];for (j,node) in source.nodes.iter().enumerate(){let row=*node+if body==0{0}else{owner.nodes[0].len()};let(cols,weights)=owner.phase.row(row);for(&column,&weight)in cols.iter().zip(weights){rho[j]+=design[column]*weight;}}
+                if rho.iter().all(|value|value.value()<owner.iso){continue;}
+                let planes=crate::native_cut_cell_partition::native_planes_from_source(source,rho,&std::collections::BTreeSet::new(),owner.iso,anchor)?;
+                for plane in planes {
+                    let support=if let Some(receipt)=plane.native_face{SubdomainNativeSupport::Face(receipt)}else if let Some(receipt)=plane.native_levelset{SubdomainNativeSupport::Levelset(receipt)}else{continue;};
+                    if ids.iter().all(|i|support.owns_chart_point(&points[*i])){supports[face]=Some(support);break;}
+                }
+                if supports[face].is_some(){break;}
+            }
+        }
+        Ok(supports)
     }
     fn chart_subdomains<S: TransientGasScalar>(
         &self,
@@ -1164,10 +1593,13 @@ impl NativeGasGeometryAdapter {
                 self.length_tolerance_m,
             )?
         };
+        let mut node_incidence:[std::collections::BTreeMap<usize,Vec<usize>>;2]=std::array::from_fn(|_|std::collections::BTreeMap::new());
+        for body in 0..2 {for(element,nodes)in self.owner.capacity_owner().elements[body].iter().enumerate(){for node in nodes{node_incidence[body].entry(*node).or_default().push(element);}}}
+        let mut chart_sources=std::collections::BTreeMap::new();
         let mut tets = vec![];
         for t in &mesh.tetrahedra {
             if t.volume_m3.value() == 0. {
-                if t.volume_m3.has_direction() {
+                if !t.volume_m3.geometry_first_order_directions().is_some_and(|d|d.iter().all(|v|v.is_finite()&&*v==0.)) {
                     return Err(fail(
                         "closed native gas tetrahedron changes an active stratum",
                     ));
@@ -1175,10 +1607,27 @@ impl NativeGasGeometryAdapter {
                 continue;
             }
             let region = (t.chart * self.layers + t.layer) * 3 + t.local_tetra;
+            let anchor=vertices[t.chart][0].map(|v|v.value());
+            let local=self.mapped_chart_in_frame(t.chart,trace,design,anchor)?;
+            if !chart_sources.contains_key(&t.chart) {
+                let owner=self.owner.capacity_owner();
+                let source=self.kinematics.native_chart_feature_sources(t.chart,trace,design,|body,node|owner.node_coefficient_source(body,node,trace))?;
+                chart_sources.insert(t.chart,source);
+            }
+            let source_features=&chart_sources[&t.chart];
+            let mut point_sources=Vec::new();
+            let mut local_nodes=[[S::zero();3];4];
+            for (j,id) in t.nodes.iter().enumerate(){let node=&mesh.nodes[*id];let corner=self.paired_vertex_ids[t.chart].iter().position(|v|*v==node.paired_vertex).ok_or_else(||fail("native local tetra feature is absent"))?;let fraction=node.layer as f64/self.layers as f64;local_nodes[j]=std::array::from_fn(|k|local[corner][k]+(local[corner+3][k]-local[corner][k])*fraction);point_sources.push(crate::native_geometry_source::NativeChartPointSource{endpoints:[source_features[0][corner].clone(),source_features[1][corner].clone()],fraction});}
+            let point_sources:[crate::native_geometry_source::NativeChartPointSource<S>;4]=point_sources.try_into().map_err(|_|fail("native chart tetra source shape differs"))?;
+            let mut local_geometry=native_cut_cell_refinement::CutTetraLocalGeometry::new(anchor,local_nodes)?;
+            let supports=self.chart_native_supports(&point_sources,trace,design,anchor,&node_incidence)?;
+            local_geometry.set_chart_sources(point_sources)?;
+            local_geometry.set_native_supports(supports)?;
             tets.push(CutTetraSubdomain {
                 region,
                 vertex_ids: Some(t.nodes),
-                vertices_m: t.nodes.map(|i| mesh.nodes[i].end_m),
+                vertices_m:local_nodes.map(|p|std::array::from_fn(|k|p[k]+anchor[k])),
+                local_geometry:Some(local_geometry),
             });
         }
         Ok(tets)
@@ -1201,13 +1650,7 @@ impl NativeGasGeometryAdapter {
         let pending=if record{Some(layered_aperture_dispatch::PendingLayeredDispatch::issue(&refined,tets,&aperture_jets)?)}else{None};
         let (intersection_defects, wall_convex_support) =
             self.intersection_jets(&mut refined.partition, &tets, trace, design, &aperture_jets)?;
-        self.hadamard_partition(
-            &mut refined.partition,
-            &refined.regions,
-            &tets,
-            trace,
-            design,
-        )?;
+        self.boundary_partition_moments(&mut refined.partition)?;
         let aggregated = self.layout.aggregate(&refined)?;
         let mut defects = BTreeMap::new();
         for c in &refined.partition.components {
@@ -1252,16 +1695,25 @@ impl NativeGasGeometryAdapter {
                 a[0] * b[1] - a[1] * b[0],
             ]
         };
+        let replay_frame=std::cell::Cell::new(None::<[f64;3]>);
+        let replay_owner=std::cell::Cell::new(None::<(usize,usize)>);
+        let native_point=|body:usize,node:usize|->CaeResult<[S;3]>{
+            let binding=owner.nodes.get(body).and_then(|n|n.get(node)).ok_or_else(||fail("native replay node is absent"))?;
+            let reference=if let Some(anchor)=replay_frame.get(){
+                if let Some(grids)=&owner.reference_grids{let grid=&grids[body];if grid.node_position(node).map(f64::to_bits)!=binding.reference_m.map(f64::to_bits){return Err(fail("native replay grid binding differs"));}let ijk=grid.node_ijk(node);let mut point=[0.;3];for k in 0..3 {point[k]=crate::native_exact_affine_predicate::exact_framed_grid_coordinate(grid.origin_m[k],ijk[k],grid.element_size_m,anchor[k]).map_err(|_|fail("native replay original grid coordinate is unsupported"))?;}point}else{std::array::from_fn(|k|binding.reference_m[k]-anchor[k])}
+            }else{binding.reference_m};
+            Ok(std::array::from_fn(|k|S::from_f64(reference[k])+trace[binding.force_flux[k]]))
+        };
         let plane = |cell: usize,
                      boundary: &CutBoundary|
          -> CaeResult<([S; 3], [S; 3], S, CutBoundary)> {
             let (normal, origin, offset) = match boundary {
                 CutBoundary::Cell { axis, side } => {
-                    let b = owner.grid.cell_bounds(cell)?;
+                    let b = owner.grid.cell_bounds_in_frame(cell,replay_frame.get().unwrap_or([0.;3]))?;
                     let n = std::array::from_fn(|k| S::from_f64(if k == *axis { 1. } else { 0. }));
                     (
                         n,
-                        std::array::from_fn(|k| S::from_f64(b[*side][k])),
+                        b[*side].map(S::from_f64),
                         S::zero(),
                     )
                 }
@@ -1270,7 +1722,9 @@ impl NativeGasGeometryAdapter {
                         .iter()
                         .find(|t| t.region == *region)
                         .ok_or_else(|| fail("clipped vertex numerical plane is missing"))?;
-                    let p = native_cut_cell_refinement::canonical_face(tet, *face)?;
+                    let mut local_tet=tet.clone();
+                    if let Some(anchor)=replay_frame.get(){local_tet.vertices_m=local_tet.vertices_in_frame(anchor);local_tet.local_geometry=None;}
+                    let p = native_cut_cell_refinement::canonical_face(&local_tet, *face)?;
                     (cross(sub(p[1], p[0]), sub(p[2], p[0])), p[0], S::zero())
                 }
                 CutBoundary::Native {
@@ -1279,20 +1733,15 @@ impl NativeGasGeometryAdapter {
                     face,
                     ..
                 } => {
-                    let node = |i: usize| {
-                        std::array::from_fn(|k| {
-                            S::from_f64(owner.nodes[*body][i].reference_m[k])
-                                + trace[owner.nodes[*body][i].force_flux[k]]
-                        })
-                    };
+                    let node = |i:usize|native_point(*body,i);
                     if let Some(f) = face {
                         let mut f = *f;
                         f.sort_unstable();
-                        let p = f.map(node);
+                        let [a,b,c]=f.map(node);let p=[a?,b?,c?];
                         (cross(sub(p[1], p[0]), sub(p[2], p[0])), p[0], S::zero())
                     } else {
                         let ids = owner.elements[*body][*element];
-                        let p = ids.map(node);
+                        let [a,b,c,d]=ids.map(node);let p=[a?,b?,c?,d?];
                         let offset = if *body == 0 { 0 } else { owner.nodes[0].len() };
                         let rho = ids.map(|i| {
                             let (c, v) = owner.phase.row(offset + i);
@@ -1363,14 +1812,14 @@ impl NativeGasGeometryAdapter {
         let producer_bound=|component:usize,primary:Option<&[([S;3],[S;3],S,CutBoundary)]>,p:[S;3],candidate:[S;3],kind:&NativeCornerKind|->CaeResult<bool>{
             use crate::native_producer_rounding::ProducerRounded as R;
             let Some(primary)=primary else{return Ok(false)};
-            let Some(part)=part_planes[component].iter().position(|actual|std::ptr::eq(actual.as_slice(),primary)) else{return Ok(false)};
+            let part=if let Some((issued_component,part))=replay_owner.get(){if issued_component!=component||part>=partition.components[component].convex_parts.len(){return Ok(false)}part}else{let Some(part)=part_planes[component].iter().position(|actual|std::ptr::eq(actual.as_slice(),primary))else{return Ok(false)};part};
             let NativeCornerKind::Edge{plane,..}=kind else{return Ok(false)};
             let actual=&partition.components[component].convex_parts[part];
-            if !actual.iter().any(|face|&face.boundary==plane) || !actual.iter().flat_map(|face|&face.vertices_m).any(|point|(0..3).all(|k|aperture_leaf_bits(point[k],p[k]))){return Ok(false)}
+            if !actual.iter().any(|face|&face.boundary==plane) || !actual.iter().flat_map(|face|if let Some(frame)=replay_frame.get(){crate::native_cut_cell_partition::polygon_vertices_in_frame(face,frame)}else{face.vertices_m.clone()}).any(|point|(0..3).all(|k|aperture_leaf_bits(point[k],p[k]))){return Ok(false)}
             if producer_rounding_cache.borrow().is_none(){
                 let replay_trace=trace.iter().map(|v|R::point(v.value())).collect::<Vec<_>>();
                 let replay_design=design.iter().map(|v|R::point(v.value())).collect::<Vec<_>>();
-                let replay_tets=tets.iter().map(|tet|CutTetraSubdomain{region:tet.region,vertex_ids:tet.vertex_ids,vertices_m:tet.vertices_m.map(|point|point.map(|v|R::point(v.value())))}).collect::<Vec<_>>();
+                let replay_tets=tets.iter().map(|tet|CutTetraSubdomain{region:tet.region,vertex_ids:tet.vertex_ids,vertices_m:tet.vertices_m.map(|point|point.map(|v|R::point(v.value()))),local_geometry:tet.local_geometry.as_ref().map(|g|g.map_scalars(|v|R::point(v.value())))}).collect::<Vec<_>>();
                 let replay_base=self.owner.partition(&replay_trace,&replay_design)?;
                 *producer_rounding_cache.borrow_mut()=Some(native_cut_cell_refinement::refine(&replay_base,&replay_tets)?);
             }
@@ -1378,8 +1827,8 @@ impl NativeGasGeometryAdapter {
             let Some(replay_component)=replay.partition.components.get(component) else{return Ok(false)};
             let actual_component=&partition.components[component];
             if replay_component.cell!=actual_component.cell || replay_component.convex_parts.len()!=actual_component.convex_parts.len(){return Ok(false)}
-            for (a,b) in actual_component.convex_parts.iter().zip(&replay_component.convex_parts){if a.len()!=b.len(){return Ok(false)}for (a,b) in a.iter().zip(b){if a.boundary!=b.boundary || a.support_only!=b.support_only || a.vertices_m.len()!=b.vertices_m.len() || a.vertices_m.iter().zip(&b.vertices_m).any(|(a,b)|(0..3).any(|k|a[k].value().to_bits()!=b[k].value().to_bits())){return Ok(false)}}}
-            Ok(replay_component.convex_parts[part].iter().flat_map(|face|&face.vertices_m).any(|point|(0..3).all(|k|point[k].value().to_bits()==p[k].value().to_bits()&&point[k].contains(candidate[k].value()))))
+            for (a,b) in actual_component.convex_parts.iter().zip(&replay_component.convex_parts){if a.len()!=b.len(){return Ok(false)}for (a,b) in a.iter().zip(b){let ap=if let Some(frame)=replay_frame.get(){crate::native_cut_cell_partition::polygon_vertices_in_frame(a,frame)}else{a.vertices_m.clone()};let bp=if let Some(frame)=replay_frame.get(){crate::native_cut_cell_partition::polygon_vertices_in_frame(b,frame)}else{b.vertices_m.clone()};if a.boundary!=b.boundary || a.support_only!=b.support_only || ap.len()!=bp.len() || ap.iter().zip(&bp).any(|(a,b)|(0..3).any(|k|a[k].value().to_bits()!=b[k].value().to_bits())){return Ok(false)}}}
+            Ok(replay_component.convex_parts[part].iter().flat_map(|face|if let Some(frame)=replay_frame.get(){crate::native_cut_cell_partition::polygon_vertices_in_frame(face,frame)}else{face.vertices_m.clone()}).any(|point|(0..3).all(|k|point[k].value().to_bits()==p[k].value().to_bits()&&point[k].contains(candidate[k].value()))))
         };
         use NativePointOwner as ParentOwner;
         let has_motion = |value: S| {
@@ -1420,10 +1869,12 @@ impl NativeGasGeometryAdapter {
         for tet in tets {
             if let Some(ids)=tet.vertex_ids {
                 for i in 0..4 {
-                    let expected=material_points.get(ids[i])
-                        .ok_or_else(||fail("layered native feature identity is absent"))?;
-                    if (0..3).any(|k|expected[k].value().to_bits()!=tet.vertices_m[i][k].value().to_bits()
-                        || has_motion(tet.vertices_m[i][k]-expected[k])) {
+                    let (expected,actual)=if let Some(local)=&tet.local_geometry{
+                        let &(chart,corner,layer)=material_sources.get(&ids[i]).ok_or_else(||fail("layered local feature identity is absent"))?;let p=self.mapped_chart_in_frame(chart,trace,design,local.anchor())?;let fraction=layer as f64/self.layers as f64;
+                        (std::array::from_fn(|k|p[corner][k]+(p[corner+3][k]-p[corner][k])*fraction),local.vertices()[i])
+                    }else{(*material_points.get(ids[i]).ok_or_else(||fail("layered native feature identity is absent"))?,tet.vertices_m[i])};
+                    if (0..3).any(|k|expected[k].value().to_bits()!=actual[k].value().to_bits()
+                        || has_motion(actual[k]-expected[k])) {
                         return Err(fail("layered native feature realization differs"));
                     }
                 }
@@ -1595,7 +2046,7 @@ impl NativeGasGeometryAdapter {
                     .map(|&(chart,corner,layer)|(id,chart,corner,layer))).collect();
                 *last_construction.borrow_mut() = Some(NativeCornerConstruction {
                     cell: partition.components[component].cell,
-                    retained: p.map(|v| v.value()), actual,
+                    retained: p.map(|v| v.value()), frame:replay_frame.get(), actual,
                     active: active.iter().map(|p|p.3.clone()).collect(), kind, layered_sources, tet_vertices:tet_vertices.into_iter().collect(),
                 });
             };
@@ -1950,9 +2401,91 @@ impl NativeGasGeometryAdapter {
             });
             Ok(corrected)
         };
+        let framed_parents = |component: usize, part: usize, anchor: Option<[f64; 3]>| -> CaeResult<Vec<([S; 3], ParentOwner)>> {
+            part_parents[component][part].iter().map(|&(point, key)| {
+                let point = match (key, anchor) {
+                    (ParentOwner::Native(body, node), Some(_)) => native_point(body, node)?,
+                    (ParentOwner::Layered(id), Some(anchor)) => {
+                        let &(chart, corner, layer) = material_sources.get(&id).ok_or_else(|| fail("native local parent feature is absent"))?;
+                        let local = self.mapped_chart_in_frame(chart, trace, design, anchor)?;
+                        let fraction = layer as f64 / self.layers as f64;
+                        std::array::from_fn(|k| local[corner][k] + (local[corner + 3][k] - local[corner][k]) * fraction)
+                    }
+                    _ => point,
+                };
+                Ok((point, key))
+            }).collect()
+        };
+        let framed_planes = |component: usize, part: usize| -> CaeResult<Vec<([S; 3], [S; 3], S, CutBoundary)>> {
+            partition.components[component].convex_parts.get(part).ok_or_else(|| fail("local convex owner absent"))?.iter()
+                .map(|p| plane(partition.components[component].cell, &p.boundary)).collect()
+        };
+        let replay_incidence_plane = |cell: usize, boundary: &CutBoundary| -> CaeResult<crate::native_cut_cell_partition::Plane<S>> {
+            use crate::native_cut_cell_partition::{Plane, native_planes_from_source};
+            let anchor = replay_frame.get().ok_or_else(|| fail("incidence replay local frame is absent"))?;
+            let mut live = match boundary {
+                CutBoundary::Native { body, element, face, .. } => {
+                    let ids = *owner.elements.get(*body).and_then(|elements| elements.get(*element)).ok_or_else(|| fail("incidence native element is absent"))?;
+                    let offset = if *body == 0 {0} else {owner.nodes[0].len()};
+                    let rho = ids.map(|i| {let (columns,values)=owner.phase.row(offset+i);columns.iter().zip(values).map(|(&j,&v)|design[j]*v).fold(S::zero(),|a,b|a+b)});
+                    let source=owner.element_coefficient_source(*body,*element,trace)?;
+                    native_planes_from_source(source,rho,&std::collections::BTreeSet::new(),owner.iso,anchor)?.into_iter()
+                        .find(|p| matches!(&p.boundary,CutBoundary::Native{face:actual,..} if actual==face)).ok_or_else(|| fail("incidence native producer plane is absent"))?
+                }
+                CutBoundary::Subdomain {region,face} => {
+                    let tet=tets.iter().find(|tet|tet.region==*region).ok_or_else(||fail("incidence refinement producer is absent"))?;
+                    let mut local=tet.clone();
+                    let points=if let Some(sources)=tet.local_geometry.as_ref().and_then(|g|g.chart_sources.as_ref()){let points=sources.iter().map(|p|p.point_in_frame(anchor)).collect::<CaeResult<Vec<_>>>()?;[points[0],points[1],points[2],points[3]]}else{tet.vertices_in_frame(anchor)};
+                    let mut geometry=native_cut_cell_refinement::CutTetraLocalGeometry::new(anchor,points)?;
+                    if let Some(old)=&tet.local_geometry {
+                        if let Some(sources)=&old.chart_sources{geometry.set_chart_sources(sources.clone())?;}
+                        if let Some(supports)=&old.native_supports{geometry.set_native_supports(supports.clone())?;}
+                    }
+                    local.vertices_m=points.map(|p|std::array::from_fn(|k|p[k]+anchor[k]));local.local_geometry=Some(geometry);
+                    native_cut_cell_refinement::tetra_planes(&local)?.0.into_iter().find(|p|p.boundary==*boundary).ok_or_else(||fail("incidence refinement source plane is absent"))?
+                }
+                CutBoundary::Cell {..} => {
+                    let (normal,origin,offset,_) = plane(cell,boundary)?;
+                    Plane {native_levelset:None, normal, origin, offset, boundary:boundary.clone(), local_origin:None, native_face:None, subdomain_face:None}
+                }
+            };
+            live.boundary = boundary.clone();
+            let local_origin=live.local_origin.map_or(live.origin,|(_,origin)|origin);
+            live.local_origin = Some((anchor,local_origin));
+            if let Some(receipt) = live.native_face.as_mut() {receipt.set_anchor(anchor);}
+            if let Some(receipt) = live.native_levelset.as_mut() {receipt.set_anchor(anchor);}
+            if let Some(receipt) = live.subdomain_face.as_mut() {receipt.set_anchor(anchor);}
+            live.origin = std::array::from_fn(|k| local_origin[k]+S::from_f64(anchor[k]));
+            Ok(live)
+        };
+        let replay_local_geometry = |local: &crate::native_cut_cell_partition::CutLocalGeometry<S>, kept: &[usize], points: Vec<[S;3]>, cell:usize| -> CaeResult<crate::native_cut_cell_partition::CutLocalGeometry<S>> {
+            if local.vertices_m.len()!=local.incidences.len() || kept.len()!=points.len() || kept.iter().any(|&i|i>=local.vertices_m.len()) {return Err(fail("local replay incidence shape differs"));}
+            if local.anchor().iter().any(|v|!v.is_finite()) || points.iter().flatten().any(|v|!v.finite_first_order() || !v.geometry_first_order_directions().is_some_and(|d|d.iter().all(|v|v.is_finite()))) {return Err(fail("local replay geometry channels are invalid"));}
+            let mut planes=Vec::new();
+            for incidence in kept.iter().flat_map(|&i|local.incidences[i].iter()).chain(local.plane_incidence.iter()) {
+                if !planes.iter().any(|p:&crate::native_cut_cell_partition::Plane<S>|p.boundary==*incidence.boundary()) {
+                    planes.push(replay_incidence_plane(cell,incidence.boundary())?);
+                }
+            }
+            let mut live=local.clone();
+            live.anchor_m=replay_frame.get().ok_or_else(||fail("local replay frame is absent"))?;
+            live.incidences=kept.iter().map(|&i|local.incidences[i].iter().map(|incidence| {
+                incidence.rebind_owned_plane(planes.iter().find(|p|p.boundary==*incidence.boundary()).ok_or_else(||fail("local replay plane owner absent"))?)
+            }).collect()).collect::<CaeResult<_>>()?;
+            live.plane_incidence=local.plane_incidence.as_ref().map(|incidence| {
+                incidence.rebind_owned_plane(planes.iter().find(|p|p.boundary==*incidence.boundary()).ok_or_else(||fail("local replay plane owner absent"))?)
+            }).transpose()?;
+            if let Some(&point)=points.first(){live.plane_origin_m=point;}
+            live.vertices_m=points;
+            live.invalidate_point_constructions();
+            Ok(live)
+        };
         let mut wall_constructions = Vec::with_capacity(partition.walls.len());
         for wall in &mut partition.walls {
             material_subdivision.set(false);
+            let anchor=wall.local_geometry.as_ref().map(|g|g.anchor());
+            replay_frame.set(anchor);
+            replay_owner.set(Some((wall.component,wall.convex_part)));
             let ids = wall.native_nodes;
             let mut extra = [[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3]]
                 .iter()
@@ -1992,13 +2525,13 @@ impl NativeGasGeometryAdapter {
                     },
                 )?);
             }
-            let primary = part_planes[wall.component]
-                .get(wall.convex_part)
-                .ok_or_else(|| fail("native wall convex owner missing"))?;
-            let original = wall.vertices_m.clone();
+            let local_primary=framed_planes(wall.component,wall.convex_part)?;
+            let primary=if anchor.is_some(){local_primary.as_slice()}else{part_planes[wall.component].get(wall.convex_part).ok_or_else(||fail("native wall convex owner missing"))?.as_slice()};
+            let local_parents=framed_parents(wall.component,wall.convex_part,anchor)?;
+            let original=wall.local_geometry.as_ref().map_or_else(||wall.vertices_m.clone(),|g|g.vertices().to_vec());
             let kept = retained_vertices(&original);
             let mut constructions = Vec::with_capacity(kept.len());
-            wall.vertices_m = kept
+            let actual_points:Vec<[S;3]> = kept
                 .iter()
                 .map(|&i| {
                     let actual = vertex(
@@ -2006,7 +2539,7 @@ impl NativeGasGeometryAdapter {
                         Some(primary),
                         original[i],
                         &extra,
-                        &part_parents[wall.component][wall.convex_part],
+                        &local_parents,
                         None,
                     )?;
                     constructions.push(last_construction.borrow().clone()
@@ -2029,18 +2562,20 @@ impl NativeGasGeometryAdapter {
                     .sum::<f64>()
                     / edge.iter().map(|v| v * v).sum::<f64>();
                 let candidate = std::array::from_fn(|k| {
-                    wall.vertices_m[left][k] * (1. - t) + wall.vertices_m[right][k] * t
+                    actual_points[left][k] * (1. - t) + actual_points[right][k] * t
                 });
                 vertex(
                     wall.component,
                     Some(primary),
                     original[i],
                     &extra,
-                    &part_parents[wall.component][wall.convex_part],
+                    &local_parents,
                     Some(candidate),
                 )?;
             }
-            let collapsed = zero_polygon(&wall.vertices_m)?;
+            let collapsed=zero_polygon(&actual_points)?;
+            if let Some(local)=wall.local_geometry.as_ref(){wall.local_geometry=Some(replay_local_geometry(local,&kept,actual_points.clone(),partition.components[wall.component].cell)?);}
+            wall.vertices_m=actual_points.iter().map(|p|std::array::from_fn(|k|p[k]+S::from_f64(anchor.map_or(0.,|a|a[k])))).collect();
             if material_subdivision.get() && !collapsed {
                 return Err(fail(
                     "rank-two clipping subdivision has no positive-face material owner",
@@ -2049,54 +2584,41 @@ impl NativeGasGeometryAdapter {
             wall.area_m2 = if collapsed {
                 S::zero()
             } else {
-                area(&wall.vertices_m)
+                area(&actual_points)
             };
-            let nodes = wall.native_nodes.map(|i| {
-                std::array::from_fn(|k| {
-                    S::from_f64(owner.nodes[wall.body][i].reference_m[k])
-                        + trace[owner.nodes[wall.body][i].force_flux[k]]
-                })
-            });
-            wall.native_barycentric = wall
-                .vertices_m
-                .iter()
-                .map(|&p| material_barycentric(p, nodes))
-                .collect::<CaeResult<_>>()?;
+            let [a,b,c,d]=wall.native_nodes.map(|node|native_point(wall.body,node));
+            let nodes=[a?,b?,c?,d?];
+            wall.native_barycentric=actual_points.iter().map(|&p|material_barycentric(p,nodes)).collect::<CaeResult<_>>()?;
+            replay_frame.set(None);
+            replay_owner.set(None);
         }
         for (aperture_index, aperture) in partition.apertures.iter_mut().enumerate() {
             if aperture_jets.validate(aperture_index,aperture)? { continue; }
             if aperture.polygon_parts.len() != aperture.polygons.len() {
                 return Err(fail("aperture convex provenance shape"));
             }
-            for (polygon, &(left_part, right_part)) in
-                aperture.polygons.iter_mut().zip(&aperture.polygon_parts)
-            {
+            if aperture.local_polygons.as_ref().is_some_and(|local|local.len()!=aperture.polygons.len()){return Err(fail("aperture local polygon shape differs"));}
+            for (polygon_index,(polygon, &(left_part, right_part))) in aperture.polygons.iter_mut().zip(&aperture.polygon_parts).enumerate() {
                 material_subdivision.set(false);
-                let primary = part_planes[aperture.left]
-                    .get(left_part)
-                    .ok_or_else(|| fail("aperture left convex owner absent"))?;
-                let extra = match (aperture.right, right_part) {
-                    (Some(right), Some(part)) => part_planes[right]
-                        .get(part)
-                        .ok_or_else(|| fail("aperture right convex owner absent"))?
-                        .as_slice(),
-                    (None, None) => &[],
-                    _ => return Err(fail("aperture convex owner mismatch")),
-                };
-                let mut aperture_parents = part_parents[aperture.left][left_part].clone();
-                if let (Some(right), Some(part)) = (aperture.right, right_part) {
-                    aperture_parents.extend_from_slice(&part_parents[right][part]);
-                }
-                let original = polygon.clone();
+                let local=aperture.local_polygons.as_ref().map(|local|&local[polygon_index]);
+                let anchor=local.map(|g|g.anchor());
+                replay_frame.set(anchor);
+                replay_owner.set(Some((aperture.left,left_part)));
+                let local_primary=framed_planes(aperture.left,left_part)?;
+                let primary=if anchor.is_some(){local_primary.as_slice()}else{part_planes[aperture.left].get(left_part).ok_or_else(||fail("aperture left convex owner absent"))?.as_slice()};
+                let extra=match(aperture.right,right_part){(Some(right),Some(part))=>framed_planes(right,part)?,(None,None)=>Vec::new(),_=>return Err(fail("aperture convex owner mismatch"))};
+                let mut aperture_parents=framed_parents(aperture.left,left_part,anchor)?;
+                if let (Some(right),Some(part))=(aperture.right,right_part){aperture_parents.extend(framed_parents(right,part,anchor)?);}
+                let original=local.map_or_else(||polygon.clone(),|g|g.vertices().to_vec());
                 let kept = retained_vertices(&original);
-                *polygon = kept
+                let actual_points:Vec<[S;3]> = kept
                     .iter()
                     .map(|&i| {
                         vertex(
                             aperture.left,
                             Some(primary),
                             original[i],
-                            extra,
+                            &extra,
                             &aperture_parents,
                             None,
                         )
@@ -2116,41 +2638,42 @@ impl NativeGasGeometryAdapter {
                         .sum::<f64>()
                         / e.iter().map(|v| v * v).sum::<f64>();
                     let candidate = std::array::from_fn(|k| {
-                        polygon[left][k] * (1. - t) + polygon[right][k] * t
+                        actual_points[left][k] * (1. - t) + actual_points[right][k] * t
                     });
                     vertex(
                         aperture.left,
                         Some(primary),
                         original[i],
-                        extra,
+                        &extra,
                         &aperture_parents,
                         Some(candidate),
                     )?;
                 }
-                if material_subdivision.get() && !zero_polygon(polygon)? {
+                if material_subdivision.get() && !zero_polygon(&actual_points)? {
                     return Err(fail(
                         "rank-two clipping subdivision has no positive-face material owner",
                     ));
                 }
-            }
-            let mut polygons = Vec::new();
-            let mut owners = Vec::new();
-            for (polygon, owner) in std::mem::take(&mut aperture.polygons)
-                .into_iter()
-                .zip(std::mem::take(&mut aperture.polygon_parts))
-            {
-                if !zero_polygon(&polygon)? {
-                    polygons.push(polygon);
-                    owners.push(owner);
+                if let Some(local)=local {
+                    let live=replay_local_geometry(local,&kept,actual_points.clone(),partition.components[aperture.left].cell)?;
+                    aperture.local_polygons.as_mut().unwrap()[polygon_index]=live;
                 }
+                *polygon=actual_points.iter().map(|p|std::array::from_fn(|k|p[k]+S::from_f64(anchor.map_or(0.,|a|a[k])))).collect();
+                replay_frame.set(None);
+            replay_owner.set(None);
             }
-            aperture.polygons = polygons;
-            aperture.polygon_parts = owners;
-            aperture.area_m2 = aperture
-                .polygons
-                .iter()
-                .map(|p| area(p))
-                .fold(S::zero(), |a, b| a + b);
+            let mut polygons=Vec::new();
+            let mut owners=Vec::new();
+            let original_local=aperture.local_polygons.take();
+            let mut local_polygons=original_local.as_ref().map(|_|Vec::new());
+            for (index,(polygon,owner)) in std::mem::take(&mut aperture.polygons).into_iter().zip(std::mem::take(&mut aperture.polygon_parts)).enumerate(){
+                let points=original_local.as_ref().map_or(polygon.as_slice(),|local|local[index].vertices());
+                if !zero_polygon(points)?{polygons.push(polygon);owners.push(owner);if let (Some(out),Some(local))=(&mut local_polygons,&original_local){out.push(local[index].clone());}}
+            }
+            aperture.area_m2=polygons.iter().enumerate().map(|(index,p)|area(local_polygons.as_ref().map_or(p.as_slice(),|local|local[index].vertices()))).fold(S::zero(),|a,b|a+b);
+            aperture.polygons=polygons;
+            aperture.polygon_parts=owners;
+            aperture.local_polygons=local_polygons;
         }
         let mut retained_wall_constructions = Vec::new();
         partition.walls = std::mem::take(&mut partition.walls).into_iter()
@@ -2170,34 +2693,51 @@ impl NativeGasGeometryAdapter {
                 continue;
             }
             let part = &partition.components[wall.component].convex_parts[wall.convex_part];
-            let primary = &part_planes[wall.component][wall.convex_part];
+            let anchor=part.iter().filter_map(|p|p.local_geometry.as_ref().map(|g|g.anchor())).next();
+            replay_frame.set(anchor);
+            replay_owner.set(Some((wall.component,wall.convex_part)));
+            let local_primary=part.iter().map(|p|plane(partition.components[wall.component].cell,&p.boundary)).collect::<CaeResult<Vec<_>>>()?;
+            let primary = if anchor.is_some(){local_primary.as_slice()}else{part_planes[wall.component][wall.convex_part].as_slice()};
+            let mut local_parents=Vec::new();
+            for &(p,key) in &part_parents[wall.component][wall.convex_part]{let point=match(key,anchor){(ParentOwner::Native(body,node),Some(_))=>native_point(body,node)?,(ParentOwner::Layered(id),Some(a))=>{let &(chart,corner,layer)=material_sources.get(&id).ok_or_else(||fail("native local parent feature is absent"))?;let local=self.mapped_chart_in_frame(chart,trace,design,a)?;let fraction=layer as f64/self.layers as f64;std::array::from_fn(|k|local[corner][k]+(local[corner+3][k]-local[corner][k])*fraction)},_=>p};local_parents.push((point,key));}
             let mut polygons = Vec::with_capacity(part.len());
             let mut constructions = Vec::with_capacity(part.len());
             for polygon in part {
                 material_subdivision.set(false);
                 let mut live = polygon.clone();
                 let mut corner_constructions = Vec::with_capacity(polygon.vertices_m.len());
-                live.vertices_m = polygon.vertices_m.iter().map(|&point| {
+                let points=if let Some(anchor)=anchor{crate::native_cut_cell_partition::polygon_vertices_in_frame(polygon,anchor)}else{polygon.vertices_m.clone()};
+                let actual_points = points.iter().map(|&point| {
                     let actual = vertex(wall.component, Some(primary), point, &[],
-                        &part_parents[wall.component][wall.convex_part], None)?;
+                        &local_parents, None)?;
                     let construction = last_construction.borrow().clone()
                         .ok_or_else(||fail("authentic convex support corner construction is absent"))?;
                     corner_constructions.push(construction);
                     Ok(actual)
                 }).collect::<CaeResult<Vec<_>>>()?;
+                live.vertices_m=actual_points.iter().map(|p|std::array::from_fn(|k|p[k]+anchor.map_or(0.,|a|a[k]))).collect();
+                if let Some(local)=polygon.local_geometry.as_ref(){
+                    let kept=(0..points.len()).collect::<Vec<_>>();
+                    live.local_geometry=Some(replay_local_geometry(local,&kept,actual_points,partition.components[wall.component].cell)?);
+                }
                 constructions.push(corner_constructions);
-                let (normal, origin, offset, _) = plane(
-                    partition.components[wall.component].cell, &polygon.boundary)?;
+                let (normal,origin,offset)=if anchor.is_some(){
+                    let owned=replay_incidence_plane(partition.components[wall.component].cell,&polygon.boundary)?;
+                    (owned.normal,owned.local_origin.ok_or_else(||fail("support plane local producer is absent"))?.1,owned.offset)
+                }else{let(n,o,d,_)=plane(partition.components[wall.component].cell,&polygon.boundary)?;(n,o,d)};
                 let orientation = dot(normal, polygon.outward_normal).value();
                 if !orientation.is_finite() || orientation == 0. {
                     return Err(fail("convex support plane orientation is unresolved"));
                 }
                 let scale = S::from_f64(if orientation > 0. { 1. } else { -1. });
                 live.outward_normal = normal.map(|v| v * scale);
-                live.plane_origin_m = origin;
+                live.plane_origin_m = std::array::from_fn(|k|origin[k]+anchor.map_or(0.,|a|a[k]));
+                if let Some(local)=live.local_geometry.as_mut(){local.plane_origin_m=origin;}
                 live.plane_offset_m = offset * scale;
                 polygons.push(live);
             }
+            replay_frame.set(None);
+            replay_owner.set(None);
             supports.insert(key, (polygons, constructions));
         }
         let wall_convex_support = partition.walls.iter().enumerate().map(|(wall_index, wall)| {
@@ -2222,191 +2762,21 @@ impl NativeGasGeometryAdapter {
         }).collect::<CaeResult<Vec<_>>>()?;
         Ok((defects, wall_convex_support))
     }
-    fn hadamard_partition<S: TransientGasScalar>(
+    fn boundary_partition_moments<S: TransientGasScalar>(
         &self,
         partition: &mut crate::native_cut_cell_partition::NativeCutCellPartition<S>,
-        regions: &[Option<usize>],
-        tets: &[CutTetraSubdomain<S>],
-        trace: &[S],
-        design: &[S],
     ) -> CaeResult<()> {
-        let owner = self.owner.capacity_owner();
-        let mut volume = partition
-            .components
-            .iter()
-            .map(|c| S::from_f64(c.volume_m3.value()))
-            .collect::<Vec<_>>();
-        let mut moment = partition
-            .components
-            .iter()
-            .map(|c| {
-                c.centroid_m
-                    .map(|p| S::from_f64(p.value() * c.volume_m3.value()))
-            })
-            .collect::<Vec<_>>();
-        let anchors = partition
-            .components
-            .iter()
-            .map(|c| c.centroid_m.map(|v| v.value()))
-            .collect::<Vec<_>>();
-        let mut second = partition
-            .components
-            .iter()
-            .map(|c| {
-                c.central_second_integral_m5
-                    .map(|row| row.map(|v| S::from_f64(v.value())))
-            })
-            .collect::<Vec<_>>();
-        let dot = |a: [f64; 3], b: [f64; 3]| (0..3).map(|k| a[k] * b[k]).sum::<f64>();
-        let sub = |a: [f64; 3], b: [f64; 3]| std::array::from_fn(|k| a[k] - b[k]);
-        let cross = |a: [f64; 3], b: [f64; 3]| {
-            [
-                a[1] * b[2] - a[2] * b[1],
-                a[2] * b[0] - a[0] * b[2],
-                a[0] * b[1] - a[1] * b[0],
-            ]
-        };
-        let bary = |p: [f64; 3], v: [[f64; 3]; 4]| -> CaeResult<[f64; 4]> {
-            let a = sub(v[1], v[0]);
-            let b = sub(v[2], v[0]);
-            let c = sub(v[3], v[0]);
-            let d = sub(p, v[0]);
-            let det = dot(a, cross(b, c));
-            if !det.is_finite() || det == 0. {
-                return Err(fail("invalid native gas material chart"));
-            }
-            let w = [
-                dot(d, cross(b, c)) / det,
-                dot(a, cross(d, c)) / det,
-                dot(a, cross(b, d)) / det,
-            ];
-            Ok([1. - w.iter().sum::<f64>(), w[0], w[1], w[2]])
-        };
-        let mut add = |component: usize,
-                       p: [f64; 3],
-                       normal: [f64; 3],
-                       area: f64,
-                       point: [S; 3],
-                       sign: f64| {
-            let dv = (0..3)
-                .map(|k| (point[k] - point[k].value()) * (normal[k] * area * sign))
-                .fold(S::zero(), |a, b| a + b);
-            volume[component] += dv;
-            for k in 0..3 {
-                moment[component][k] += dv * p[k];
-            }
-            for j in 0..3 {
-                for k in 0..3 {
-                    second[component][j][k] +=
-                        dv * (p[j] - anchors[component][j]) * (p[k] - anchors[component][k]);
-                }
-            }
-        };
-        for q in partition.wall_moment_quadrature() {
-            let nodes = &owner.nodes[q.body];
-            let weights = q.native_barycentric.map(|v| v.value());
-            let physical: [[S; 3]; 4] = q.native_nodes.map(|i| {
-                std::array::from_fn(|k| {
-                    S::from_f64(nodes[i].reference_m[k]) + trace[nodes[i].force_flux[k]]
-                })
-            });
-            let mut point: [S; 3] = std::array::from_fn(|k| {
-                (0..4)
-                    .map(|i| physical[i][k] * weights[i])
-                    .fold(S::zero(), |a, b| a + b)
-            });
-            let offset = if q.body == 0 { 0 } else { owner.nodes[0].len() };
-            let density: [S; 4] = q.native_nodes.map(|i| {
-                let (c, v) = owner.phase.row(offset + i);
-                c.iter()
-                    .zip(v)
-                    .map(|(&j, &a)| design[j] * a)
-                    .fold(S::zero(), |a, b| a + b)
-            });
-            let rho = (0..4).map(|i| density[i].value() * weights[i]).sum::<f64>();
-            let rho_scale = density
-                .iter()
-                .map(|v| v.value().abs())
-                .fold(owner.iso.abs(), f64::max);
-            if (rho - owner.iso).abs() <= 512. * f64::EPSILON * rho_scale.max(f64::MIN_POSITIVE) {
-                let p = physical.map(|p| p.map(|v| v.value()));
-                let a = sub(p[1], p[0]);
-                let b = sub(p[2], p[0]);
-                let c = sub(p[3], p[0]);
-                let det = dot(a, cross(b, c));
-                let gradient = std::array::from_fn(|k| {
-                    ((density[1].value() - density[0].value()) * cross(b, c)[k]
-                        + (density[2].value() - density[0].value()) * cross(c, a)[k]
-                        + (density[3].value() - density[0].value()) * cross(a, b)[k])
-                        / det
-                });
-                let normal = q.normal.map(|v| v.value());
-                let denominator = dot(gradient, normal);
-                if !denominator.is_finite() || denominator == 0. {
-                    return Err(fail(
-                        "native gas phase boundary has no calibrated normal gradient",
-                    ));
-                }
-                let shift = (0..4)
-                    .map(|i| (density[i] - density[i].value()) * weights[i])
-                    .fold(S::zero(), |a, b| a + b)
-                    / denominator;
-                for k in 0..3 {
-                    point[k] -= shift * normal[k];
-                }
-            }
-            add(
-                q.component,
-                q.position_m.map(|v| v.value()),
-                q.normal.map(|v| v.value()),
-                q.area_m2.value(),
-                point,
-                1.,
-            );
+        let mut samples = Vec::new();
+        for q in partition.wall_moment_quadrature()? {
+            samples.push(boundary_moments::BoundaryMomentSample { component:q.component, position_m:q.position_m, local_position_m:q.local_position_m, normal:q.normal, area_m2:q.area_m2 });
         }
-        for q in partition.aperture_moment_quadrature() {
-            let aperture = &partition.apertures[q.aperture];
-            if aperture.axis.is_some() {
-                continue;
-            }
-            let region = regions[q.left]
-                .or_else(|| q.right.and_then(|r| regions[r]))
-                .ok_or_else(|| fail("moving native gas aperture has no material chart"))?;
-            let tet = tets
-                .iter()
-                .find(|t| t.region == region)
-                .ok_or_else(|| fail("native gas aperture chart is missing"))?;
-            let p = q.position_m.map(|v| v.value());
-            let w = bary(p, tet.vertices_m.map(|v| v.map(|x| x.value())))?;
-            let point = std::array::from_fn(|k| {
-                (0..4)
-                    .map(|i| tet.vertices_m[i][k] * w[i])
-                    .fold(S::zero(), |a, b| a + b)
-            });
-            let normal = q.normal.map(|v| v.value());
-            let area = q.area_m2.value();
-            add(q.left, p, normal, area, point, 1.);
-            if let Some(r) = q.right {
-                add(r, p, normal, area, point, -1.);
+        for q in partition.aperture_moment_quadrature()? {
+            samples.push(boundary_moments::BoundaryMomentSample { component:q.left, position_m:q.position_m, local_position_m:q.local_position_m, normal:q.normal, area_m2:q.area_m2 });
+            if let Some(right)=q.right {
+                samples.push(boundary_moments::BoundaryMomentSample { component:right, position_m:q.position_m, local_position_m:q.local_position_m, normal:q.normal.map(|v|-v), area_m2:q.area_m2 });
             }
         }
-        for (((component, v), m), c) in partition
-            .components
-            .iter_mut()
-            .zip(volume)
-            .zip(moment)
-            .zip(second)
-        {
-            component.volume_m3 = v;
-            component.centroid_m = m.map(|x| x / v);
-            component.central_second_integral_m5 = c;
-        }
-        partition.total_volume_m3 = partition
-            .components
-            .iter()
-            .map(|c| c.volume_m3)
-            .fold(S::zero(), |a, b| a + b);
-        Ok(())
+        boundary_moments::update(partition, &samples)
     }
     pub fn initial_inventory<S: GeometryTimeBase>(
         &self,
@@ -3218,7 +3588,7 @@ impl NativeGasGeometryAdapter {
                 }
             }
             let endpoint_trace: Vec<_> = trace.iter().map(|v| v.value).collect();
-            for q in stage.refined.partition.aperture_quadrature() {
+            for q in stage.refined.partition.aperture_quadrature()? {
                 let a = &stage.refined.partition.apertures[q.aperture];
                 let left=stage.aggregated.component_slots[q.left];let right=q.right.map(|i|stage.aggregated.component_slots[i]);
                 if right==Some(left){continue;}
@@ -3260,14 +3630,9 @@ impl NativeGasGeometryAdapter {
                     }
                 };
                 let position = q.position_m.map(|v| v.value);
-                left_offset.push(std::array::from_fn(|k| {
-                    position[k] - current_geometry.aggregated.centroids_m[left][k]
-                }));
-                right_offset.push(right.map(|j| {
-                    std::array::from_fn(|k| {
-                        position[k] - current_geometry.aggregated.centroids_m[j][k]
-                    })
-                }));
+                let local_position = q.local_position_m.map(|(a,p)| (a,p.map(|v|v.value)));
+                left_offset.push(aggregate_point_offset(&current_geometry.aggregated, left, position, local_position)?);
+                right_offset.push(right.map(|j| aggregate_point_offset(&current_geometry.aggregated, j, position, local_position)).transpose()?);
                 let ale_velocity = if a.axis.is_some() {
                     [S::zero(); 3]
                 } else {
@@ -3336,8 +3701,10 @@ impl NativeGasGeometryAdapter {
                         let vertices=tet.nodes.map(|i|std::array::from_fn(|k|path_mesh.nodes[i].start_m[k]*(1.-alpha)+path_mesh.nodes[i].end_m[k]*alpha));
                         let weights=material_barycentric(position,vertices)?;
                         let velocity=std::array::from_fn(|k|(0..4).map(|j|(path_mesh.nodes[tet.nodes[j]].end_m[k]-path_mesh.nodes[tet.nodes[j]].start_m[k])*weights[j]/step_s).fold(S::zero(),|a,b|a+b));
-                        left_offset.push(std::array::from_fn(|k|position[k]-current_geometry.aggregated.centroids_m[left][k]));
-                        right_offset.push(Some(std::array::from_fn(|k|position[k]-current_geometry.aggregated.centroids_m[right][k])));
+                        let frame = current_geometry.aggregated.local_centroids_m[left].map_or([0.;3], |p|p.0);
+                        let local_position = source.source_corners_in_frame(window,frame)?.map(|corners| (frame,std::array::from_fn(|k| (corners[0][k]+(corners[1][k]-corners[0][k])*sample.source_uv[0]+(corners[2][k]-corners[0][k])*sample.source_uv[1]).value)));
+                        left_offset.push(aggregate_point_offset(&current_geometry.aggregated,left,position,local_position)?);
+                        right_offset.push(Some(aggregate_point_offset(&current_geometry.aggregated,right,position,local_position)?));
                         wall_interior_anchors.push(None);wall_anchor_routes.push(serde_json::Value::Null);
                         faces.push(TransientGasFace{left,boundary:TransientGasBoundary::Interior{right},area_m2:sample.area_m2.value*0.5,
                             normal:sample.normal.map(|v|v.value),ale_velocity_m_s:velocity,wall_velocity_m_s:[S::zero();3]});
@@ -3356,10 +3723,12 @@ impl NativeGasGeometryAdapter {
                     let support=stage.wall_convex_support.iter().find(|s|s.component==component&&s.convex_part==part)
                         .ok_or_else(||fail("source runtime selected wall support is absent"))?;
                     let centroid=*current_geometry.aggregated.centroids_m.get(left).ok_or_else(||fail("source runtime current centroid is absent"))?;
-                    let offset=std::array::from_fn(|k|q.position_m[k]-centroid[k]);
                     let anchor=self.source_wall_anchor(support,&prepared,window,sample,centroid)?;
+                    let frame=current_geometry.aggregated.local_centroids_m[left].map_or([0.;3],|p|p.0);
+                    let local_position=if let Some(a)=anchor.as_ref(){Some((frame,a.face_point_in_frame_m(frame)))}else{source.source_corners_in_frame(window,frame)?.map(|corners|(frame,std::array::from_fn(|k|(corners[0][k]+(corners[1][k]-corners[0][k])*sample.source_uv[0]+(corners[2][k]-corners[0][k])*sample.source_uv[1]).value)))};
+                    let offset=aggregate_point_offset(&current_geometry.aggregated,left,q.position_m,local_position)?;
                     let nominated=anchor.is_some();
-                    let bound_position:[S;3]=std::array::from_fn(|k|centroid[k]+offset[k]);
+                    let bound_position:[S;3]=anchor.as_ref().map_or_else(||std::array::from_fn(|k|centroid[k]+offset[k]),|a|a.face_position_m());
                     wall_anchor_routes.push(serde_json::json!([
                         alpha.to_bits(),window,component,part,q.body,q.native_nodes,i,nominated,
                         bound_position.map(|v|v.value().to_bits()),q.normal.map(|v|v.value().to_bits()),
@@ -3449,7 +3818,7 @@ impl<S: GeometryTimeBase> NativeGasGeometryView<'_, S> {
                 identity = Some(key);
                 if !geometry.aggregated.active_slots[slot]
                     || geometry.aggregated.volumes_m3[slot].has_direction()
-                    || geometry.aggregated.centroids_m[slot]
+                    || geometry.aggregated.centroid_in_frame(slot, geometry.aggregated.local_centroids_m[slot].map_or([0.;3],|p|p.0))?
                         .iter()
                         .any(|v| v.has_direction())
                 {
@@ -3458,8 +3827,8 @@ impl<S: GeometryTimeBase> NativeGasGeometryView<'_, S> {
             }
             if self.old_geometry.aggregated.volumes_m3[slot].value()
                 != self.current_geometry.aggregated.volumes_m3[slot].value()
-                || self.old_geometry.aggregated.centroids_m[slot].map(|v| v.value())
-                    != self.current_geometry.aggregated.centroids_m[slot].map(|v| v.value())
+                || self.old_geometry.aggregated.centroid_in_frame(slot,self.current_geometry.aggregated.local_centroids_m[slot].map_or([0.;3],|p|p.0))?.map(|v|v.value())
+                    != self.current_geometry.aggregated.centroid_in_frame(slot,self.current_geometry.aggregated.local_centroids_m[slot].map_or([0.;3],|p|p.0))?.map(|v|v.value())
             {
                 return Err(fail("continuum gas capacity changed"));
             }
@@ -4818,17 +5187,30 @@ impl NativeGasGeometryAdapter{
  let token=match &sample.label{crate::native_source_stage_labels::SourceFaceLabel::NativeWallOwned(token)=>token,_=>return Err(fail("source anchor requires owned Native wall"))};
  let(left,component,part,_)=labels.validate_native_wall_owned(token,window,sample.source_uv,sample.position_m,sample.normal,&sample.source_receipt)?;
  if !std::ptr::eq(self,labels.source().adapter())||component!=support.component||part!=support.convex_part{return Err(fail("source anchor selected support differs"));}
- let point=sample.position_m.map(|v|v.value);let normal=sample.normal.map(|v|-v.value);let offset=std::array::from_fn::<_,3,_>(|k|point[k]-current_centroid[k]);
- let distance=(0..3).map(|k|normal[k]*offset[k]).fold(S::zero(),|a,b|a+b);
- if !distance.finite_first_order()||distance.value()==0.{return Err(fail("source anchor route reaches a stratum boundary"));}if distance.value()>0.{return Ok(None);}
+ let normal=sample.normal.map(|v|-v.value);
+ let value=support.source_value_part();
+ let anchor=support.polygons.iter().find_map(|p|p.local_geometry.as_ref().map(|g|g.anchor())).ok_or_else(||fail("source wall anchor local frame is absent"))?;
+ let corners=labels.source().source_corners_in_frame(window,anchor)?.ok_or_else(||fail("source wall anchor local producer is absent"))?;
+ let local_position=std::array::from_fn(|k|(corners[0][k]+(corners[1][k]-corners[0][k])*sample.source_uv[0]+(corners[2][k]-corners[0][k])*sample.source_uv[1]).value);
+ let bound_position=std::array::from_fn(|k|local_position[k]+anchor[k]);
+ let local_parts=value.polygons.iter().map(|p|{let mut local=p.clone();local.vertices_m=crate::native_cut_cell_partition::polygon_vertices_in_frame(p,anchor);local.plane_origin_m=crate::native_cut_cell_partition::polygon_plane_origin_in_frame(p,anchor);local.local_geometry=None;local}).collect::<Vec<_>>();
+ let (volume,moment)=crate::native_cut_cell_partition::measure(&local_parts)?;let local_centroid=moment.map(|v|v/volume);
+ let distance=(0..3).map(|k|normal[k]*(local_position[k]-local_centroid[k])).fold(S::zero(),|a,b|a+b);
+ if !distance.finite_first_order()||distance.value()==0.{return Err(fail("source anchor route reaches a stratum boundary"));}if distance.value()<0.{return Ok(None);}
  let proof=self.source_wall_construction(support,labels,window,sample,current_centroid)?.value_part();
- let value=support.source_value_part();let bound_position=std::array::from_fn(|k|current_centroid[k]+offset[k]);
- Ok(Some(crate::native_gas_wall_anchor::measured_wall_anchor_with_construction(&value,component,part,left,bound_position,normal,&proof)?))
+ Ok(Some(crate::native_gas_wall_anchor::measured_wall_anchor_in_frame_with_construction(&value,component,part,left,bound_position,local_position,anchor,normal,&proof)?))
  }
 }
 impl<S:crate::gas_geometry_time::GeometryTimeBase> NativeGasConvexSupport<crate::gas_geometry_time::GeometryTime<S>>{
  fn source_value_part(&self)->NativeGasConvexSupport<S>{
- let corner=|c:&NativeCornerConstruction<crate::gas_geometry_time::GeometryTime<S>>|NativeCornerConstruction{cell:c.cell,retained:c.retained,actual:c.actual.map(|v|v.value),active:c.active.clone(),kind:c.kind.clone(),layered_sources:c.layered_sources.clone(),tet_vertices:c.tet_vertices.clone()};
- NativeGasConvexSupport{component:self.component,convex_part:self.convex_part,plane_tet_vertices:self.plane_tet_vertices.clone(),plane_layered_sources:self.plane_layered_sources.clone(),wall_constructions:self.wall_constructions.iter().map(&corner).collect(),corner_constructions:self.corner_constructions.iter().map(|p|p.iter().map(&corner).collect()).collect(),polygons:self.polygons.iter().map(|p|crate::native_cut_cell_partition::CutPolygon{support_only:p.support_only,vertices_m:p.vertices_m.iter().map(|p|p.map(|v|v.value)).collect(),outward_normal:p.outward_normal.map(|v|v.value),plane_origin_m:p.plane_origin_m.map(|v|v.value),plane_offset_m:p.plane_offset_m.value,boundary:p.boundary.clone()}).collect()}
+ let corner=|c:&NativeCornerConstruction<crate::gas_geometry_time::GeometryTime<S>>|NativeCornerConstruction{cell:c.cell,retained:c.retained,frame:c.frame,actual:c.actual.map(|v|v.value),active:c.active.clone(),kind:c.kind.clone(),layered_sources:c.layered_sources.clone(),tet_vertices:c.tet_vertices.clone()};
+ NativeGasConvexSupport{component:self.component,convex_part:self.convex_part,plane_tet_vertices:self.plane_tet_vertices.clone(),plane_layered_sources:self.plane_layered_sources.clone(),wall_constructions:self.wall_constructions.iter().map(&corner).collect(),corner_constructions:self.corner_constructions.iter().map(|p|p.iter().map(&corner).collect()).collect(),polygons:self.polygons.iter().map(|p|crate::native_cut_cell_partition::CutPolygon{support_only:p.support_only,vertices_m:p.vertices_m.iter().map(|p|p.map(|v|v.value)).collect(),outward_normal:p.outward_normal.map(|v|v.value),plane_origin_m:p.plane_origin_m.map(|v|v.value),plane_offset_m:p.plane_offset_m.value,boundary:p.boundary.clone(),local_geometry:p.local_geometry.as_ref().map(|g|g.map_scalars(|v|v.value))}).collect()}
  }
+}
+
+fn aggregate_point_offset<S:Scalar>(geometry:&AggregatedGasGeometry<S>,slot:usize,position:[S;3],local_position:Option<([f64;3],[S;3])>)->CaeResult<[S;3]>{
+    let frame=local_position.map(|p|p.0).or_else(||geometry.local_centroids_m.get(slot).copied().flatten().map(|p|p.0)).unwrap_or([0.;3]);
+    let point: [S;3]=local_position.map_or_else(||std::array::from_fn(|k|position[k]-S::from_f64(frame[k])),|(anchor,p)|std::array::from_fn(|k|p[k]+S::from_f64(anchor[k]-frame[k])));
+    let center=geometry.centroid_in_frame(slot,frame)?;
+    Ok(std::array::from_fn(|k|point[k]-center[k]))
 }

@@ -150,7 +150,13 @@ pub(crate) fn prepare_owned_source_plane_face_sweep_inner<'g,B:crate::gas_geomet
         facets.push(facet.clone());coordinates.push(row);
     }
     let specs:Vec<_>=source.grid_planes().iter().map(|p|(p.identity(),p.axis(),p.coordinate_m())).collect();
-    prepare_plane_face_with_coordinates_sweep(window,&facets,&specs,refinement,frame,Some(&coordinates),owned_domain,classify)
+    let mut grid_distances=Vec::with_capacity(source.grid_planes().len());
+    for plane in source.grid_planes(){
+        let mut distances=window.vertices.map(|p|p[plane.axis()]-plane.coordinate_m());
+        for corner in 0..3{if let Some(proof)=source.native_grid_corner_incidence(window_index,plane,corner)?{distances[corner]=proof.distance(source,window_index,plane,corner)?;}}
+        grid_distances.push(distances);
+    }
+    prepare_plane_face_with_coordinates_sweep(window,&facets,&specs,refinement,frame,Some(&coordinates),Some(&grid_distances),owned_domain,classify)
 }
 
 pub(crate) fn prepare_plane_face_with_plane_specs<S:TransientGasScalar,L:Clone>(
@@ -172,13 +178,14 @@ fn prepare_plane_face_with_coordinates_affine<S:TransientGasScalar,L:Clone>(
     window:&PhysicalFacet<S>,facets:&[PhysicalFacet<S>],planes:&[([usize;2],usize,f64)],
     refinement:usize,frame:[f64;2],coordinates:Option<&[[Option<[S;2]>;3]]>,
     classify:impl Fn([f64;3],[f64;3],[f64;2])->CaeResult<Option<L>>,
-)->CaeResult<Vec<PhysicalPlaneSample<S,L>>> {prepare_plane_face_with_coordinates_sweep(window,facets,planes,refinement,frame,coordinates,false,|p,n,uv,_|classify(p,n,uv))}
+)->CaeResult<Vec<PhysicalPlaneSample<S,L>>> {prepare_plane_face_with_coordinates_sweep(window,facets,planes,refinement,frame,coordinates,None,false,|p,n,uv,_|classify(p,n,uv))}
 fn prepare_plane_face_with_coordinates_sweep<S:TransientGasScalar,L:Clone>(
     window:&PhysicalFacet<S>,facets:&[PhysicalFacet<S>],planes:&[([usize;2],usize,f64)],
-    refinement:usize,frame:[f64;2],coordinates:Option<&[[Option<[S;2]>;3]]>,owned_domain:bool,
+    refinement:usize,frame:[f64;2],coordinates:Option<&[[Option<[S;2]>;3]]>,grid_distances:Option<&[[S;3]]>,owned_domain:bool,
     classify:impl Fn([f64;3],[f64;3],[f64;2],&crate::native_union_arrangement::SweepPointReceipt)->CaeResult<Option<L>>,
 )->CaeResult<Vec<PhysicalPlaneSample<S,L>>> {
     if coordinates.is_some_and(|c|c.len()!=facets.len()){return Err(CaeError::contract("source plane coordinate shape differs"));}
+    if grid_distances.is_some_and(|d|d.len()!=planes.len()){return Err(CaeError::contract("source plane grid incidence shape differs"));}
     let valid=|f:&PhysicalFacet<S>|!f.owner.is_empty()&&f.vertex_features.iter().all(|p|!p.is_empty())&&f.vertices.iter().flatten().all(|v|v.finite_first_order()&&v.geometry_first_order_directions().is_some());
     if !valid(window)||facets.iter().any(|f|!valid(f)){return Err(CaeError::contract("physical plane feature ownership is absent"));}
     let origin=window.vertices[0];let u=sub(window.vertices[1],origin);let v=sub(window.vertices[2],origin);
@@ -203,13 +210,13 @@ fn prepare_plane_face_with_coordinates_sweep<S:TransientGasScalar,L:Clone>(
     for i in 0..3 {let j=(i+1)%3;let point=|k:usize|UnionNode{feature:feature(9,&window.vertex_features[k],&[],&window.owner),point:match k{0=>[S::zero(),S::zero()],1=>[S::one(),S::zero()],_=>[S::zero(),S::one()]}};add(PhysicalSegment2{owner:feature(10,&window.vertex_features[i],&window.vertex_features[j],&window.owner),endpoints:[point(i),point(j)]},[false;2])?;}
     let mut grid_incidence=Vec::<(UnionNode<S>,Vec<usize>,Vec<usize>)>::new();
     let mut grid_identities=BTreeMap::new();
-    for &(identity,axis,coordinate) in planes {
+    for (plane_index,&(identity,axis,coordinate)) in planes.iter().enumerate() {
         if axis>=3 || !coordinate.is_finite() || identity[0]!=axis {return Err(CaeError::contract("physical material face grid plane is invalid"));}
         if let Some(previous)=grid_identities.insert(identity,coordinate.to_bits()) {
             if previous!=coordinate.to_bits(){return Err(CaeError::contract("physical material face grid plane identity differs"));}
             continue;
         }
-        let distances=window.vertices.map(|p|p[axis]-coordinate);
+        let distances=grid_distances.map_or_else(||window.vertices.map(|p|p[axis]-coordinate),|d|d[plane_index]);
         if distances.iter().all(|d|d.value()==0.) {
             if distances.iter().any(|&d|!zero(d)){return Err(CaeError::contract("material face crosses a coincident fixed grid plane"));}
             continue;
@@ -254,16 +261,17 @@ fn prepare_plane_face_with_coordinates_sweep<S:TransientGasScalar,L:Clone>(
         }
         let mut nodes=Vec::new();
         for i in 0..3 {
-            if distances[i].value()==0. {if !zero(distances[i]){return Err(CaeError::contract("physical vertex crosses the material plane stratum"));}nodes.push(UnionNode{feature:feature(12,&facet.vertex_features[i],&[],&window.owner),point:project_corner(i)});}
+            if distances[i].value()==0. {if !zero(distances[i]){return Err(CaeError::contract("physical vertex crosses the material plane stratum"));}nodes.push((UnionNode{feature:feature(12,&facet.vertex_features[i],&[],&window.owner),point:project_corner(i)},owned_domain&&shared[i].is_some()));}
             let j=(i+1)%3;
             if (distances[i].value()>0.&&distances[j].value()<0.)||(distances[i].value()<0.&&distances[j].value()>0.) {
                 let(a,b)=if facet.vertex_features[i]<=facet.vertex_features[j]{(i,j)}else{(j,i)};
                 let t=distances[a]/(distances[a]-distances[b]);let p=std::array::from_fn(|k|facet.vertices[a][k]+(facet.vertices[b][k]-facet.vertices[a][k])*t);
-                nodes.push(UnionNode{feature:feature(13,&facet.vertex_features[i],&facet.vertex_features[j],&window.owner),point:project(p)});
+                nodes.push((UnionNode{feature:feature(13,&facet.vertex_features[i],&facet.vertex_features[j],&window.owner),point:project(p)},false));
             }
         }
         if nodes.len()<2{continue;}if nodes.len()!=2{return Err(CaeError::contract("physical material plane section is not a unique segment"));}
-        add(PhysicalSegment2{owner:feature(14,&facet.owner,&[],&window.owner),endpoints:[nodes.remove(0),nodes.remove(0)]},[false;2])?;
+        let(first,first_shared)=nodes.remove(0);let(second,second_shared)=nodes.remove(0);
+        add(PhysicalSegment2{owner:feature(14,&facet.owner,&[],&window.owner),endpoints:[first,second]},[first_shared,second_shared])?;
     }
     let segments=crate::native_physical_segment_overlay::interval_overlay(&segments)?;
     let mut owned_incidence=Vec::new();

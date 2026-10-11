@@ -34,60 +34,54 @@ fn fail(message: &str) -> CaeError {
 }
 fn inside_one_sided(
     part: &[CutPolygon<f64>],
+    anchor: [f64; 3],
     point: [f64; 3],
     inward: [f64; 3],
-    arithmetic_length_m: f64,
 ) -> CaeResult<bool> {
     if part.is_empty() {
         return Err(fail("union slot has no supporting planes"));
     }
     for face in part {
         let n = face.outward_normal;
+        let (origin_anchor, origin) = match &face.local_geometry {
+            Some(local) => (local.anchor(), local.plane_origin()),
+            None => ([0.; 3], face.plane_origin_m),
+        };
         if n.iter()
-            .chain(face.plane_origin_m.iter())
+            .chain(origin.iter())
+            .chain(origin_anchor.iter())
             .any(|v| !v.is_finite())
             || !face.plane_offset_m.is_finite()
+            || n.iter().all(|v| *v == 0.)
         {
-            return Err(fail("non-finite union slot plane"));
+            return Err(fail("invalid union slot plane"));
         }
-        let norm = n.iter().map(|v| v * v).sum::<f64>().sqrt();
-        if !norm.is_finite() || norm == 0. {
-            return Err(fail("invalid union slot plane normal"));
-        }
-        let terms = std::array::from_fn::<_, 3, _>(|k| n[k] * (point[k] - face.plane_origin_m[k]));
-        let distance = terms.iter().copied().sum::<f64>() + face.plane_offset_m;
-        let error = arithmetic_length_m * norm
-            + 16.
-                * f64::EPSILON
-                * (terms.iter().map(|v| v.abs()).sum::<f64>() + face.plane_offset_m.abs());
-        if !distance.is_finite() || !error.is_finite() {
-            return Err(fail("union slot distance overflow"));
-        }
-        if distance > error {
+        let sign = crate::native_exact_affine_predicate::exact_framed_plane_sign(
+            n,
+            point,
+            anchor,
+            origin,
+            origin_anchor,
+            face.plane_offset_m,
+        )
+        .map_err(fail)?;
+        if sign > 0 {
             return Ok(false);
         }
-        if distance < -error {
+        if sign < 0 {
             continue;
         }
-        let terms = std::array::from_fn::<_, 3, _>(|k| n[k] * inward[k]);
-        let derivative = terms.iter().copied().sum::<f64>();
-        let error = 16. * f64::EPSILON * terms.iter().map(|v| v.abs()).sum::<f64>();
-        if !derivative.is_finite() || !error.is_finite() {
-            return Err(fail("union slot direction overflow"));
-        }
-        if derivative > error {
+        if crate::native_exact_affine_predicate::exact_dot_sign(n, inward).map_err(fail)? > 0 {
             return Ok(false);
-        }
-        if derivative != 0. && derivative.abs() <= error {
-            return Err(fail("union slot direction sign is unresolved"));
         }
     }
     Ok(true)
 }
-pub fn slot_at_face(
+pub fn slot_at_face_local(
     refined: &RefinedCutCellPartition<f64>,
     component_slots: &[usize],
     cell: usize,
+    anchor: [f64; 3],
     point: [f64; 3],
     inward: [f64; 3],
 ) -> CaeResult<Option<usize>> {
@@ -95,7 +89,11 @@ pub fn slot_at_face(
     if component_slots.len() != partition.components.len()
         || !partition.arithmetic_length_m.is_finite()
         || partition.arithmetic_length_m < 0.
-        || point.iter().chain(inward.iter()).any(|v| !v.is_finite())
+        || anchor
+            .iter()
+            .chain(point.iter())
+            .chain(inward.iter())
+            .any(|v| !v.is_finite())
         || inward.iter().all(|v| *v == 0.)
     {
         return Err(fail("invalid union slot query"));
@@ -105,13 +103,17 @@ pub fn slot_at_face(
     }
     let mut selected = None;
     for (component, &slot) in partition.components.iter().zip(component_slots) {
-        if component.cell != cell { continue; }
+        if component.cell != cell {
+            continue;
+        }
         if !component.volume_m3.is_finite() || component.volume_m3 < 0. {
             return Err(fail("invalid union component volume"));
         }
-        if component.volume_m3 == 0. { continue; }
+        if component.volume_m3 == 0. {
+            continue;
+        }
         for part in &component.convex_parts {
-            if inside_one_sided(part, point, inward, partition.arithmetic_length_m)? {
+            if inside_one_sided(part, anchor, point, inward)? {
                 if selected.is_some_and(|previous| previous != slot) {
                     return Err(fail("union face has ambiguous gas slot ownership"));
                 }
@@ -120,6 +122,44 @@ pub fn slot_at_face(
         }
     }
     Ok(selected)
+}
+pub fn grid_face_slots_local(
+    refined: &RefinedCutCellPartition<f64>,
+    component_slots: &[usize],
+    left_cell: usize,
+    right_cell: Option<usize>,
+    axis: usize,
+    normal: f64,
+    anchor: [f64; 3],
+    point: [f64; 3],
+) -> CaeResult<Option<(usize, Option<usize>)>> {
+    if axis >= 3 || (normal != 1. && normal != -1.) || right_cell == Some(left_cell) {
+        return Err(fail("invalid union grid face orientation"));
+    }
+    let mut inward = [0.; 3];
+    inward[axis] = -normal;
+    let left = slot_at_face_local(refined, component_slots, left_cell, anchor, point, inward)?;
+    let right = if let Some(cell) = right_cell {
+        inward[axis] = normal;
+        slot_at_face_local(refined, component_slots, cell, anchor, point, inward)?
+    } else {
+        None
+    };
+    match (left, right, right_cell) {
+        (Some(left), Some(right), Some(_)) if left != right => Ok(Some((left, Some(right)))),
+        (Some(left), None, None) => Ok(Some((left, None))),
+        _ => Ok(None),
+    }
+}
+
+pub fn slot_at_face(
+    refined: &RefinedCutCellPartition<f64>,
+    component_slots: &[usize],
+    cell: usize,
+    point: [f64; 3],
+    inward: [f64; 3],
+) -> CaeResult<Option<usize>> {
+    slot_at_face_local(refined, component_slots, cell, [0.; 3], point, inward)
 }
 pub fn grid_face_slots(
     refined: &RefinedCutCellPartition<f64>,
@@ -130,21 +170,14 @@ pub fn grid_face_slots(
     normal: f64,
     point: [f64; 3],
 ) -> CaeResult<Option<(usize, Option<usize>)>> {
-    if axis >= 3 || (normal != 1. && normal != -1.) || right_cell == Some(left_cell) {
-        return Err(fail("invalid union grid face orientation"));
-    }
-    let mut inward = [0.; 3];
-    inward[axis] = -normal;
-    let left = slot_at_face(refined, component_slots, left_cell, point, inward)?;
-    let right = if let Some(cell) = right_cell {
-        inward[axis] = normal;
-        slot_at_face(refined, component_slots, cell, point, inward)?
-    } else {
-        None
-    };
-    match (left, right, right_cell) {
-        (Some(left), Some(right), Some(_)) if left != right => Ok(Some((left, Some(right)))),
-        (Some(left), None, None) => Ok(Some((left, None))),
-        _ => Ok(None),
-    }
+    grid_face_slots_local(
+        refined,
+        component_slots,
+        left_cell,
+        right_cell,
+        axis,
+        normal,
+        [0.; 3],
+        point,
+    )
 }

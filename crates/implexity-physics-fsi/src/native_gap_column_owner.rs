@@ -69,6 +69,28 @@ pub struct NativeGapColumnGrid {
     pub cells: Vec<usize>,
 }
 impl NativeGapColumnGrid {
+    pub(crate) fn cell_bounds_in_frame(&self, index: usize, anchor: [f64; 3]) -> CaeResult<[[f64; 3]; 2]> {
+        self.cell_bounds(index)?;
+        let ijk = [
+            index / (self.shape[1] * self.shape[2]),
+            (index / self.shape[2]) % self.shape[1],
+            index % self.shape[2],
+        ];
+        let mut bounds = [[0.; 3]; 2];
+        for side in 0..2 {
+            for axis in 0..3 {
+                let coordinate = ijk[axis].checked_add(side)
+                    .ok_or_else(|| fail("column grid coordinate overflow"))?;
+                bounds[side][axis] = crate::native_exact_affine_predicate::exact_framed_grid_coordinate(
+                    self.origin_m[axis], coordinate, self.spacing_m, anchor[axis],
+                ).map_err(fail)?;
+            }
+        }
+        if (0..3).any(|axis| bounds[1][axis] <= bounds[0][axis]) {
+            return Err(fail("column local cell extent domain"));
+        }
+        Ok(bounds)
+    }
     pub fn cell_bounds(&self, index: usize) -> CaeResult<[[f64; 3]; 2]> {
         let count = self
             .shape
@@ -295,6 +317,7 @@ pub fn native_gas_support_domain(
 }
 #[derive(Clone)]
 pub struct NativeGapColumnOwner {
+    pub(crate) reference_grids: Option<[implexity_physics_solid::soft_fsi::voxel::VoxelGrid; 2]>,
     pub(crate) nodes: [Vec<NodeBinding>; 2],
     pub(crate) elements: [Vec<[usize; 4]>; 2],
     pub(crate) phase: CsrMatrix,
@@ -508,6 +531,48 @@ fn solid_volume<S: Scalar>(
     Ok(volume(&poly))
 }
 impl NativeGapColumnOwner {
+    pub(crate) fn node_coefficient_source<S:crate::gas_transient_kinetic::TransientGasScalar>(&self,body:usize,node:usize,trace:&[S])->CaeResult<crate::native_geometry_source::NativeNodeSource<S>> {
+        use crate::native_geometry_source::{NativeNodeSource,NativeReferencePoint};
+        let binding=self.nodes.get(body).and_then(|n|n.get(node)).ok_or_else(||fail("native chart coefficient node is absent"))?;
+        if binding.force_flux.iter().any(|i|*i>=trace.len()){return Err(fail("native chart coefficient trace is incomplete"));}
+        let reference=if let Some(grids)=&self.reference_grids {let grid=grids.get(body).ok_or_else(||fail("native chart reference grid is absent"))?;if grid.node_position(node).map(f64::to_bits)!=binding.reference_m.map(f64::to_bits){return Err(fail("native chart grid binding differs"));}NativeReferencePoint::Grid{origin:grid.origin_m,index:grid.node_ijk(node),spacing:grid.element_size_m}}else{NativeReferencePoint::Stored(binding.reference_m)};
+        reference.validate()?;
+        Ok(NativeNodeSource{body,node,force_flux:binding.force_flux,reference,displacement:binding.force_flux.map(|i|trace[i])})
+    }
+    pub(crate) fn element_coefficient_source<S:crate::gas_transient_kinetic::TransientGasScalar>(&self,body:usize,element:usize,trace:&[S])->CaeResult<std::sync::Arc<crate::native_geometry_source::NativeElementSource<S>>> {
+        use crate::native_geometry_source::{NativeElementSource,NativeNodeSource,NativeReferencePoint};
+        let nodes=*self.elements.get(body).and_then(|e|e.get(element)).ok_or_else(||fail("native coefficient element is absent"))?;
+        let mut points=Vec::new();
+        for node in nodes {
+            let binding=self.nodes.get(body).and_then(|n|n.get(node)).ok_or_else(||fail("native coefficient node is absent"))?;
+            if binding.force_flux.iter().any(|i|*i>=trace.len()){return Err(fail("native coefficient trace is incomplete"));}
+            let reference=if let Some(grids)=&self.reference_grids {
+                let grid=grids.get(body).ok_or_else(||fail("native coefficient reference grid is absent"))?;
+                if grid.node_position(node).map(f64::to_bits)!=binding.reference_m.map(f64::to_bits){return Err(fail("native coefficient grid binding differs"));}
+                NativeReferencePoint::Grid{origin:grid.origin_m,index:grid.node_ijk(node),spacing:grid.element_size_m}
+            }else {NativeReferencePoint::Stored(binding.reference_m)};
+            points.push(NativeNodeSource{body,node,force_flux:binding.force_flux,reference,displacement:binding.force_flux.map(|i|trace[i])});
+        }
+        let points=points.try_into().map_err(|_|fail("native coefficient source shape differs"))?;
+        let source=NativeElementSource{body,element,nodes,points};source.validate()?;Ok(std::sync::Arc::new(source))
+    }
+    pub(crate) fn node_reference_in_frame(&self,body:usize,node:usize,anchor:[f64;3])->CaeResult<[f64;3]>{
+        let binding=self.nodes.get(body).and_then(|n|n.get(node)).ok_or_else(||CaeError::contract("native frame node is absent"))?;
+        if anchor.iter().any(|v|!v.is_finite()){return Err(CaeError::contract("native frame anchor is invalid"));}
+        let reference=if let Some(grids)=&self.reference_grids{
+            let grid=&grids[body];
+            if grid.node_position(node).map(f64::to_bits)!=binding.reference_m.map(f64::to_bits){return Err(CaeError::contract("native frame grid binding differs"));}
+            let ijk=grid.node_ijk(node);
+            let mut local=[0.;3];
+            for axis in 0..3 {
+                local[axis]=crate::native_exact_affine_predicate::exact_framed_grid_coordinate(
+                    grid.origin_m[axis],ijk[axis],grid.element_size_m,anchor[axis]
+                ).map_err(fail)?;
+            }
+            local
+        }else{std::array::from_fn(|k|binding.reference_m[k]-anchor[k])};
+        if reference.iter().any(|v|!v.is_finite()){return Err(CaeError::contract("native frame reference is nonfinite"));}Ok(reference)
+    }
     pub fn from_native(
         binding: &NativeNodalBinding,
         grid: NativeGapColumnGrid,
@@ -523,6 +588,7 @@ impl NativeGapColumnOwner {
             iso,
             tolerance_m,
         )?;
+        owner.reference_grids = Some(binding.reference_grids().clone());
         for body in 0..2 {
             let mesh = &binding.meshes()[body];
             let mut groups: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
@@ -643,6 +709,7 @@ impl NativeGapColumnOwner {
                 .collect()
         });
         Ok(Self {
+            reference_grids: None,
             nodes,
             elements,
             phase,
@@ -675,6 +742,7 @@ impl NativeGapColumnOwner {
         let mut grid = self.grid.clone();
         grid.cells = selected.to_vec();
         Ok(Self {
+            reference_grids: self.reference_grids.clone(),
             nodes: self.nodes.clone(),
             elements: self.elements.clone(),
             phase: self.phase.clone(),

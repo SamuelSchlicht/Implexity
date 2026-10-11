@@ -66,7 +66,7 @@ impl<'b,'p,'a,'g,S:GeometryTimeBase> NativeSourceWallPreparation<'b,'p,'a,'g,S>{
         let (fluid,component,part,plane)=match &sample.label{SourceFaceLabel::NativeWallOwned(token)=>labels.validate_native_wall_owned(token,window,sample.source_uv,sample.position_m,sample.normal,&sample.source_receipt)?,_=>return Err(fail("source wall requires actual per-quadrature support authority"))};
         convex_supports.push((component,part,plane));
         let weights=crate::native_gas_geometry_adapter::material_barycentric(sample.position_m,vertices)?;
-        quadrature.push(CutWallQuadrature{wall:quadrature.len(),component,body,native_nodes:nodes,position_m:sample.position_m.map(|v|v.value),native_barycentric:weights.map(|v|v.value),area_m2:sample.area_m2.value,normal:sample.normal.map(|v|-v.value)});
+        quadrature.push(CutWallQuadrature{wall:quadrature.len(),component,body,native_nodes:nodes,position_m:sample.position_m.map(|v|v.value),local_position_m:None,native_barycentric:weights.map(|v|v.value),area_m2:sample.area_m2.value,normal:sample.normal.map(|v|-v.value)});
         fluid_slots.push(fluid);
     }
     let trace=source.live_stage_trace().iter().map(|v|v.value).collect::<Vec<_>>();

@@ -45,10 +45,34 @@ pub struct AggregatedGasFace {
 pub struct AggregatedGasGeometry<S: Scalar> {
     pub volumes_m3: Vec<S>,
     pub centroids_m: Vec<[S; 3]>,
+    pub local_centroids_m: Vec<Option<([f64; 3], [S; 3])>>,
     pub central_covariance_m2: Vec<Option<[[S; 3]; 3]>>,
     pub active_slots: Vec<bool>,
     pub component_slots: Vec<usize>,
     pub faces: Vec<AggregatedGasFace>,
+}
+impl<S: Scalar> AggregatedGasGeometry<S> {
+    pub fn centroid_in_frame(&self, slot: usize, frame: [f64; 3]) -> CaeResult<[S; 3]> {
+        if frame.iter().any(|v| !v.is_finite())
+            || self.local_centroids_m.len() != self.centroids_m.len()
+        {
+            return Err(fail("aggregate centroid frame shape differs"));
+        }
+        let world = self
+            .centroids_m
+            .get(slot)
+            .ok_or_else(|| fail("aggregate centroid slot is absent"))?;
+        let point: [S; 3] = match self.local_centroids_m[slot] {
+            Some((anchor, local)) => {
+                std::array::from_fn(|k| local[k] + S::from_f64(anchor[k] - frame[k]))
+            }
+            None => std::array::from_fn(|k| world[k] - S::from_f64(frame[k])),
+        };
+        if point.iter().any(|v| !v.value().is_finite()) {
+            return Err(fail("aggregate centroid frame overflow"));
+        }
+        Ok(point)
+    }
 }
 #[derive(Clone, Debug)]
 pub struct NativeGasStateLayout {
@@ -172,9 +196,6 @@ impl NativeGasStateLayout {
                 slot
             };
             volumes[slot] += c.volume_m3;
-            for k in 0..3 {
-                moments[slot][k] += c.volume_m3 * c.centroid_m[k];
-            }
             active[slot] = true;
             component_slots.push(slot);
         }
@@ -223,6 +244,34 @@ impl NativeGasStateLayout {
         if volumes.iter().any(|v| !v.value().is_finite()) {
             return Err(fail("aggregated gas volume overflow"));
         }
+        let mut frames = vec![None; self.slots()];
+        for (component, &slot) in p.components.iter().zip(&component_slots) {
+            if frames[slot].is_none() {
+                frames[slot] = component.local_centroid_m.map(|v| v.0);
+            }
+        }
+        let mut component_centres = Vec::with_capacity(p.components.len());
+        for (component, &slot) in p.components.iter().zip(&component_slots) {
+            let centre = match (frames[slot], component.local_centroid_m) {
+                (Some(frame), Some((anchor, local))) => {
+                    if anchor.iter().any(|v| !v.is_finite()) {
+                        return Err(fail("aggregate component centroid frame is nonfinite"));
+                    }
+                    std::array::from_fn(|k| local[k] + S::from_f64(anchor[k] - frame[k]))
+                }
+                (Some(frame), None) => {
+                    std::array::from_fn(|k| component.centroid_m[k] - S::from_f64(frame[k]))
+                }
+                (None, _) => component.centroid_m,
+            };
+            if centre.iter().any(|v| !v.value().is_finite()) {
+                return Err(fail("aggregate local component centroid overflow"));
+            }
+            for k in 0..3 {
+                moments[slot][k] += component.volume_m3 * centre[k];
+            }
+            component_centres.push(centre);
+        }
         let centroids: Vec<[S; 3]> = moments
             .iter()
             .zip(&volumes)
@@ -235,9 +284,13 @@ impl NativeGasStateLayout {
             })
             .collect();
         let mut second = vec![[[S::zero(); 3]; 3]; self.slots()];
-        for (component, &slot) in p.components.iter().zip(&component_slots) {
-            let delta: [S; 3] =
-                std::array::from_fn(|k| component.centroid_m[k] - centroids[slot][k]);
+        for ((component, &slot), centre) in p
+            .components
+            .iter()
+            .zip(&component_slots)
+            .zip(&component_centres)
+        {
+            let delta: [S; 3] = std::array::from_fn(|k| centre[k] - centroids[slot][k]);
             for j in 0..3 {
                 for k in j..3 {
                     second[slot][j][k] += component.central_second_integral_m5[j][k]
@@ -270,6 +323,20 @@ impl NativeGasStateLayout {
                 }
             })
             .collect::<Vec<_>>();
+        let local_centroids_m = frames
+            .iter()
+            .zip(&centroids)
+            .map(|(frame, &centre)| frame.map(|frame| (frame, centre)))
+            .collect::<Vec<_>>();
+        let centroids = centroids
+            .into_iter()
+            .zip(frames)
+            .map(|(centre, frame)| {
+                frame.map_or(centre, |frame| {
+                    std::array::from_fn(|k| centre[k] + S::from_f64(frame[k]))
+                })
+            })
+            .collect::<Vec<_>>();
         if centroids.iter().flatten().any(|v| !v.value().is_finite())
             || covariance
                 .iter()
@@ -282,6 +349,7 @@ impl NativeGasStateLayout {
         Ok(AggregatedGasGeometry {
             central_covariance_m2: covariance,
             centroids_m: centroids,
+            local_centroids_m,
             volumes_m3: volumes,
             active_slots: active,
             component_slots,
@@ -311,7 +379,10 @@ impl NativeGasStateLayout {
             .collect::<Vec<_>>();
         NativeCutCellPartition {
             native_capacity_m3: p.partition.native_capacity_m3.clone(),
-            total_volume_m3: components.iter().map(|c| c.volume_m3).fold(S::zero(), |a,b|a+b),
+            total_volume_m3: components
+                .iter()
+                .map(|c| c.volume_m3)
+                .fold(S::zero(), |a, b| a + b),
             components,
             apertures: vec![],
             walls: vec![],
@@ -364,7 +435,17 @@ impl NativeGasStateLayout {
                         !matches!(
                             p.boundary,
                             crate::native_cut_cell_partition::CutBoundary::Cell { .. }
-                        )
+                        ) || p.local_geometry.as_ref().is_some_and(|g| {
+                            g.vertices()
+                                .iter()
+                                .flatten()
+                                .chain(g.plane_origin().iter())
+                                .any(|v| {
+                                    !v.geometry_first_order_directions().is_some_and(|d| {
+                                        d.iter().all(|v| v.is_finite() && *v == 0.)
+                                    })
+                                })
+                        })
                     })
                     || component.volume_m3.has_direction()
                     || component.centroid_m.iter().any(|v| v.has_direction())
@@ -455,7 +536,7 @@ impl NativeGasStateLayout {
                 let total_volume_m3 = components
                     .iter()
                     .map(|c: &crate::native_cut_cell_partition::CutCellComponent<S>| c.volume_m3)
-                    .fold(S::zero(), |a,b|a+b);
+                    .fold(S::zero(), |a, b| a + b);
                 crate::native_cut_cell_partition::NativeCutCellPartition {
                     components,
                     native_capacity_m3: BTreeMap::from([(cell, capacity)]),
@@ -497,7 +578,7 @@ impl NativeGasStateLayout {
                     .iter()
                     .filter(|o| o.previous == i)
                     .map(|o| o.volume_m3)
-                    .fold(S::zero(), |a,b|a+b);
+                    .fold(S::zero(), |a, b| a + b);
                 if total.value() == 0. {
                     continue;
                 }
@@ -613,7 +694,7 @@ impl NativeGasStateLayout {
             fixed_zero_previous_slots,
         })
     }
-    pub fn remap<S: Scalar>(
+    pub fn remap<S: crate::gas_transient_kinetic::TransientGasScalar>(
         &self,
         previous: &RefinedCutCellPartition<S>,
         current: &RefinedCutCellPartition<S>,

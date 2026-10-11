@@ -204,6 +204,7 @@ impl<S: GeometryTimeBase> GasMassScalar for GeometryTime<S> {
     }
 }
 impl<S: GeometryTimeBase> TransientGasScalar for GeometryTime<S> {
+    fn geometry_has_time_channel() -> bool { true }
     fn geometry_product_factors_direction_bounds(factors:&[Self])->Option<Vec<f64>>{
         if factors.is_empty(){return Some(vec![]);}
         if factors.iter().any(|v|!v.finite_first_order()){return None;}

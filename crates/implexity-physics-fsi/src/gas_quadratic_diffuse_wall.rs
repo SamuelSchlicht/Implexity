@@ -115,6 +115,7 @@ pub struct QuadraticWallInteriorAnchor<S> {
     position_m: [S; 3],
     face_position_m: [S; 3],
     face_normal: [S; 3],
+    local_frame: Option<([f64; 3], [S; 3], [S; 3])>,
 }
 impl<S: TransientGasScalar> QuadraticWallInteriorAnchor<S> {
     pub(crate) fn from_measured_convex_support(
@@ -238,6 +239,7 @@ impl<S: TransientGasScalar> QuadraticWallInteriorAnchor<S> {
             position_m,
             face_position_m,
             face_normal,
+            local_frame: None,
         })
     }
     pub(crate) fn from_certified_measured_convex_support(
@@ -343,7 +345,63 @@ impl<S: TransientGasScalar> QuadraticWallInteriorAnchor<S> {
         {
             return Err(fail("certified continuous wall has no positive-distance interior support"));
         }
-        Ok(Self { left_slot, position_m, face_position_m, face_normal })
+        Ok(Self { left_slot, position_m, face_position_m, face_normal, local_frame: None })
+    }
+    pub(crate) fn in_world_frame(mut self, anchor_m: [f64; 3], face_position_m: [S; 3]) -> CaeResult<Self> {
+        if anchor_m.iter().any(|v| !v.is_finite()) {
+            return Err(fail("wall anchor frame is nonfinite"));
+        }
+        let projected: [S; 3] = std::array::from_fn(|k| self.face_position_m[k] + S::from_f64(anchor_m[k]));
+        for k in 0..3 {
+            if !projected[k].finite_first_order() || !face_position_m[k].finite_first_order() {
+                return Err(fail("wall anchor projected face is nonfinite"));
+            }
+            let directions = (projected[k] - face_position_m[k])
+                .geometry_first_order_directions()
+                .ok_or_else(|| fail("wall anchor projected face channels are absent"))?;
+            if projected[k].value().to_bits() != face_position_m[k].value().to_bits()
+                || directions.iter().any(|v| !v.is_finite() || *v != 0.) {
+                return Err(fail("wall anchor projected face ownership differs"));
+            }
+        }
+        self.local_frame = Some((anchor_m, self.position_m, self.face_position_m));
+        self.position_m = std::array::from_fn(|k| self.position_m[k] + S::from_f64(anchor_m[k]));
+        self.face_position_m = face_position_m;
+        if self.position_m.iter().any(|v| !v.finite_first_order()) {
+            return Err(fail("wall anchor projected position is nonfinite"));
+        }
+        Ok(self)
+    }
+    pub(crate) fn face_position_m(&self) -> [S; 3] {
+        self.face_position_m
+    }
+    pub(crate) fn face_offset_from_position_m(&self, position_m: [S; 3]) -> [S; 3] {
+        match self.local_frame {
+            Some((anchor, _, local)) => std::array::from_fn(|k| local[k] + (S::from_f64(anchor[k]) - position_m[k])),
+            None => std::array::from_fn(|k| self.face_position_m[k] - position_m[k]),
+        }
+    }
+    pub(crate) fn face_point_in_frame_m(&self, frame: [f64; 3]) -> [S; 3] {
+        match self.local_frame {
+            Some((anchor, _, point)) => std::array::from_fn(|k| point[k] + S::from_f64(anchor[k] - frame[k])),
+            None => std::array::from_fn(|k| self.face_position_m[k] - S::from_f64(frame[k])),
+        }
+    }
+    pub(crate) fn offset_from_frame_m(&self, frame: [f64; 3], point: [S; 3]) -> [S; 3] {
+        match self.local_frame {
+            Some((anchor, local, _)) => std::array::from_fn(|k| local[k] + S::from_f64(anchor[k] - frame[k]) - point[k]),
+            None => std::array::from_fn(|k| self.position_m[k] - (point[k] + S::from_f64(frame[k]))),
+        }
+    }
+    pub fn centroid_to_face_m(&self) -> [S; 3] {
+        let (position, face) = self.local_frame.map_or((self.position_m, self.face_position_m), |(_, p, f)| (p, f));
+        std::array::from_fn(|k| face[k] - position[k])
+    }
+    pub fn offset_from_position_m(&self, position_m: [S; 3]) -> [S; 3] {
+        match self.local_frame {
+            Some((anchor, local, _)) => std::array::from_fn(|k| local[k] + (S::from_f64(anchor[k]) - position_m[k])),
+            None => std::array::from_fn(|k| self.position_m[k] - position_m[k]),
+        }
     }
     pub fn position_m(&self) -> [S; 3] {
         self.position_m
@@ -388,6 +446,7 @@ impl<S: TransientGasScalar> QuadraticWallInteriorAnchor<S> {
             position_m: self.position_m.map(lift),
             face_position_m: self.face_position_m.map(lift),
             face_normal: self.face_normal.map(lift),
+            local_frame: self.local_frame.map(|(anchor, p, f)| (anchor, p.map(lift), f.map(lift))),
         }
     }
 }

@@ -661,6 +661,15 @@ pub fn prepare_provider_request(
     prepared: &Prepared,
     for_optimization: bool,
 ) -> CaeResult<ProviderRequest> {
+    prepare_provider_request_mode(request, prepared, for_optimization, false)
+}
+
+fn prepare_provider_request_mode(
+    request: &Map<String, Value>,
+    prepared: &Prepared,
+    for_optimization: bool,
+    explicit_preflight: bool,
+) -> CaeResult<ProviderRequest> {
     let provider = prepared.provider.as_ref();
     let raw_problem = request
         .get("problem")
@@ -671,7 +680,11 @@ pub fn prepare_provider_request(
     let ops = design_operations(provider);
     let control = prepared.design.get("model:control").cloned();
     let pre = if let Some(o) = ops.filter(|o| o.provides(DesignOp::PreflightDesign)) {
-        o.preflight_design(&problem, &prepared.design)?
+        if explicit_preflight {
+            o.preflight_design(&problem, &prepared.design)?
+        } else {
+            o.prepare_design(&problem, &prepared.design)?
+        }
     } else {
         let Some(control) = control.as_ref() else {
             return Err(CaeError::contract("'model:control'"));
@@ -1117,7 +1130,7 @@ pub fn preflight(request: &mut Map<String, Value>) -> JobResult<Map<String, Valu
             None => None,
         };
     let effects = checked_preflight_effects(effects.as_ref())?;
-    let provider_request = prepare_provider_request(request, &prepared, true)?;
+    let provider_request = prepare_provider_request_mode(request, &prepared, true, true)?;
     let mut reply = provider_request.preflight.clone();
     reply.insert(
         "provider_admission".into(),

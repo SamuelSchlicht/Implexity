@@ -188,20 +188,23 @@ pub(super) fn replay<S: TransientGasScalar>(
     })
 }
 
-pub(super) fn native_parent<S: TransientGasScalar>(
+pub(super) fn native_parent<S:TransientGasScalar>(owner:&crate::native_gap_column_owner::NativeGapColumnOwner,trace:&[TrackedScalar<S>],body:usize,node:usize)->CaeResult<Point<S>>{native_parent_in_frame(owner,trace,body,node,None)}
+pub(super) fn native_parent_in_frame<S: TransientGasScalar>(
     owner: &crate::native_gap_column_owner::NativeGapColumnOwner,
     trace: &[TrackedScalar<S>],
     body: usize,
     node: usize,
+    frame:Option<[f64;3]>,
 ) -> CaeResult<Point<S>> {
     let binding = owner
         .nodes
         .get(body)
         .and_then(|nodes| nodes.get(node))
         .ok_or_else(|| CaeError::contract("corner local native parent is absent"))?;
+    let reference=if let Some(anchor)=frame{owner.node_reference_in_frame(body,node,anchor)?}else{binding.reference_m};
     let mut point = [TrackedScalar::zero(); 3];
     for k in 0..3 {
-        point[k] = TrackedScalar::from_f64(binding.reference_m[k])
+        point[k] = TrackedScalar::from_f64(reference[k])
             + *trace
                 .get(binding.force_flux[k])
                 .ok_or_else(|| CaeError::contract("corner local native trace index is absent"))?;
@@ -209,10 +212,12 @@ pub(super) fn native_parent<S: TransientGasScalar>(
     Ok(point)
 }
 
-pub(super) fn native_plane<S: TransientGasScalar>(
+pub(super) fn native_plane<S:TransientGasScalar>(owner:&crate::native_gap_column_owner::NativeGapColumnOwner,cell:usize,boundary:&CutBoundary,trace:&[TrackedScalar<S>],design:&[TrackedScalar<S>],tet:impl Fn(usize)->CaeResult<crate::native_cut_cell_refinement::CutTetraSubdomain<TrackedScalar<S>>>)->CaeResult<Plane<S>>{native_plane_in_frame(owner,cell,boundary,None,trace,design,tet)}
+pub(super) fn native_plane_in_frame<S: TransientGasScalar>(
     owner: &crate::native_gap_column_owner::NativeGapColumnOwner,
     cell: usize,
     boundary: &CutBoundary,
+    frame:Option<[f64;3]>,
     trace: &[TrackedScalar<S>],
     design: &[TrackedScalar<S>],
     tet: impl Fn(
@@ -225,7 +230,7 @@ pub(super) fn native_plane<S: TransientGasScalar>(
             let bounds = owner.grid.cell_bounds(cell)?;
             (
                 std::array::from_fn(|k| TrackedScalar::from_f64(if k == *axis { 1. } else { 0. })),
-                bounds[*side].map(TrackedScalar::from_f64),
+                std::array::from_fn(|k|TrackedScalar::from_f64(bounds[*side][k]-frame.map_or(0.,|a|a[k]))),
                 TrackedScalar::zero(),
             )
         }
@@ -250,7 +255,7 @@ pub(super) fn native_plane<S: TransientGasScalar>(
             if let Some(face) = face {
                 let mut ids = *face;
                 ids.sort_unstable();
-                let p = ids.map(|node| native_parent(owner, trace, *body, node));
+                let p = ids.map(|node| native_parent_in_frame(owner, trace, *body, node,frame));
                 let [a, b, c] = p;
                 let p = [a?, b?, c?];
                 (
@@ -264,7 +269,7 @@ pub(super) fn native_plane<S: TransientGasScalar>(
                     .get(*body)
                     .and_then(|elements| elements.get(*element))
                     .ok_or_else(|| CaeError::contract("corner local phase element is absent"))?;
-                let p = ids.map(|node| native_parent(owner, trace, *body, node));
+                let p = ids.map(|node| native_parent_in_frame(owner, trace, *body, node,frame));
                 let [a, b, c, d] = p;
                 let p = [a?, b?, c?, d?];
                 let row_offset = if *body == 0 { 0 } else { owner.nodes[0].len() };
@@ -334,9 +339,9 @@ pub(super) fn issue<S: TransientGasScalar>(
             return Err(CaeError::contract("corner local layered source is invalid"));
         }
         if !charts.borrow().contains_key(&chart) {
-            let points =
-                kinematics
-                    .mapped_chart_from_trace(chart, &trace, &design, |points, _| Ok(points))?;
+            let points =if let Some(anchor)=construction.frame{
+                kinematics.mapped_chart_from_reference(chart,&trace,&design,|body,node|owner.node_reference_in_frame(body,node,anchor),|p,_|Ok(p))?
+            }else{kinematics.mapped_chart_from_trace(chart,&trace,&design,|p,_|Ok(p))?};
             charts.borrow_mut().insert(chart, points);
         }
         let points = *charts
@@ -349,14 +354,15 @@ pub(super) fn issue<S: TransientGasScalar>(
         }))
     };
     let parent = |parent: NativePointOwner| match parent {
-        NativePointOwner::Native(body, node) => native_parent(owner, &trace, body, node),
+        NativePointOwner::Native(body, node) => native_parent_in_frame(owner, &trace, body, node,construction.frame),
         NativePointOwner::Layered(id) => layered(id),
     };
     let plane = |boundary: &CutBoundary| {
-        native_plane(
+        native_plane_in_frame(
             owner,
             construction.cell,
             boundary,
+            construction.frame,
             &trace,
             &design,
             |region| {
@@ -371,6 +377,7 @@ pub(super) fn issue<S: TransientGasScalar>(
                     region,
                     vertex_ids: Some(ids),
                     vertices_m: [a?, b?, c?, d?],
+                    local_geometry:None,
                 })
             },
         )

@@ -45,3 +45,83 @@ pub(crate) fn exact_sign(corners:[f64;3],uv:[f64;2],coordinate:f64)->Result<i8,&
  for (corner,weight) in [(corners[1],uv[0]),(corners[2],uv[1])]{for coeff in two_sum(corner,-corners[0])?{for term in two_product(coeff,weight)?{grow(&mut r,term)?;}}}
  Ok(r.iter().rev().find(|x|**x!=0.).map_or(0,|x|if *x>0.{1}else{-1}))
 }
+
+fn input_domain(values:impl Iterator<Item=f64>)->Result<(),&'static str>{
+ if values.into_iter().any(|x|!x.is_finite()||(x!=0.&&!x.is_normal())){return Err("exact affine input domain");}Ok(())
+}
+fn expansion_sign(r:&[f64])->i8{r.iter().rev().find(|x|**x!=0.).map_or(0,|x|if *x>0.{1}else{-1})}
+fn add_product(r:&mut Vec<f64>,a:f64,b:f64)->Result<(),&'static str>{for x in two_product(a,b)?{grow(r,x)?;}Ok(())}
+pub(crate) fn exact_dot_sign(a:[f64;3],b:[f64;3])->Result<i8,&'static str>{
+ input_domain(a.into_iter().chain(b))?;let mut r=Vec::new();for k in 0..3{add_product(&mut r,a[k],b[k])?;}Ok(expansion_sign(&r))
+}
+pub(crate) fn exact_bilinear_sum_zero(terms:&[(f64,f64)])->Result<bool,&'static str>{
+ input_domain(terms.iter().flat_map(|&(a,b)|[a,b]))?;
+ let mut r=Vec::new();for &(a,b) in terms{add_product(&mut r,a,b)?;}Ok(expansion_sign(&r)==0)
+}
+pub(crate) fn exact_plane_sign(normal:[f64;3],point:[f64;3],origin:[f64;3],offset:f64)->Result<i8,&'static str>{
+ exact_framed_plane_sign(normal,point,[0.;3],origin,[0.;3],offset)
+}
+pub(crate) fn exact_framed_plane_sign(normal:[f64;3],point:[f64;3],point_anchor:[f64;3],origin:[f64;3],origin_anchor:[f64;3],offset:f64)->Result<i8,&'static str>{
+ input_domain(normal.into_iter().chain(point).chain(point_anchor).chain(origin).chain(origin_anchor).chain(std::iter::once(offset)))?;
+ let mut r=vec![offset];for k in 0..3{for value in [point[k],point_anchor[k],-origin_anchor[k],-origin[k]]{add_product(&mut r,normal[k],value)?;}}Ok(expansion_sign(&r))
+}
+pub(crate) fn exact_framed_affine_plane_sign(normal:[f64;3],corners:[[f64;3];3],uv:[f64;2],corner_anchor:[f64;3],origin:[f64;3],origin_anchor:[f64;3],offset:f64)->Result<i8,&'static str>{
+ input_domain(normal.into_iter().chain(corners.into_iter().flatten()).chain(uv).chain(corner_anchor).chain(origin).chain(origin_anchor).chain(std::iter::once(offset)))?;
+ let mut r=vec![offset];for k in 0..3{
+  for value in [corners[0][k],corner_anchor[k],-origin_anchor[k],-origin[k]]{add_product(&mut r,normal[k],value)?;}
+  for (corner,weight) in [(corners[1][k],uv[0]),(corners[2][k],uv[1])]{for coefficient in two_sum(corner,-corners[0][k])?{for term in two_product(coefficient,weight)?{add_product(&mut r,term,normal[k])?;}}}
+ }Ok(expansion_sign(&r))
+}
+
+pub(crate) fn exact_framed_tetra_sign(points:[[f64;3];4],anchors:[[f64;3];4])->Result<i8,&'static str>{
+ input_domain(points.into_iter().flatten().chain(anchors.into_iter().flatten()))?;
+ let mut edges:[[Vec<f64>;3];3]=std::array::from_fn(|_|std::array::from_fn(|_|Vec::new()));
+ for i in 0..3{for k in 0..3{
+  for value in [points[i+1][k],anchors[i+1][k],-points[0][k],-anchors[0][k]]{grow(&mut edges[i][k],value)?;}
+ }}
+ let mut r=Vec::new();
+ for (axes,sign) in [([0,1,2],1.),([1,2,0],1.),([2,0,1],1.),([0,2,1],-1.),([1,0,2],-1.),([2,1,0],-1.)]{
+  for &a in &edges[0][axes[0]]{for &b in &edges[1][axes[1]]{for &c in &edges[2][axes[2]]{
+   for term in two_product(a,b)?{for value in two_product(term,c)?{grow(&mut r,sign*value)?;}}
+  }}}
+ }
+ Ok(expansion_sign(&r))
+}
+
+fn expansion_round(r:&[f64])->Result<f64,&'static str>{
+ let mut n=r.len();if n==0{return Ok(0.);}
+ n-=1;let mut hi=r[n];let mut lo=0.;
+ while n>0{
+  let x=hi;n-=1;let y=r[n];hi=finite(x+y)?;let yr=finite(hi-x)?;lo=finite(y-yr)?;
+  if lo!=0.{break;}
+ }
+ if n>0 && ((lo<0.&&r[n-1]<0.)||(lo>0.&&r[n-1]>0.)){
+  let y=finite(lo*2.)?;let x=finite(hi+y)?;let yr=finite(x-hi)?;
+  if y==yr{hi=x;}
+ }
+ finite(hi)
+}
+pub(crate) fn exact_grid_displacement_tetra_sign(indices:[[usize;3];4],spacing:f64,displacements:[[f64;3];4])->Result<i8,&'static str>{
+ if indices.iter().flatten().any(|i|(*i as u128)>(1u128<<53))||spacing<=0.{return Err("exact grid tetrahedron domain");}
+ input_domain(std::iter::once(spacing).chain(displacements.into_iter().flatten()))?;
+ let mut edges:[[Vec<f64>;3];3]=std::array::from_fn(|_|std::array::from_fn(|_|Vec::new()));
+ for i in 0..3{for k in 0..3{
+  let delta=if indices[i+1][k]>=indices[0][k]{(indices[i+1][k]-indices[0][k])as f64}else{-((indices[0][k]-indices[i+1][k])as f64)};
+  for term in two_product(delta,spacing)?{grow(&mut edges[i][k],term)?;}
+  for value in [displacements[i+1][k],-displacements[0][k]]{grow(&mut edges[i][k],value)?;}
+ }}
+ let mut r=Vec::new();
+ for (axes,sign) in [([0,1,2],1.),([1,2,0],1.),([2,0,1],1.),([0,2,1],-1.),([1,0,2],-1.),([2,1,0],-1.)]{
+  for &a in &edges[0][axes[0]]{for &b in &edges[1][axes[1]]{for &c in &edges[2][axes[2]]{
+   for term in two_product(a,b)?{for value in two_product(term,c)?{grow(&mut r,sign*value)?;}}
+  }}}
+ }
+ Ok(expansion_sign(&r))
+}
+pub(crate) fn exact_framed_grid_coordinate(origin:f64,index:usize,spacing:f64,anchor:f64)->Result<f64,&'static str>{
+ if (index as u128)>(1u128<<53)||spacing<=0.{return Err("exact grid coordinate domain");}
+ input_domain([origin,index as f64,spacing,anchor].into_iter())?;
+ let mut r=Vec::new();grow(&mut r,origin)?;grow(&mut r,-anchor)?;
+ for term in two_product(index as f64,spacing)?{grow(&mut r,term)?;}
+ expansion_round(&r)
+}

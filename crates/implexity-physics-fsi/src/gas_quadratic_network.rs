@@ -34,6 +34,7 @@ use crate::gas_quadratic_multiscale_flux::{
 };
 use crate::gas_quadratic_velocity::{QuadraticEntropyPolicy, QuadraticVelocityBasis};
 use crate::gas_transient_kinetic::TransientGasScalar;
+use implexity_ad::Scalar;
 use implexity_core::{CaeError, CaeResult};
 use std::sync::Arc;
 
@@ -50,6 +51,7 @@ pub struct QuadraticGasNetworkFace<S> {
     pub area_m2: S,
     pub outward_unit_normal: [S; 3],
     pub centroid_m: [S; 3],
+    pub local_centroid_m: Option<([f64; 3], [S; 3])>,
     pub left_centroid_to_face_m: [S; 3],
     pub right_centroid_to_face_m: Option<[S; 3]>,
     pub right_periodic_image: [i32; 3],
@@ -62,10 +64,34 @@ pub struct QuadraticGasNetworkGeometry<S> {
     pub previous_volume_m3: Vec<S>,
     pub volume_m3: Vec<S>,
     pub cell_centroid_m: Vec<[S; 3]>,
+    pub cell_local_centroid_m: Option<Vec<Option<([f64; 3], [S; 3])>>>,
     pub cell_central_covariance_m2: Vec<Option<[[S; 3]; 3]>>,
     pub faces: Vec<QuadraticGasNetworkFace<S>>,
     pub physical_step_s: S,
     pub periodic_basis_m: Option<[[S; 3]; 3]>,
+}
+impl<S: Scalar> QuadraticGasNetworkGeometry<S> {
+    pub fn cell_centroid_in_frame(&self, cell: usize, frame: [f64; 3]) -> CaeResult<[S; 3]> {
+        let world = self.cell_centroid_m.get(cell).ok_or_else(|| fail("continuous centroid cell is absent"))?;
+        if frame.iter().any(|v| !v.is_finite()) || self.cell_local_centroid_m.as_ref().is_some_and(|v| v.len() != self.cell_centroid_m.len()) {
+            return Err(fail("continuous centroid frame layout differs"));
+        }
+        Ok(match self.cell_local_centroid_m.as_ref().and_then(|v| v[cell]) {
+            Some((anchor, point)) => std::array::from_fn(|k| point[k] + S::from_f64(anchor[k] - frame[k])),
+            None => std::array::from_fn(|k| world[k] - S::from_f64(frame[k])),
+        })
+    }
+    fn cell_frame(&self, cell: usize) -> [f64; 3] {
+        self.cell_local_centroid_m.as_ref().and_then(|v| v[cell]).map_or([0.; 3], |v| v.0)
+    }
+}
+impl<S: Scalar> QuadraticGasNetworkFace<S> {
+    fn centroid_in_frame(&self, frame: [f64; 3]) -> [S; 3] {
+        match self.local_centroid_m {
+            Some((anchor, point)) => std::array::from_fn(|k| point[k] + S::from_f64(anchor[k] - frame[k])),
+            None => std::array::from_fn(|k| self.centroid_m[k] - S::from_f64(frame[k])),
+        }
+    }
 }
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 #[serde(
@@ -329,6 +355,7 @@ impl<S: TransientGasScalar> PreparedQuadraticGasNetwork<S> {
         if cells == 0
             || geometry.previous_volume_m3.len() != cells
             || geometry.cell_centroid_m.len() != cells
+            || geometry.cell_local_centroid_m.as_ref().is_some_and(|v| v.len() != cells || v.iter().flatten().any(|(a,p)| a.iter().any(|v| !v.is_finite()) || p.iter().any(|v| !v.finite_first_order())))
             || geometry.cell_central_covariance_m2.len() != cells
             || !geometry.physical_step_s.finite_first_order()
             || geometry.physical_step_s.value() <= 0.
@@ -349,6 +376,17 @@ impl<S: TransientGasScalar> PreparedQuadraticGasNetwork<S> {
             || policy.maximum_operator_nonzeros == 0
         {
             return Err(fail("invalid continuous gas network geometry or policy"));
+        }
+        if let Some(local) = &geometry.cell_local_centroid_m {
+            for (cell, point) in local.iter().enumerate() {
+                if let Some((anchor, position)) = point {
+                    for axis in 0..3 {
+                        let origin = S::from_f64(anchor[axis]);
+                        let projected = position[axis] + origin;
+                        geometry_zero(geometry.cell_centroid_m[cell][axis] - projected, &[geometry.cell_centroid_m[cell][axis], -position[axis], -origin], 0., policy.geometric_relative_tolerance)?;
+                    }
+                }
+            }
         }
         if matches!(
             policy.reconstruction,
@@ -403,6 +441,7 @@ impl<S: TransientGasScalar> PreparedQuadraticGasNetwork<S> {
                 || face.right.is_some_and(|r| r >= cells)
                 || face.right.is_some() == face.boundary.is_some()
                 || face.right.is_some() != face.right_centroid_to_face_m.is_some()
+                || face.local_centroid_m.is_some_and(|(a,p)| a.iter().any(|v| !v.is_finite()) || p.iter().any(|v| !v.finite_first_order()))
                 || !face.area_m2.finite_first_order()
                 || face.area_m2.value() < 0.
                 || face
@@ -419,14 +458,24 @@ impl<S: TransientGasScalar> PreparedQuadraticGasNetwork<S> {
             {
                 return Err(fail("invalid continuous gas network face"));
             }
+            if let Some((anchor, position)) = face.local_centroid_m {
+                for axis in 0..3 {
+                    let origin = S::from_f64(anchor[axis]);
+                    let projected = position[axis] + origin;
+                    geometry_zero(face.centroid_m[axis] - projected, &[face.centroid_m[axis], -position[axis], -origin], 0., policy.geometric_relative_tolerance)?;
+                }
+            }
+            let frame = geometry.cell_frame(face.left);
+            let left_center = geometry.cell_centroid_in_frame(face.left, frame)?;
+            let face_center = face.centroid_in_frame(frame);
             for axis in 0..3 {
                 geometry_zero(
-                    face.centroid_m[axis]
-                        - geometry.cell_centroid_m[face.left][axis]
+                    face_center[axis]
+                        - left_center[axis]
                         - face.left_centroid_to_face_m[axis],
                     &[
-                        face.centroid_m[axis],
-                        -geometry.cell_centroid_m[face.left][axis],
+                        face_center[axis],
+                        -left_center[axis],
                         -face.left_centroid_to_face_m[axis],
                     ],
                     0.,
@@ -437,23 +486,24 @@ impl<S: TransientGasScalar> PreparedQuadraticGasNetwork<S> {
                 if geometry.periodic_basis_m.is_none() && face.right_periodic_image != [0; 3] {
                     return Err(fail("continuous periodic face has no translation basis"));
                 }
+                let right_center = geometry.cell_centroid_in_frame(right, frame)?;
                 for axis in 0..3 {
                     let image = geometry.periodic_basis_m.map_or(S::zero(), |b| {
                         (0..3).fold(S::zero(), |v, j| {
                             v + b[j][axis] * face.right_periodic_image[j] as f64
                         })
                     });
-                    let left = geometry.cell_centroid_m[face.left][axis]
+                    let left = left_center[axis]
                         + face.left_centroid_to_face_m[axis];
-                    let right = geometry.cell_centroid_m[right][axis]
+                    let right = right_center[axis]
                         + image
                         + face.right_centroid_to_face_m.unwrap()[axis];
                     geometry_zero(
                         left - right,
                         &[
-                            geometry.cell_centroid_m[face.left][axis],
+                            left_center[axis],
                             face.left_centroid_to_face_m[axis],
-                            -geometry.cell_centroid_m[face.right.unwrap()][axis],
+                            -right_center[axis],
                             -image,
                             -face.right_centroid_to_face_m.unwrap()[axis],
                         ],
@@ -679,6 +729,7 @@ impl<S: TransientGasScalar> PreparedQuadraticGasNetwork<S> {
                     .iter()
                     .map(|v| v.map(lift))
                     .collect(),
+                cell_local_centroid_m: self.geometry.cell_local_centroid_m.as_ref().map(|v| v.iter().map(|p| p.map(|(a,c)| (a,c.map(lift)))).collect()),
                 cell_central_covariance_m2: self
                     .geometry
                     .cell_central_covariance_m2
@@ -696,6 +747,7 @@ impl<S: TransientGasScalar> PreparedQuadraticGasNetwork<S> {
                         area_m2: lift(f.area_m2),
                         outward_unit_normal: f.outward_unit_normal.map(lift),
                         centroid_m: f.centroid_m.map(lift),
+                        local_centroid_m: f.local_centroid_m.map(|(a,c)| (a,c.map(lift))),
                         left_centroid_to_face_m: f.left_centroid_to_face_m.map(lift),
                         right_centroid_to_face_m: f.right_centroid_to_face_m.map(|v| v.map(lift)),
                         right_periodic_image: f.right_periodic_image,
@@ -922,9 +974,11 @@ impl<S: TransientGasScalar> PreparedQuadraticGasNetwork<S> {
             let Some(q) = self.inventory(state, other, false)? else {
                 continue;
             };
+            let frame = self.geometry.cell_frame(cell);
+            let center = self.geometry.cell_centroid_in_frame(cell, frame)?;
+            let neighbor = self.geometry.cell_centroid_in_frame(other, frame)?;
             let offset = std::array::from_fn(|axis| {
-                self.geometry.cell_centroid_m[other][axis]
-                    - self.geometry.cell_centroid_m[cell][axis]
+                neighbor[axis] - center[axis]
                     + self.geometry.periodic_basis_m.map_or(S::zero(), |basis| {
                         (0..3).fold(S::zero(), |v, j| v + basis[j][axis] * image[j] as f64)
                     })
@@ -981,19 +1035,16 @@ impl<S: TransientGasScalar> PreparedQuadraticGasNetwork<S> {
                     geometry.centroid_m,
                     geometry.outward_unit_normal,
                 )?;
-                let position = anchor.position_m();
                 let reconstructed = self.reconstruct(
                     state,
                     geometry.left,
-                    std::array::from_fn(|k| {
-                        position[k] - self.geometry.cell_centroid_m[geometry.left][k]
-                    }),
+                    anchor.offset_from_frame_m(self.geometry.cell_frame(geometry.left), self.geometry.cell_centroid_in_frame(geometry.left, self.geometry.cell_frame(geometry.left))?),
                 )?;
                 let moments = self.basis.coefficient_moments(&reconstructed.density)?;
                 (
                     moments[0],
                     std::array::from_fn(|k| moments[k + 1]),
-                    std::array::from_fn(|k| geometry.centroid_m[k] - position[k]),
+                    anchor.centroid_to_face_m(),
                     reconstructed.equilibrium_mass_gradient,
                     reconstructed.equilibrium_momentum_gradient,
                 )
@@ -1443,19 +1494,16 @@ impl PreparedQuadraticGasNetwork<f64> {
                         .as_ref()
                         .and_then(|a| a[id].as_ref())
                     {
-                        let position = anchor.position_m();
                         let reconstructed = self.reconstruct(
                             state,
                             face.left,
-                            std::array::from_fn(|k| {
-                                position[k] - self.geometry.cell_centroid_m[face.left][k]
-                            }),
+                            anchor.offset_from_frame_m(self.geometry.cell_frame(face.left), self.geometry.cell_centroid_in_frame(face.left, self.geometry.cell_frame(face.left))?),
                         )?;
                         let moments = self.basis.coefficient_moments(&reconstructed.density)?;
                         (
                             moments[0],
                             std::array::from_fn(|k| moments[k + 1]),
-                            std::array::from_fn(|k| face.centroid_m[k] - position[k]),
+                            anchor.centroid_to_face_m(),
                             reconstructed.equilibrium_mass_gradient,
                             reconstructed.equilibrium_momentum_gradient,
                         )

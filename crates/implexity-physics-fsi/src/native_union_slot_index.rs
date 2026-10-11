@@ -38,10 +38,15 @@ fn inside_one_sided(
     point: [f64; 3],
     inward: [f64; 3],
     arithmetic_length_m: f64,
-) -> CaeResult<bool> {
+) -> CaeResult<bool> {inside_one_sided_filtered(part,point,inward,arithmetic_length_m,None)}
+fn inside_one_sided_filtered(
+    part:&[CutPolygon<f64>],point:[f64;3],inward:[f64;3],arithmetic_length_m:f64,
+    source:Option<(&RefinedCutCellPartition<f64>,&crate::native_source_stage_labels::SourceAxisSupportQuery<'_>)>,
+)->CaeResult<bool>{
     if part.is_empty() {
         return Err(fail("union slot has no supporting planes"));
     }
+    if let Some((refined,query))=source{query.validate_owner(refined,point)?;}
     for face in part {
         let n = face.outward_normal;
         if n.iter()
@@ -55,6 +60,8 @@ fn inside_one_sided(
         if !norm.is_finite() || norm == 0. {
             return Err(fail("invalid union slot plane normal"));
         }
+        if let Some((refined,query))=source{if let Some(sign)=query.local_face_sign(refined,point,face)?{if sign>0{return Ok(false);}if sign<0{continue;}if crate::native_exact_affine_predicate::exact_dot_sign(n,inward).map_err(fail)?>0{return Ok(false);}continue;}}
+        if let Some((refined,query))=source{let owned_axis=match face.boundary{crate::native_cut_cell_partition::CutBoundary::Cell{axis,..}=>axis<3&&n[axis].abs()==1.&&(0..3).all(|k|k==axis||n[k]==0.),crate::native_cut_cell_partition::CutBoundary::Native{..}=>true,_=>false};if owned_axis{if let Some(sign)=query.axis_face_sign(refined,point,face)?{if sign>0{return Ok(false);}if sign<0{continue;}}}}
         let terms = std::array::from_fn::<_, 3, _>(|k| n[k] * (point[k] - face.plane_origin_m[k]));
         let distance = terms.iter().copied().sum::<f64>() + face.plane_offset_m;
         let error = arithmetic_length_m * norm
@@ -149,7 +156,7 @@ impl<'a> UnionSlotIndex<'a> {
             }
             for part in &component.convex_parts {
                 if let Some(query)=source{if query.rejects(self.refined,point,part)?{continue;}}
-                if inside_one_sided(part, point, inward, partition.arithmetic_length_m)? {
+                if inside_one_sided_filtered(part, point, inward, partition.arithmetic_length_m,source.map(|query|(self.refined,query)))? {
                     if selected.is_some_and(|previous| previous != slot) {
                         return Err(fail("union face has ambiguous gas slot ownership"));
                     }
@@ -189,7 +196,7 @@ impl<'a> UnionSlotIndex<'a> {
             if self.component_slots[index]!=slot||component.volume_m3==0.{continue;}
             for (part_index,part) in component.convex_parts.iter().enumerate(){
                 if source.rejects(self.refined,point,part)?{continue;}
-                if inside_one_sided(part,point,inward,partition.arithmetic_length_m)?{if let Some(plane)=facet.support_plane_in_cell(self.refined,cell,part)?{return Ok((index,part_index,plane));}}
+                if inside_one_sided_filtered(part,point,inward,partition.arithmetic_length_m,Some((self.refined,source)))?{if let Some(plane)=facet.support_plane_in_cell(self.refined,cell,part)?{return Ok((index,part_index,plane));}}
             }
         }
         Err(fail("source wall has no actual supporting convex part"))

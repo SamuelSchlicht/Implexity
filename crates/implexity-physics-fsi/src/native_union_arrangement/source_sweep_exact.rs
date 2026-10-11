@@ -63,6 +63,14 @@ impl ExactSweepPoint {
   for k in 0..2{let numerator=self.numerator(k)?;for coeff in two_sum(corners[k+1],-corners[0])?{for &factor in &numerator{for term in two_product(coeff,factor)?{grow(&mut r,term)?;}}}}
   sign(&mut r)
  }
+ fn exact_framed_affine_plane_sign(&self,normal:[f64;3],corners:[[f64;3];3],corner_anchor:[f64;3],origin:[f64;3],origin_anchor:[f64;3],offset:f64)->Result<i8,&'static str>{
+  if normal.into_iter().chain(corners.into_iter().flatten()).chain(corner_anchor).chain(origin).chain(origin_anchor).chain(std::iter::once(offset)).any(|x|!x.is_finite()||(x!=0.&&!x.is_normal())){return Err("source sweep affine plane domain");}
+  let mut r=Vec::new();for term in two_product(offset,self.determinant)?{grow(&mut r,term)?;}
+  for axis in 0..3{
+   for value in [corners[0][axis],corner_anchor[axis],-origin_anchor[axis],-origin[axis]]{for coefficient in two_product(value,normal[axis])?{for term in two_product(coefficient,self.determinant)?{grow(&mut r,term)?;}}}
+   for k in 0..2{let numerator=self.numerator(k)?;for coefficient in two_sum(corners[k+1][axis],-corners[0][axis])?{for weighted in two_product(coefficient,normal[axis])?{for &factor in &numerator{for term in two_product(weighted,factor)?{grow(&mut r,term)?;}}}}}
+  }sign(&mut r)
+ }
  fn emitted(&self)->[f64;2]{self.emitted}
 }
 fn sign(r:&mut Vec<f64>)->Result<i8,&'static str>{Ok(r.iter().rev().find(|x|**x!=0.).map_or(0,|x|if *x>0.{1}else{-1}))}

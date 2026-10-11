@@ -114,7 +114,7 @@ fn feature_nodes(feature: &SurfaceFeature) -> Vec<usize> {
         SurfaceFeature::DensityEdge { nodes, .. } => nodes.to_vec(),
     }
 }
-fn weights<S: Scalar>(
+pub(crate) fn weights<S: Scalar>(
     feature: &SurfaceFeature,
     density: &std::collections::BTreeMap<usize, S>,
 ) -> CaeResult<Vec<(usize, S)>> {
@@ -960,11 +960,15 @@ impl SurfaceGapKinematics {
 }
 
 impl SurfaceGapKinematics {
-    pub(crate) fn mapped_chart_from_trace<S: Scalar, T>(
+    pub(crate) fn mapped_chart_from_trace<S:Scalar,T>(&self,chart:usize,trace:&[S],design:&[S],map:impl FnOnce([[S;3];6],&SurfaceGapCell)->CaeResult<T>)->CaeResult<T>{
+        self.mapped_chart_from_reference(chart,trace,design,|body,node|self.nodes.get(body).and_then(|n|n.get(node)).map(|n|n.reference_m).ok_or_else(||fail("surface-gap reference node is absent")),map)
+    }
+    pub(crate) fn mapped_chart_from_reference<S: Scalar, T>(
         &self,
         chart: usize,
         trace: &[S],
         design: &[S],
+        reference:impl Fn(usize,usize)->CaeResult<[f64;3]>,
         map: impl FnOnce([[S; 3]; 6], &SurfaceGapCell) -> CaeResult<T>,
     ) -> CaeResult<T> {
         if trace.len() != self.force_size || trace.iter().any(|v| !v.value().is_finite()) {
@@ -1021,6 +1025,7 @@ impl SurfaceGapKinematics {
             for vertex in 0..3 {
                 let w = weights(&cell.features[body][vertex], &density[body])?;
                 for (node, weight) in w {
+                    let local_reference=reference(body,node)?;
                     for axis in 0..3 {
                         let binding = &self.nodes[body][node];
                         let &(flux, scale) = last_state_binding
@@ -1028,7 +1033,7 @@ impl SurfaceGapKinematics {
                             .ok_or_else(|| fail("surface-gap chart state binding absent"))?;
                         let state = trace[flux] / scale;
                         vertices[body * 3 + vertex][axis] +=
-                            (S::from_f64(binding.reference_m[axis])
+                            (S::from_f64(local_reference[axis])
                                 + state * binding.inverse_state_scale[axis])
                                 * weight;
                     }
@@ -1048,5 +1053,35 @@ impl SurfaceGapKinematics {
                 let n=&self.nodes[body][i]; (0..3).all(|k| last.get(&n.state[k]).is_some_and(|&(flux,scale)| flux==n.force_flux[k] && scale.is_finite() && scale!=0. && scale==n.inverse_state_scale[k]))
             }))).then_some(chart)
         }).collect()
+    }
+}
+
+impl SurfaceGapKinematics {
+    pub(crate) fn native_chart_feature_sources<S:crate::gas_transient_kinetic::TransientGasScalar>(&self,chart:usize,trace:&[S],design:&[S],source:impl Fn(usize,usize)->CaeResult<crate::native_geometry_source::NativeNodeSource<S>>)->CaeResult<[[crate::native_geometry_source::NativeChartFeatureSource<S>;3];2]> {
+        use crate::native_geometry_source::NativeChartFeatureSource;
+        if trace.len()!=self.force_size || design.len()!=self.phase.ncols(){return Err(fail("native chart source input shape differs"));}
+        let cell=self.cells.get(chart).ok_or_else(||fail("native chart source index is absent"))?;
+        let mut last=std::collections::BTreeMap::new();
+        for node in self.nodes.iter().flatten(){for k in 0..3 {last.insert(node.state[k],(node.force_flux[k],node.inverse_state_scale[k]));}}
+        let mut rows=Vec::new();
+        for body in 0..2 {
+            let mut row=Vec::new();
+            for feature in &cell.features[body] {
+                let mut points=Vec::new();let mut values=Vec::new();let mut scales=Vec::new();
+                for node in feature_nodes(feature) {
+                    let binding=self.nodes[body].get(node).ok_or_else(||fail("native chart source binding is absent"))?;
+                    let original=source(body,node)?;
+                    let legacy_reference=match &original.reference {crate::native_geometry_source::NativeReferencePoint::Stored(p)=>*p,crate::native_geometry_source::NativeReferencePoint::Grid{origin,index,spacing}=>std::array::from_fn(|k|origin[k]+index[k] as f64*spacing)};
+                    if original.body!=body || original.node!=node || original.force_flux!=binding.force_flux || legacy_reference.map(f64::to_bits)!=binding.reference_m.map(f64::to_bits){return Err(fail("native chart original node binding differs"));}
+                    let mut scaling=[[0.;2];3];
+                    for k in 0..3 {let (flux,scale)=*last.get(&binding.state[k]).ok_or_else(||fail("native chart mapped state binding is absent"))?;if flux!=original.force_flux[k]{return Err(fail("native chart original trace binding differs"));}scaling[k]=[scale,binding.inverse_state_scale[k]];}
+                    let phase_row=node+if body==0{0}else{self.nodes[0].len()};let (columns,coefficients)=self.phase.row(phase_row);let mut value=S::zero();for (&column,&coefficient) in columns.iter().zip(coefficients){value+=design[column]*coefficient;}
+                    points.push(original);values.push(value);scales.push(scaling);
+                }
+                let authored=NativeChartFeatureSource{feature:feature.clone(),points,values,scales};authored.weights()?;row.push(authored);
+            }
+            rows.push(row.try_into().map_err(|_|fail("native chart source feature shape differs"))?);
+        }
+        rows.try_into().map_err(|_|fail("native chart source body shape differs"))
     }
 }

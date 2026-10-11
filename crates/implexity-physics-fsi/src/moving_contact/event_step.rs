@@ -53,9 +53,9 @@ pub(super) fn solve<F:FluxDrivenField>(field:&F,old:&[f64],flux:&[f64],p:StepPar
  Err(fail("event native Newton iteration limit"))
 }
 pub(super) fn solve_maintained<F:FluxDrivenField>(field:&ContactField<F,MappedPairLaw>,old:&[f64],flux:&[f64],p:StepParameters<'_>,policy:EventAdvancePolicy)->CaeResult<(Vec<f64>,f64)>{
- let mut x=old.to_vec();let b=field.native().state_size();eprintln!("maintained start gap={} lambda={}",field.law().instantaneous_row(old,p.design)?.1,old[b]);
+ let mut x=old.to_vec();let b=field.native().state_size();
  for _ in 0..policy.maximum_newton_iterations{
-  let physical_r=field.residual(1,&x,old,flux,p)?;let(gap,row)=field.law().gap_current_matrix(&x,p.design)?;let target=policy.residual_tolerance*policy.maintained_gap_target_fraction;let mut r=physical_r.clone();r[b]=gap-target;let merit=norm(&r);eprintln!("maintained Newton gap_scaled={gap} lambda={} merit={merit} originalFB={}",x[b],physical_r[b]);
+  let physical_r=field.residual(1,&x,old,flux,p)?;let(gap,row)=field.law().gap_current_matrix(&x,p.design)?;let target=policy.residual_tolerance*policy.maintained_gap_target_fraction;let mut r=physical_r.clone();r[b]=gap-target;let merit=norm(&r);
   if merit<=policy.residual_tolerance&&norm(&physical_r)<=policy.residual_tolerance&&x[b]>0.{field.check_state_domain(1,&x,old,p)?;return Ok((x,norm(&physical_r)));}
   let a=field.current_jacobian(1,&x,old,flux,p)?.to_csr()?;let row=row.to_csr()?;let(mut ri,mut ci,mut vs)=(vec![],vec![],vec![]);for i in 0..b{let(js,v)=a.row(i);for(&j,&v)in js.iter().zip(v){ri.push(i);ci.push(j);vs.push(v);}}let(js,v)=row.row(0);for(&j,&v)in js.iter().zip(v){ri.push(b);ci.push(j);vs.push(v);}
   let a=CsrMatrix::from_triplets(b+1,b+1,&ri,&ci,&vs).map_err(fail)?.to_csc();let factor=symbolic_for(&a).and_then(|s|s.factor(&a,Parallelism::Sequential)).map_err(fail)?;let mut rhs:Vec<_>=r.iter().map(|r|-r).collect();if policy.maintained_gap_target_fraction==0.&&gap>=0.&&gap<=policy.residual_tolerance{rhs[b]=0.;}let d=factor.solve(&rhs).map_err(fail)?;let mut alpha=field.admissible_step(1,&x,&d,old,p,1.)?;if alpha<=0.{return Err(fail("maintained contact native/path Newton trial refused"));}let mut accepted=None;
@@ -73,12 +73,12 @@ impl MovingFsiModel{
   let flux:Vec<_>=state.lagged_force_n.iter().zip(external_force_n).map(|(a,b)|a+b).collect();let old=&state.solid;let (_,g0)=contact.law().instantaneous_row(old,design)?;if g0< -policy.impact.event_gap_m||old[n]<0.{return Err(fail("event initial contact domain"));}
   let mut event=None;let mut impulse=None;let mut maintained=false;let mut fraction=0.5;let mut pre=old.clone();let mut post=old.clone();
   let (end,residual)=if g0>=0. && contact.law().gap_current_matrix(old,design)?.0<=policy.residual_tolerance && old[n]>0.{maintained=true;solve_maintained(&contact,old,&flux,p,policy)?}else{
-   let(free,r)=solve(native,&old[..n],&flux,p,policy)?;let mut trial=free;trial.push(0.);let(_,g1)=contact.law().instantaneous_row(&trial,design)?;eprintln!("free gap0={g0} gap1={g1}");
+   let(free,r)=solve(native,&old[..n],&flux,p,policy)?;let mut trial=free;trial.push(0.);let(_,g1)=contact.law().instantaneous_row(&trial,design)?;
    if g1>=0.{(trial,r)}else{
     if g0<=0.{return Err(fail("new impact needs a strictly open initial gap"));}
     let(mut lo,mut hi,mut gl,mut gh)=(0.,1.,g0,g1);let mut selected=None;
-    for _ in 0..policy.maximum_localization_iterations{let a=(lo+gl/(gl-gh)*(hi-lo)).clamp(lo+(hi-lo)*0.05,hi-(hi-lo)*0.05);let q=StepParameters{design,time_scale:scale*a};let(x,_)=solve(native,&old[..n],&flux,q,policy)?;let mut x=x;x.push(0.);let(_,g)=contact.law().instantaneous_row(&x,design)?;eprintln!("TOI a={a} gap={g} lo={lo} hi={hi}");if g>=0.&&g<=policy.impact.event_gap_m&&contact.law().check_state_domain(1,&x,old,q).is_ok(){selected=Some((a,x));break;}if g>0.{lo=a;gl=g;}else{hi=a;gh=g;}}
-    let(a,at)=selected.ok_or_else(||fail("native segment impact localization unresolved"))?;fraction=a;pre=at;eprintln!("TOI selected fraction={a} gap={}",contact.law().instantaneous_row(&pre,design)?.1);let time=state.origin_s+a*dt;let jump=self.apply_solid_impact(&pre,&state.fluid,design,scale*a,time,policy.restitution,policy.impact)?;event=Some(time);post=jump.solid;impulse=Some(jump.impulse);
+    for _ in 0..policy.maximum_localization_iterations{let a=(lo+gl/(gl-gh)*(hi-lo)).clamp(lo+(hi-lo)*0.05,hi-(hi-lo)*0.05);let q=StepParameters{design,time_scale:scale*a};let(x,_)=solve(native,&old[..n],&flux,q,policy)?;let mut x=x;x.push(0.);let(_,g)=contact.law().instantaneous_row(&x,design)?;if g>=0.&&g<=policy.impact.event_gap_m&&contact.law().check_state_domain(1,&x,old,q).is_ok(){selected=Some((a,x));break;}if g>0.{lo=a;gl=g;}else{hi=a;gh=g;}}
+    let(a,at)=selected.ok_or_else(||fail("native segment impact localization unresolved"))?;fraction=a;pre=at;let time=state.origin_s+a*dt;let jump=self.apply_solid_impact(&pre,&state.fluid,design,scale*a,time,policy.restitution,policy.impact)?;event=Some(time);post=jump.solid;impulse=Some(jump.impulse);
     let rest=StepParameters{design,time_scale:scale*(1.-a)};let(free,fr)=solve(native,&post[..n],&flux,rest,policy)?;let mut trial=free;trial.push(0.);let(_,gap)=contact.law().instantaneous_row(&trial,design)?;
     if gap>=0.{(trial,fr)}else{if policy.restitution!=0.{return Err(fail("recontact during event remainder needs another localized event"));}maintained=true;solve_maintained(&contact,&post,&flux,rest,policy)?}
    }

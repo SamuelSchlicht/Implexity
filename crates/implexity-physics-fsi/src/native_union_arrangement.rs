@@ -150,6 +150,7 @@ impl SweepPointReceipt {
  pub(crate) fn validate_uv(&self,uv:[f64;2])->Result<(),&'static str>{if self.exact.as_ref().map_err(|e|*e)?.emitted().map(f64::to_bits)!=uv.map(f64::to_bits){return Err("source sweep emitted UV differs");}Ok(())}
  pub(crate) fn barycentric_sign(&self,corner:usize)->Result<i8,&'static str>{self.exact.as_ref().map_err(|e|*e)?.barycentric_sign(corner)}
  pub(crate) fn affine_sign(&self,corners:[f64;3],coordinate:f64)->Result<i8,&'static str>{self.exact.as_ref().map_err(|e|*e)?.affine_sign(corners,coordinate)}
+ pub(crate) fn exact_framed_affine_plane_sign(&self,normal:[f64;3],corners:[[f64;3];3],corner_anchor:[f64;3],origin:[f64;3],origin_anchor:[f64;3],offset:f64)->Result<i8,&'static str>{self.exact.as_ref().map_err(|e|*e)?.exact_framed_affine_plane_sign(normal,corners,corner_anchor,origin,origin_anchor,offset)}
 }
 include!("native_union_arrangement/source_sweep_exact.rs");
 

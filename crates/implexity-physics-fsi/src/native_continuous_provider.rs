@@ -305,7 +305,11 @@ impl CaeProvider for NativeContinuousHistoryProvider {
         p: &ProviderProblem,
         _: Option<&ArrayD<f64>>,
     ) -> CaeResult<Map<String, Value>> {
-        problem_diagnostics(normalized(p)?)
+        let mut info = problem_diagnostics(normalized(p)?)?;
+        info.insert("ok".into(), Value::Bool(true));
+        info.insert("input_document_validation".into(), Value::String("complete".into()));
+        info.insert("physical_initialization".into(), Value::String("pending".into()));
+        Ok(info)
     }
     fn coupling_declaration(&self, problem: Option<&ProviderProblem>) -> Option<CaeResult<Value>> {
         Some((|| {
@@ -390,6 +394,20 @@ impl DesignOperations for NativeContinuousHistoryProvider {
             Ok(implexity_solve::dynamic_program::normalise(&p.document.responses)?.responses())
         }))
     }
+    fn prepare_design(
+        &self,
+        p: &ProviderProblem,
+        d: &NamedArrays,
+    ) -> CaeResult<Map<String, Value>> {
+        let p = normalized(p)?;
+        let controls = Self::controls(p, d)?;
+        let _ = p.problem.physical_design([&controls[0], &controls[1]])?;
+        let mut info = problem_diagnostics(p)?;
+        info.insert("ok".into(), Value::Bool(true));
+        info.insert("input_validation".into(), Value::String("complete".into()));
+        info.insert("physical_initialization".into(), Value::String("pending".into()));
+        Ok(info)
+    }
     fn preflight_design(
         &self,
         p: &ProviderProblem,
@@ -399,7 +417,11 @@ impl DesignOperations for NativeContinuousHistoryProvider {
         let controls = Self::controls(p, d)?;
         let rho = p.problem.physical_design([&controls[0], &controls[1]])?;
         let _ = p.problem.stepper(&rho)?;
-        problem_diagnostics(p)
+        let mut info = problem_diagnostics(p)?;
+        info.insert("ok".into(), Value::Bool(true));
+        info.insert("input_validation".into(), Value::String("complete".into()));
+        info.insert("physical_initialization".into(), Value::String("complete".into()));
+        Ok(info)
     }
     fn evaluate_design(
         &self,

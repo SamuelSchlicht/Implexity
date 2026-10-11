@@ -42,6 +42,7 @@ pub(crate) fn geometry_conditioning_product(values:&[f64])->Option<f64>{
     Some(product)
 }
 pub trait TransientGasScalar: GasMassScalar {
+    fn geometry_has_time_channel() -> bool { false }
     fn supports_parallel_face_evaluation() -> bool { false }
     fn lift_geometry_partial(value: f64, inputs: &[Self], partials: &[f64]) -> CaeResult<Self> {
         if !value.is_finite()

@@ -207,6 +207,15 @@ pub trait DesignOperations: Send + Sync {
     }
 
 
+    fn prepare_design(
+        &self,
+        problem: &ProviderProblem,
+        design: &NamedArrays,
+    ) -> CaeResult<Map<String, Value>> {
+        self.preflight_design(problem, design)
+    }
+
+
     fn preflight_design(
         &self,
         problem: &ProviderProblem,

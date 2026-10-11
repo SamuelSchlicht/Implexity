@@ -4136,7 +4136,7 @@ pub fn run(
         let local0 = if si == start_stage { start_local } else { 0 };
         let preflight =
             match design_operations(provider.as_ref()).filter(|o| o.provides(DesignOp::PreflightDesign)) {
-                Some(ops) => ops.preflight_design(&problem, &designs.owned_design()?)?,
+                Some(ops) => ops.prepare_design(&problem, &designs.owned_design()?)?,
                 None => provider.preflight(&problem, designs.get(&primary))?,
             };
         if !preflight.get("ok").is_none_or(truthy) {
