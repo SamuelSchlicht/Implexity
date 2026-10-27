@@ -6,7 +6,7 @@ The repository front page uses standard GitHub Markdown, relative image paths, a
 
 The page uses native headings and technical prose. Figures have a white background, neutral typography, and labels describing the geometry. There are no promotional headlines, performance callouts, or numbered feature panels.
 
-The opening figure follows a regular TPMS through spatial adaptation into an illustrative cooled component. All states are exported by Implexity with the same camera. Spatial phase, stretch, basis, and thickness controls alter the lattice; implicit geometry operations introduce coolant passages and a partially cut-away roof. The controls are prescribed for this geometry demonstration, not obtained from a physical optimization. Research figures retain the source geometry and material colors.
+The opening figure follows a regular TPMS as it becomes a branching cooled manifold. Implexity exports every state, and Blender renders them from a fixed camera. Local controls change the phase, stretch, TPMS basis, thickness, occupancy, sheet/network blend, and residual field. The outer envelope narrows around curved coolant passages, with collars at the ports. These controls are prescribed to demonstrate the geometry; this is not a physical optimization run. The research figures retain the geometry and colors from the papers.
 
 Figures remain on white in both GitHub themes. Their captions and descriptions are native Markdown. Standard picture elements select rearranged versions at narrow widths so figure labels remain readable. The source-frame animation is inside a collapsed disclosure.
 
@@ -40,7 +40,7 @@ python docs/frontpage/source/morph_models.py morph-states --fine
 blender -b --python docs/frontpage/source/render_morph.py -- morph-states
 ```
 
-Copy the three PNG renders to `source/inputs` and run the layout commands below. NumPy is required for control authoring. For the animation, generate states with `--frames 25`, export them at `--spacing 0.16`, render the sequence, then run `morph_animation.py frames-folder geometry-morph.gif`. Pillow assembles the renders. Forward/reverse playback depicts a prescribed geometry morph, not optimization iterations. The figure uses neutral material appearance; it contains no simulated physical field or performance claim.
+Copy the three PNG renders to `source/inputs` and run the layout commands below. NumPy is required for control authoring. For the animation, generate states with `--frames 25`, export them at `--spacing 0.14`, render the sequence, then run `morph_animation.py frames-folder geometry-morph.gif`. Pillow assembles the renders. Forward/reverse playback depicts a prescribed geometry morph, not optimization iterations. The figure uses neutral material appearance; it contains no simulated physical field or performance claim.
 
 ## Archived periodic specimen
 
