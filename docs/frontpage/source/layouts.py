@@ -26,7 +26,7 @@ save('geometry', '''
 <div class="states">
 <div class="state"><img src="inputs/morph-00.png" alt="Regular gyroid sheet"><div class="label">Periodic TPMS</div></div>
 <div class="state"><img src="inputs/morph-01.png" alt="Warped and graded sheet"><div class="label">Spatial adaptation</div></div>
-<div class="state"><img src="inputs/morph-02.png" alt="Cooled component with exposed interior"><div class="label">Cooled component</div></div>
+<div class="state"><img src="inputs/morph-02.png" alt="Branching cooled manifold with curved passages"><div class="label">Cooled manifold</div></div>
 </div><div class="arrow a">&#8594;</div><div class="arrow b">&#8594;</div>
 </div>''')
 
@@ -66,7 +66,7 @@ save('geometry-mobile', '''
 ''', '''<div class="canvas">
 <div class="state"><img src="inputs/morph-00.png" alt="Regular gyroid sheet"><div class="label">Periodic TPMS</div></div>
 <div class="state"><img src="inputs/morph-01.png" alt="Warped and graded sheet"><div class="label">Spatial adaptation</div></div>
-<div class="state"><img src="inputs/morph-02.png" alt="Cooled component with exposed interior"><div class="label">Cooled component</div></div>
+<div class="state"><img src="inputs/morph-02.png" alt="Branching cooled manifold with curved passages"><div class="label">Cooled manifold</div></div>
 </div>''')
 
 save('scaffold-mobile', '''

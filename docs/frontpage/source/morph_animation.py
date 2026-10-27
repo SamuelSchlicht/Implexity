@@ -12,7 +12,7 @@ for path in sorted(a.frames.glob('morph-*.png')):
     frame=Image.new('RGB',(900,770),'white');frame.paste(render,((900-render.width)//2,0),render)
     d=ImageDraw.Draw(frame)
     d.text((36,726),'Periodic TPMS',fill='#39434a',font=font)
-    d.text((864,726),'Cooled component',fill='#39434a',font=font,anchor='ra')
+    d.text((864,726),'Cooled manifold',fill='#39434a',font=font,anchor='ra')
     frac=len(frames)/24
     d.line((36,710,864,710),fill='#d7dde0',width=2)
     d.ellipse((36+828*frac-4,706,36+828*frac+4,714),fill='#53636e')
