@@ -1,10 +1,10 @@
-# First steps with Implexity
+# Installation and initial model evaluation
 
-The shortest checked route into this source checkout is the command-line implicit geometry workflow. It creates geometry and exports a mesh; it does not reproduce either paper's optimization campaign.
+The command-line geometry workflow provides a direct route from the source checkout to the evaluation of an implicit model and the export of its surface mesh. The following procedure establishes that workflow before introducing the graphical workbench and the study interfaces, through which the corresponding model definition and the physical setup can be developed further.
 
 ## Build the CLI
 
-Install Rust through [rustup](https://rustup.rs/) and your platform's native linker. On Windows, the MSVC Rust toolchain requires the Visual Studio C++ Build Tools and a Windows SDK. On Linux or macOS, use the corresponding native compiler toolchain.
+The compilation requires Rust, installed through [rustup](https://rustup.rs/), together with the native linker for the selected platform. On Windows, the MSVC Rust toolchain requires the Visual Studio C++ Build Tools and a Windows SDK. On Linux or macOS, the corresponding native compiler toolchain provides the required linking environment.
 
 ```sh
 git clone https://github.com/SamuelSchlicht/Implexity.git
@@ -12,13 +12,15 @@ cd Implexity
 cargo build --release --locked -p implexity-cli --bin implexity --no-default-features
 ```
 
-The source pins Rust 1.98.1 in `rust-toolchain.toml`; the workspace declares a minimum Rust version of 1.95. rustup selects the pinned version when invoked in the checkout. For the front-page verification, the CLI was built on Windows with the already-installed Rust 1.99.1 stable toolchain using `cargo +stable` and the same package, binary, release, and feature selection. The pinned toolchain was not separately rebuilt for that verification.
+The repository specifies Rust 1.98.1 in `rust-toolchain.toml`, while the workspace declares a minimum Rust version of 1.95. When the commands are executed within the checkout, rustup selects the pinned toolchain. The package selection, the binary selection, and the feature selection in the build command determine the command-line application that is produced.
 
-`--no-default-features` omits the CLI's optional `dynamic` feature, including the feature-gated FSI registration and dynamic-results support. It retains the static geometry and provider composition used by this walkthrough. Build without that flag when those optional features are needed; that configuration was not part of the front-page smoke check.
+The `--no-default-features` option omits the optional `dynamic` feature of the CLI, including the feature-gated FSI registration and the dynamic-results support. The static geometry and the provider composition used in this walkthrough remain available. Where the optional dynamic functionality is required, the application is built without that flag.
 
 ## Generate and inspect a model
 
-On Linux/macOS:
+The bundled examples are first copied into a local model directory. The selected document can then be inspected through `model show` and evaluated for surface export through `model export`.
+
+On Linux or macOS:
 
 ```sh
 ./target/release/implexity model examples --copy models
@@ -34,25 +36,27 @@ In Windows PowerShell:
 .\target\release\implexity.exe model export models/03_lattice_block.json --node lattice_only --spacing 0.35 -o lattice.stl
 ```
 
-The copy command writes the three bundled example documents into `models`. An explicit copy makes this walkthrough independent of example-discovery paths. Use a fresh destination if you already maintain models there. The lattice example contains a solid skin and a gyroid sheet core; selecting `lattice_only` exports the confined infill. Coordinates and sample spacing are in millimetres.
+The copy command writes the three bundled example documents into `models`, which provides an explicit location from which the subsequent commands obtain their input. A fresh destination can be selected where that directory already contains separately maintained models.
 
-The export smoke check produced a watertight STL with 31,684 triangles at 0.35 mm spacing. That verifies the authoring/export path for this example; it is not a mesh-convergence or performance benchmark. Refine the sampling for the geometric features and downstream analysis you need.
+The lattice-block example combines a solid skin with a gyroid sheet core. The selection of `lattice_only` restricts the exported geometry to the confined infill. The coordinates and the sampling interval are expressed in millimetres; the selected sampling interval therefore determines the resolution at which the implicit surface is reconstructed. Its suitability depends on the dimensions of the geometric features and on the requirements of the subsequent analysis.
 
 ## Open the browser viewer
 
-Run from the repository root:
+The local browser service is started from the repository root:
 
 ```sh
 ./target/release/implexity serve
 ```
 
-On Windows, use `.\target\release\implexity.exe serve`. Open [http://127.0.0.1:8765](http://127.0.0.1:8765) and stop the service with Ctrl+C when finished. The default host is loopback. Use `--port` if another local process occupies that port.
+On Windows, the corresponding command is `.\target\release\implexity.exe serve`. The interface is available at [http://127.0.0.1:8765](http://127.0.0.1:8765), and the service is terminated through Ctrl+C. The default host is the loopback interface. Where the default port is already occupied by another local process, an alternative is specified through `--port`.
 
-Use `serve --workspace ./workspace` to keep authored models and setup in a dedicated writable directory. Follow the [GUI walkthrough](gui.md) for geometry, physics, ageing, optimization, and output controls.
+The command `serve --workspace ./workspace` assigns the authored models and the associated setup to a dedicated writable directory. The [GUI walkthrough](gui.md) describes the geometric definition, the assignment of the physics and the ageing models, and the controls for the optimization and the result inspection.
 
-Without a supplied design, the service starts the **synthetic preview backend**; models authored in the workbench use the implicit geometry document. The command-line geometry JSON workflow above is separate from `--design`, which expects a design `.npz`. Consult `serve --help` for backend options.
+Without a supplied design, the service initializes the **synthetic preview backend**. The models authored within the workbench use the implicit geometry document. The geometry JSON files used by the command-line workflow are distinct from the design `.npz` expected by `--design`; the backend options and their corresponding inputs are documented through `serve --help`.
 
 ## Explore optimization and interfaces
+
+The available diagnostics, model operations, and study commands can be inspected through the following command-line entry points:
 
 ```sh
 ./target/release/implexity doctor
@@ -60,12 +64,20 @@ Without a supplied design, the service starts the **synthetic preview backend**;
 ./target/release/implexity study --help
 ```
 
-Study commands operate the real MCP bridge and accept study plans. They are not an automatic reproduction of the papers. To build the separate bridge executable:
+The study commands operate the MCP bridge and accept study plans that define the corresponding sequence of operations. Their execution requires the relevant study inputs and configuration; the publication-specific optimization campaigns are not reconstructed automatically from the presence of the manuscript or the bundled geometry examples.
+
+The separate bridge executable is built through:
 
 ```sh
 cargo build --release --locked -p implexity-cli --bin implexity-mcp --no-default-features
 ```
 
-That additional binary and a full study run were not part of the front-page smoke check. The CLI help references some documentation and publication-scope files absent from the inspected source snapshot; use the shipped command help and source implementation when following those paths.
+Some documentation and publication-scope paths referenced by the CLI help are absent from the inspected source revision. For those paths, the shipped command help and the source implementation provide the available description of the command interface.
 
-Before interpreting a numerical result, inspect the selected model, inputs, units, constraints, convergence, and extracted geometry. The [method](method.md), [research notes](research.md), and repository [engineering disclaimer](../DISCLAIMER.md) describe the relevant context.
+## Recorded verification scope
+
+The recorded installation check built the CLI on Windows with the already-installed Rust 1.99.1 stable toolchain, using `cargo +stable` with the package, binary, release, and feature selection shown above. The pinned toolchain and the optional dynamic configuration were not separately rebuilt for that check. The additional MCP bridge executable and a complete study execution were also outside its scope.
+
+The lattice export produced a watertight STL containing 31,684 triangles at a sampling interval of 0.35 mm. This result establishes the operation of the model-authoring and surface-export path for the selected example. The appropriate sampling resolution for another geometry remains dependent on its feature dimensions and on the intended downstream evaluation.
+
+The interpretation of a numerical result requires the selected model, the input data, the units, the constraints, the convergence behavior, and the extracted geometry to be considered together. The [method](method.md), the [research notes](research.md), and the repository [engineering disclaimer](../DISCLAIMER.md) provide the corresponding methodological and application context.

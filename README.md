@@ -1,6 +1,6 @@
 # Implexity
 
-Implexity is a Rust framework for topology optimization. It uses coupled physics and material ageing to guide changes to differentiable implicit geometry.
+Implexity is a Rust framework for physics-driven topology optimization in which the differentiable implicit geometry, the coupled physical response, and the evolving material state are considered within a common design formulation. The geometric adaptation is thereby governed by the application-specific physical conditions and by the material properties that emerge under the consideration of ageing.
 
 <picture>
   <source media="(max-width: 600px)" srcset="docs/assets/geometry-mobile.png">
@@ -30,7 +30,7 @@ Locally emerging fields that result from local physical conditions allow to cont
 
 [Direct gradient-based topology optimization of differentiable scaffold geometries under physicochemical ageing](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=7350458)
 
-The scaffold study optimizes the lattice geometry under thermoelastic loading, with physicochemical ageing and surrogate models of tissue deposition and resorption.
+The scaffold study considers the direct optimization of differentiable lattice geometries under thermoelastic loading and physicochemical ageing. The local wall thickness, the lattice phase, and the macroscopic topology are varied under the consideration of the evolving material state, which includes surrogate descriptions of the tissue deposition and the tissue resorption. The resulting geometric adaptation therefore accounts for the interaction between the structural response and the application-dependent changes in the local material properties.
 
 <picture>
   <source media="(max-width: 600px)" srcset="docs/assets/scaffold-study-mobile.png">
@@ -50,7 +50,7 @@ The scaffold study optimizes the lattice geometry under thermoelastic loading, w
 
 [Lifecycle-aware topology optimization of liquid-cooled fusion reactor divertors](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=7596080)
 
-The divertor study couples the heat transfer, the coolant flow, and the mechanical response to design tungsten–CuCrZr structures that account for creep and helium retention.
+The divertor study considers the optimization of implicit tungsten–CuCrZr architectures through the simultaneous consideration of the heat transfer, the coolant flow, and the mechanical response. The effects of Norton creep and helium retention are incorporated into the material history, through which the geometric dependence of the aged thermophysical response contributes to the design gradient. The resulting adaptation concerns both the solid architecture and the corresponding coolant domain.
 
 <picture>
   <source media="(max-width: 600px)" srcset="docs/assets/divertor-study-mobile.png">
@@ -59,7 +59,7 @@ The divertor study couples the heat transfer, the coolant flow, and the mechanic
 
 ## Getting started
 
-Build Implexity with the repository’s [Rust toolchain](rust-toolchain.toml).
+The command-line application is built from the repository using the specified [Rust toolchain](rust-toolchain.toml). The following commands compile the application and copy the bundled model documents into a local directory, from which the implicit geometry can be inspected and exported.
 
 ```sh
 git clone https://github.com/SamuelSchlicht/Implexity.git
@@ -76,29 +76,29 @@ cargo build --release --locked -p implexity-cli --bin implexity --no-default-fea
 ./target/release/implexity serve --workspace ./workspace
 ```
 
-Open the [local workbench](http://127.0.0.1:8765) to build the geometry, set up the physics and the ageing models, and follow an optimization run.
+The [local workbench](http://127.0.0.1:8765) provides access to the geometric description, the physical setup, and the optimization controls within a common graphical interface. The geometry is defined or imported before the physical conditions, the material-history models, and the optimization responses are assigned to the corresponding design problem.
 
 ![The Geometry workspace with the model tree, the viewport tools, and the parameter controls.](docs/assets/gui-geometry.png)
 
 | Workspace | Use |
 | :--- | :--- |
-| Geometry | Create or import the geometry; edit the parameters, the fields, and the design bounds. |
-| Conditions | Select the regions and assign the loads and the boundary conditions. |
-| Physics | Choose the physics, the materials, the couplings, and the ageing laws. |
-| Objectives | Set the responses to optimize and the limits to satisfy. |
-| Optimise | Check the setup, then run, pause, or resume the optimization. |
-| Results | Review the fields, the histories, and the sensitivities from the run. |
+| Geometry | Define or import the geometry and specify the parameters, the spatial control fields, and the admissible design bounds. |
+| Conditions | Select the geometric regions to which the loads and the boundary conditions are to be assigned. |
+| Physics | Specify the physical models, the material descriptions, the inter-model couplings, and the applicable ageing laws. |
+| Objectives | Assign the evaluated responses to the optimization objectives and to the associated response bounds. |
+| Optimise | Review the readiness of the configured problem and control the execution, the interruption, or the continuation of the optimization. |
+| Results | Inspect the recorded physical fields, the material histories, and the design sensitivities associated with the evaluated states. |
 
 <details>
 <summary>Physics and ageing setup</summary>
 
 ![The Physics workspace with the coupled-history and the environmental-ageing add-ins activated.](docs/assets/gui-physics.png)
 
-In **Manage physics add-ins**, choose the models you need. Open each provider’s setup to enter the material data and the history data.
+The required physical components are activated through **Manage physics add-ins**. The corresponding provider setup is then used to specify the material data and the history data through which the selected components are incorporated into the coupled problem.
 
 </details>
 
-Export the meshes, the images, and the sections from **Output**. [GUI walkthrough](docs/gui.md)
+The **Output** menu provides access to the export of the meshes, the rendered images, and the geometric sections. The complete sequence of the geometric definition, the physical setup, and the result inspection is described in the [GUI walkthrough](docs/gui.md).
 
 ## Repository structure
 

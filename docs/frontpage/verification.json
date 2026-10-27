@@ -51,7 +51,7 @@
     "presentation": "Technical prose; neutral geometry views; no specific numerical study values"
   },
   "audit": {
-    "relative_links_checked": 67,
+    "relative_links_checked": 80,
     "broken_relative_links": [],
     "assets": {
       "divertor-study-mobile.png": {
@@ -118,8 +118,8 @@
         "frames": 1
       },
       "README.md": {
-        "bytes": 109,
-        "sha256": "5c281e26be1d71a52929cbd6d51429dcbd903e692ead053c4491d1e860729511"
+        "bytes": 1886,
+        "sha256": "a3babeb67f3399ae9621efe54487da25e7596fbc4899569016da3ecadc5ae89d"
       },
       "scaffold-evolution.gif": {
         "bytes": 3712274,
