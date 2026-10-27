@@ -18,9 +18,9 @@ Implexity is a Rust framework for topology optimization. It uses coupled physics
 
 ## Formulation
 
-A design can be optimized across any number of compatible physics models at once, including their couplings and the effects of ageing.
+A design can be optimized across any number of compatible physics models at once, which includes arbitrary multi-physical couplings and, in particular, the effects of geometry- and material-dependent ageing.
 
-Local fields control the cell shape, the cell spacing, the wall thickness, the topology, and the material distribution. Automatic differentiation and adjoints link these controls to the physical response, including the material’s history.
+Locally emerging fields that result from local physical conditions allow to control the cell shape, the cell spacing, the wall thickness, the topology, and the material distribution. Through automatic differentiation and adjoints, these controls are linked to the specific physical response and the dynamically varying ageing history.
 
 [Method](docs/method.md) · [Research notes](docs/research.md)
 
