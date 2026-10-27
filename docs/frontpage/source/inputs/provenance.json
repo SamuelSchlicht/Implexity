@@ -1,0 +1,127 @@
+{
+  "scaffold_pdf_sha256": "9eb775c279c7e1a697688406c1c139c0832b8c69b19fa318eaf2dc20ec983362",
+  "fusion_pdf_sha256": "86b10581ef1f270a3a4c3eb4664183b312c4600959695d1ea99e413f4e6579bb",
+  "scaffold_figure": {
+    "page": 11,
+    "figure": 6,
+    "image_pixels": [
+      3317,
+      1395
+    ],
+    "crop_boxes": [
+      [
+        96,
+        241,
+        991,
+        543
+      ],
+      [
+        96,
+        663,
+        991,
+        963
+      ],
+      [
+        96,
+        1079,
+        991,
+        1379
+      ]
+    ]
+  },
+  "fusion_panels": {
+    "initial": {
+      "page": 3,
+      "figure": 1,
+      "image_indices": [
+        8,
+        12
+      ]
+    },
+    "final": {
+      "page": 4,
+      "figure": 2,
+      "image_indices": [
+        11,
+        15
+      ]
+    }
+  },
+  "animation": {
+    "page": 11,
+    "figure": 8,
+    "epochs": [
+      0,
+      5,
+      10,
+      15,
+      20,
+      25,
+      30,
+      35,
+      40,
+      45,
+      50,
+      55,
+      60,
+      65,
+      70,
+      75,
+      80,
+      85,
+      90,
+      95,
+      100,
+      105,
+      110,
+      115,
+      120
+    ],
+    "x_intervals": [
+      [
+        17,
+        615
+      ],
+      [
+        660,
+        1258
+      ],
+      [
+        1303,
+        1901
+      ],
+      [
+        1946,
+        2544
+      ],
+      [
+        2589,
+        3186
+      ]
+    ],
+    "y_intervals": [
+      [
+        97,
+        300
+      ],
+      [
+        405,
+        608
+      ],
+      [
+        712,
+        916
+      ],
+      [
+        1020,
+        1223
+      ],
+      [
+        1328,
+        1531
+      ]
+    ],
+    "interpolated_states": false
+  },
+  "processing": "Extraction, cropping, rescaling, and relabelling only. Original geometry and color values retained."
+}
