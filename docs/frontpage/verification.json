@@ -1,0 +1,455 @@
+{
+  "source_commit": "2041dafc9c790fcd51a384ebd8bff3debbf1e37c",
+  "review_date": "2026-10-25",
+  "build": {
+    "platform": "Windows x86_64 MSVC",
+    "rust": "1.99.1 stable",
+    "command": "cargo +stable build --release --locked -p implexity-cli --bin implexity --no-default-features",
+    "result": "passed",
+    "repository_pinned_rust": "1.98.1",
+    "pinned_toolchain_separately_verified": false
+  },
+  "quickstart": {
+    "example_copy": "passed; three model files generated",
+    "model_inspection": "passed",
+    "lattice_export": {
+      "spacing_mm": 0.35,
+      "triangles": 31684,
+      "watertight": true
+    },
+    "viewer": {
+      "backend": "synthetic",
+      "http_status": 200,
+      "test_port": 8876
+    },
+    "full_paper_campaigns_reexecuted": false
+  },
+  "hero_native_export": {
+    "kind": "implicit_export",
+    "units": "mm",
+    "format": "stl",
+    "node": "intersect",
+    "structure_id": "c0bc18dc22574f8f",
+    "content_id": "ca9b2a6ed8650adb",
+    "mode": "exact",
+    "spacing_mm": 0.08,
+    "grid": [
+      305,
+      230,
+      155
+    ],
+    "samples": 10873250,
+    "origin_mm": [
+      -12.16,
+      -9.16,
+      -6.16
+    ],
+    "bbox_mm": [
+      [
+        -12.16,
+        -9.16,
+        -6.16
+      ],
+      [
+        12.16,
+        9.16,
+        6.16
+      ]
+    ],
+    "field_class": {
+      "kind": "BOUND",
+      "k": 1.0
+    },
+    "meshing_note": "cells can be pruned: |f| * 1.0000 > half the cell diagonal proves no surface inside",
+    "cell_diagonal_mm": 0.13856406460551018,
+    "field_range": [
+      -0.10499999999999998,
+      1.994819582835
+    ],
+    "deadband_nodes": 45728,
+    "triangles": 2304928,
+    "vertices": 1152114,
+    "degenerate_dropped": 0,
+    "topology": {
+      "vertices": 1152114,
+      "edges": 3457392,
+      "faces": 2304928,
+      "euler_characteristic": -350,
+      "components": 1,
+      "boundary_edges": 0,
+      "boundary_loops": 0,
+      "nonmanifold_edges": 0,
+      "genus": 176.0
+    },
+    "watertight": true,
+    "volume_mm3": 1098.9252422424338,
+    "area_mm2": 4793.341849913675,
+    "bytes": 115246484
+  },
+  "render": {
+    "blender": "4.5.9 LTS",
+    "samples": 128,
+    "renderer": "Cycles CPU",
+    "render_only_smoothing": {
+      "factor": 0.55,
+      "iterations": 4
+    },
+    "finish": "Neutral diffuse surface and white illumination",
+    "central_section": "Plane intersection of exported STL; closed contours verified"
+  },
+  "frontpage": {
+    "markdown": "GitHub Markdown API; HTTP 200",
+    "preview_stylesheet": "Local approximation of GitHub README styling",
+    "viewports": [
+      {
+        "width": 1440,
+        "height": 1000
+      },
+      {
+        "width": 390,
+        "height": 844
+      }
+    ],
+    "themes": [
+      "dark",
+      "light"
+    ],
+    "javascript_errors": 0,
+    "horizontal_page_overflow": false,
+    "anchor_navigation": "passed",
+    "theme_switch": "passed",
+    "optional_animation_disclosure": "passed",
+    "source_study_animation_frames": 25,
+    "responsive_figure_selection": "Passed in GitHub-rendered Markdown on desktop and mobile",
+    "presentation": "Technical prose; neutral geometry views; no specific numerical study values"
+  },
+  "audit": {
+    "relative_links_checked": 67,
+    "broken_relative_links": [],
+    "assets": {
+      "divertor-study-mobile.png": {
+        "bytes": 340108,
+        "sha256": "4a7817224fbbfa04a06c4e213fbb65c775ad20721554df59a752aefa17d11827",
+        "pixels": [
+          1200,
+          1360
+        ],
+        "frames": 1
+      },
+      "divertor-study.png": {
+        "bytes": 518638,
+        "sha256": "77f806037e0b776828c0054a1e7147daa82941e81de82123c6e0184331668f98",
+        "pixels": [
+          2400,
+          1440
+        ],
+        "frames": 1
+      },
+      "geometry-mobile.png": {
+        "bytes": 1091008,
+        "sha256": "5c8c1877109438ca4a4ad44058c08f9f9c82bf1d493ed6d05c081952c80997ee",
+        "pixels": [
+          1200,
+          2320
+        ],
+        "frames": 1
+      },
+      "geometry-morph.gif": {
+        "bytes": 8459209,
+        "sha256": "856fed3837faab4200da6491815422a49bc1f9ae8b39e595616f86dc6c08c33b",
+        "pixels": [
+          900,
+          770
+        ],
+        "frames": 48
+      },
+      "geometry.png": {
+        "bytes": 908940,
+        "sha256": "294a62f7e33f9c7e245e3ceaf97f2d1d72d6e61b7fcc200cbdc943dd641ab437",
+        "pixels": [
+          2400,
+          840
+        ],
+        "frames": 1
+      },
+      "gui-geometry.png": {
+        "bytes": 88409,
+        "sha256": "8135726dda9ef94cd6c37c680aa7b4043ccadd2408be03008be66abb00c47923",
+        "pixels": [
+          1265,
+          712
+        ],
+        "frames": 1
+      },
+      "gui-physics.png": {
+        "bytes": 92623,
+        "sha256": "e9c15d01498f761232c8083a4484645b6e79564389e881a6d008cd78c8063127",
+        "pixels": [
+          1280,
+          720
+        ],
+        "frames": 1
+      },
+      "README.md": {
+        "bytes": 109,
+        "sha256": "5c281e26be1d71a52929cbd6d51429dcbd903e692ead053c4491d1e860729511"
+      },
+      "scaffold-evolution.gif": {
+        "bytes": 3712274,
+        "sha256": "01dccc4f684e5dec90baa0527f9b62ec81ff8949f0cc8f39177cb1dfc8fc93a4",
+        "pixels": [
+          800,
+          390
+        ],
+        "frames": 25
+      },
+      "scaffold-study-mobile.png": {
+        "bytes": 222353,
+        "sha256": "5a10f0f0b3c1d3f5f1bd054fc6066ebc8f9830480d3fbd51170fadeb15f9ed4a",
+        "pixels": [
+          1200,
+          1660
+        ],
+        "frames": 1
+      },
+      "scaffold-study.png": {
+        "bytes": 144634,
+        "sha256": "56a64f240f520f66326b2e332406d6e8148d9daca634384789d57419216c66b9",
+        "pixels": [
+          2400,
+          528
+        ],
+        "frames": 1
+      }
+    },
+    "frontpage_prose": "No specific numerical values."
+  },
+  "gui": {
+    "service": "Native CLI serve with a dedicated local workspace",
+    "checked": [
+      "Bundled geometry loaded",
+      "Model tree and parameter controls visible",
+      "Physics add-in management",
+      "Coupled-history and environmental-ageing add-ins activated"
+    ],
+    "captures": [
+      "gui-geometry.png",
+      "gui-physics.png"
+    ],
+    "capture_processing": "Unretouched browser screenshots",
+    "physical_solve_or_optimization_executed": false
+  },
+  "geometry_morph": {
+    "kind": "Prescribed native geometry-control morph; not an optimization trajectory",
+    "states": "Periodic gyroid, spatial adaptation, cooled component with partial roof cutaway",
+    "controls": [
+      "spatial phase",
+      "stretch",
+      "basis",
+      "thickness"
+    ],
+    "operations": [
+      "union",
+      "intersection",
+      "difference",
+      "capsule",
+      "box",
+      "translate"
+    ],
+    "renderer": "Blender Workbench; fixed camera; neutral material; render-only smoothing",
+    "comparison_exports": [
+      {
+        "kind": "implicit_export",
+        "units": "mm",
+        "format": "stl",
+        "node": "intersect",
+        "structure_id": "70cea4d5d6e548fe",
+        "content_id": "397a1f217872a754",
+        "mode": "exact",
+        "spacing_mm": 0.1,
+        "grid": [
+          244,
+          164,
+          125
+        ],
+        "samples": 5002000,
+        "origin_mm": [
+          -12.2,
+          -8.2,
+          -6.2
+        ],
+        "bbox_mm": [
+          [
+            -12.2,
+            -8.2,
+            -6.2
+          ],
+          [
+            12.2,
+            8.2,
+            6.2
+          ]
+        ],
+        "field_class": {
+          "kind": "IMPLICIT",
+          "k": 1.0
+        },
+        "meshing_note": "this field is IMPLICIT: no cell can be proven surface-free, so the sampling density is the only thing standing between the extraction and a missed feature",
+        "cell_diagonal_mm": 0.17320508075688773,
+        "field_range": [
+          -0.24258964591835783,
+          3.868342956229996
+        ],
+        "deadband_nodes": 24649,
+        "triangles": 1493780,
+        "vertices": 746564,
+        "degenerate_dropped": 0,
+        "topology": {
+          "vertices": 746564,
+          "edges": 2240670,
+          "faces": 1493780,
+          "euler_characteristic": -326,
+          "components": 1,
+          "boundary_edges": 0,
+          "boundary_loops": 0,
+          "nonmanifold_edges": 0,
+          "genus": 164.0
+        },
+        "watertight": true,
+        "volume_mm3": 977.9065930389951,
+        "area_mm2": 4891.986064530217,
+        "bytes": 74689084,
+        "seconds": 1.981
+      },
+      {
+        "kind": "implicit_export",
+        "units": "mm",
+        "format": "stl",
+        "node": "intersect",
+        "structure_id": "3529e431671ef77e",
+        "content_id": "ee34723568f8ccea",
+        "mode": "exact",
+        "spacing_mm": 0.1,
+        "grid": [
+          244,
+          164,
+          125
+        ],
+        "samples": 5002000,
+        "origin_mm": [
+          -12.2,
+          -8.2,
+          -6.2
+        ],
+        "bbox_mm": [
+          [
+            -12.2,
+            -8.2,
+            -6.2
+          ],
+          [
+            12.2,
+            8.2,
+            6.2
+          ]
+        ],
+        "field_class": {
+          "kind": "IMPLICIT",
+          "k": 1.0
+        },
+        "meshing_note": "this field is IMPLICIT: no cell can be proven surface-free, so the sampling density is the only thing standing between the extraction and a missed feature",
+        "cell_diagonal_mm": 0.17320508075688773,
+        "field_range": [
+          -0.3415041973976628,
+          3.868342956229996
+        ],
+        "deadband_nodes": 43370,
+        "triangles": 1580118,
+        "vertices": 789743,
+        "degenerate_dropped": 0,
+        "topology": {
+          "vertices": 789743,
+          "edges": 2370177,
+          "faces": 1580118,
+          "euler_characteristic": -316,
+          "components": 1,
+          "boundary_edges": 0,
+          "boundary_loops": 0,
+          "nonmanifold_edges": 0,
+          "genus": 159.0
+        },
+        "watertight": true,
+        "volume_mm3": 1312.2253705080082,
+        "area_mm2": 5343.692674446509,
+        "bytes": 79005984,
+        "seconds": 2.069
+      },
+      {
+        "kind": "implicit_export",
+        "units": "mm",
+        "format": "stl",
+        "node": "intersect",
+        "structure_id": "3529e431671ef77e",
+        "content_id": "d53069d1255724ae",
+        "mode": "exact",
+        "spacing_mm": 0.1,
+        "grid": [
+          244,
+          164,
+          125
+        ],
+        "samples": 5002000,
+        "origin_mm": [
+          -12.2,
+          -8.2,
+          -6.2
+        ],
+        "bbox_mm": [
+          [
+            -12.2,
+            -8.2,
+            -6.2
+          ],
+          [
+            12.2,
+            8.2,
+            6.2
+          ]
+        ],
+        "field_class": {
+          "kind": "IMPLICIT",
+          "k": 1.0
+        },
+        "meshing_note": "this field is IMPLICIT: no cell can be proven surface-free, so the sampling density is the only thing standing between the extraction and a missed feature",
+        "cell_diagonal_mm": 0.17320508075688773,
+        "field_range": [
+          -0.49999999999900113,
+          3.868342956229996
+        ],
+        "deadband_nodes": 64441,
+        "triangles": 1481742,
+        "vertices": 740611,
+        "degenerate_dropped": 0,
+        "topology": {
+          "vertices": 740611,
+          "edges": 2222613,
+          "faces": 1481742,
+          "euler_characteristic": -260,
+          "components": 2,
+          "boundary_edges": 0,
+          "boundary_loops": 0,
+          "nonmanifold_edges": 0,
+          "genus": 132.0
+        },
+        "watertight": true,
+        "volume_mm3": 1741.6456424833314,
+        "area_mm2": 5146.657052076637,
+        "bytes": 74087184,
+        "seconds": 2.044
+      }
+    ],
+    "animation_states": 25,
+    "playback": "Forward then reverse, with endpoint holds",
+    "physical_solve_or_optimization_executed": false
+  }
+}
