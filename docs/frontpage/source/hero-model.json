@@ -1,0 +1,197 @@
+{
+  "arrays": {},
+  "doc": "Illustrative implicit geometry, not an optimized design or simulation result. Derived from the bundled lattice block.",
+  "name": "Implexity front-page gyroid specimen",
+  "nodes": {
+    "cells": {
+      "children": [
+        {
+          "name": "phase",
+          "node": "gyroid"
+        }
+      ],
+      "doc": "|gyroid| - wall/2: the sheet lattice, walls of `wall`",
+      "kind": "shell",
+      "params": {
+        "thickness_mm": {
+          "expr": "wall / 2"
+        }
+      },
+      "units": {
+        "thickness_mm": "mm"
+      }
+    },
+    "core": {
+      "children": [
+        {
+          "name": "hull",
+          "node": "hull"
+        }
+      ],
+      "doc": "hull - skin_t.  `offset` is the one operation that preserves EXACT, which is what an exact distance field is FOR",
+      "kind": "offset",
+      "params": {
+        "distance_mm": {
+          "expr": "-skin_t"
+        }
+      },
+      "units": {
+        "distance_mm": "mm"
+      }
+    },
+    "gyroid": {
+      "attrs": {
+        "family": "gyroid",
+        "normalise": "proven"
+      },
+      "children": [],
+      "doc": "the nodal function, divided by the family's proven |grad g| bound -- which is what makes it BOUND",
+      "kind": "tpms",
+      "params": {
+        "level": 0.0,
+        "period_mm": {
+          "bind": "period"
+        }
+      },
+      "units": {
+        "level": "-",
+        "period_mm": "mm"
+      }
+    },
+    "hull": {
+      "children": [],
+      "doc": "the outside shape.  EXACT",
+      "kind": "rounded_box",
+      "params": {
+        "bx_mm": {
+          "expr": "bx / 2"
+        },
+        "by_mm": {
+          "expr": "by / 2"
+        },
+        "bz_mm": {
+          "expr": "bz / 2"
+        },
+        "radius_mm": {
+          "bind": "corner_r"
+        }
+      },
+      "units": {
+        "bx_mm": "mm",
+        "by_mm": "mm",
+        "bz_mm": "mm",
+        "radius_mm": "mm"
+      }
+    },
+    "infill": {
+      "children": [
+        {
+          "name": "core",
+          "node": "core"
+        },
+        {
+          "name": "cells",
+          "node": "cells"
+        }
+      ],
+      "doc": "the lattice, confined to the core.  max of two BOUND fields is BOUND",
+      "kind": "intersect",
+      "params": {
+        "k_scale": 1.0
+      },
+      "units": {
+        "k_scale": "-"
+      }
+    },
+    "part": {
+      "children": [
+        {
+          "name": "skin",
+          "node": "skin"
+        },
+        {
+          "name": "infill",
+          "node": "infill"
+        }
+      ],
+      "doc": "skin + infill: the cooled block",
+      "kind": "union",
+      "params": {
+        "k_scale": 1.0
+      },
+      "units": {
+        "k_scale": "-"
+      }
+    },
+    "skin": {
+      "children": [
+        {
+          "name": "hull",
+          "node": "hull"
+        },
+        {
+          "name": "core",
+          "node": "core"
+        }
+      ],
+      "doc": "the solid outer wall: hull with the core removed",
+      "kind": "difference",
+      "params": {
+        "k_scale": 1.0
+      },
+      "units": {
+        "k_scale": "-"
+      }
+    }
+  },
+  "outputs": {
+    "lattice_only": "infill"
+  },
+  "parameters": {
+    "bx": {
+      "units": "mm",
+      "value": 24
+    },
+    "by": {
+      "units": "mm",
+      "value": 18
+    },
+    "bz": {
+      "units": "mm",
+      "value": 12
+    },
+    "corner_r": {
+      "units": "mm",
+      "value": 1.8
+    },
+    "period": {
+      "doc": "gyroid unit cell",
+      "max": 12.0,
+      "min": 2.0,
+      "units": "mm",
+      "value": 6
+    },
+    "skin_t": {
+      "doc": "solid skin thickness",
+      "max": 4.0,
+      "min": 0.4,
+      "units": "mm",
+      "value": 0.4
+    },
+    "wall": {
+      "doc": "the sheet wall, derived -- edit `period` and it follows",
+      "expr": "period * wall_frac",
+      "units": "mm"
+    },
+    "wall_frac": {
+      "doc": "sheet wall as a fraction of the cell",
+      "max": 0.6,
+      "min": 0.01,
+      "units": "-",
+      "value": 0.035
+    }
+  },
+  "root": "infill",
+  "schema": "implexity-model/1",
+  "units": "mm"
+}

@@ -1,0 +1,23 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>divertor</title><style>
+*{box-sizing:border-box}html,body{margin:0;padding:0}
+body{font-family:Arial,Helvetica,sans-serif;color:#39434a}
+.canvas{width:1200px;position:relative;overflow:hidden;background:#fff}
+.label{font-size:23px;font-weight:400;line-height:1.3}
+img{display:block;object-fit:contain}
+
+.canvas{height:720px}
+.column{position:absolute;top:25px;font-size:24px}.initial-label{left:288px}.final-label{left:754px}
+.row{position:absolute;left:28px;font-size:24px;line-height:1.45}.row span{display:block;font-size:18px;color:#66717a}.solid-label{top:197px}.coolant-label{top:475px}
+img{position:absolute;width:404px;height:284px}.solid{top:68px}.coolant{top:354px}.initial{left:215px}.final{left:676px}
+.legend{position:absolute;left:288px;bottom:30px;display:flex;gap:36px;font-size:21px;align-items:center}
+.legend span{display:flex;gap:10px;align-items:center}.swatch{width:13px;height:13px;background:#555a63}.swatch.cu{background:#b9bdc2}.swatch.water{background:#3985dc}
+</style><body><div class="canvas">
+<div class="column initial-label">Initial architecture</div><div class="column final-label">Ageing-aware design</div>
+<div class="row solid-label">Solid<span>Half-section</span></div>
+<div class="row coolant-label">Coolant<span>Complete volume</span></div>
+<img class="solid initial" src="inputs/initial-solid.png" alt="Initial solid">
+<img class="solid final" src="inputs/final-solid.png" alt="Optimized solid">
+<img class="coolant initial" src="inputs/initial-coolant.png" alt="Initial coolant volume">
+<img class="coolant final" src="inputs/final-coolant.png" alt="Optimized coolant volume">
+<div class="legend"><span><i class="swatch"></i>W</span><span><i class="swatch cu"></i>CuCrZr</span><span><i class="swatch water"></i>Coolant</span></div>
+</div></body></html>
