@@ -105,6 +105,9 @@ pub fn checked_batch(
         out.responses.insert(name.clone(), value);
         let packed = layout.repack(&raw.gradients[name], &format!("provider derivative {name}"))?;
         out.gradients.insert(name.clone(), packed);
+        if let Some(field) = raw.descent.get(name) {
+            out.descent.insert(name.clone(), layout.repack(field, &format!("provider descent field {name}"))?);
+        }
     }
     Ok(out)
 }

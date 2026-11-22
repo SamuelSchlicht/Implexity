@@ -5601,6 +5601,84 @@
             ],
             "description": "Positive cross-family update scaling. Omission defaults to gradient_adaptive alpha=0.5; global_max remains available explicitly. gradient_adaptive interpolates with alpha between shared and per-family bound-gradient RMS (0.5 is recommended); family_balanced is alpha=1. Provider step scales are not cancelled. Move limits, coordinate boxes and the exact line search remain authoritative."
           },
+          "descent_flow": {
+            "default": {
+              "mode": "augmented_lagrangian"
+            },
+            "oneOf": [
+              {
+                "enum": [
+                  "augmented_lagrangian",
+                  "null_space"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "schema": {
+                    "const": "implexity-descent-flow/1"
+                  },
+                  "mode": {
+                    "enum": [
+                      "augmented_lagrangian",
+                      "null_space"
+                    ]
+                  },
+                  "range_fraction": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 1
+                  },
+                  "merit_penalty": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "active_tolerance": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "deflation": {
+                    "type": "object",
+                    "required": [
+                      "references"
+                    ],
+                    "properties": {
+                      "references": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {
+                          "type": "object"
+                        }
+                      },
+                      "radius": {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      "weight": {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "directions": {
+                    "enum": [
+                      "steepest",
+                      "conjugate",
+                      "quasi_newton"
+                    ]
+                  },
+                  "memory": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 50
+                  }
+                },
+                "additionalProperties": false
+              }
+            ],
+            "description": "Treatment of the response constraints in the descent. augmented_lagrangian (default) adds soft penalties. null_space moves the design tangentially to the manifold of the active constraints and returns it with a Gauss-Newton step; its directions are the descent fields of the geometry design metric (descent_metric of the geometry design map) or, without one, the box metric. Multipliers per epoch equal the derivative of the optimal objective with respect to each constraint level. deflation removes known optima (references) from the landscape. directions selects the search field of null_space: steepest (default), conjugate (Polak-Ribiere with restarts) or quasi_newton (limited-memory secant update with memory pairs, default 5)."
+          },
           "design_coordinates": {
             "type": "array",
             "minItems": 1,

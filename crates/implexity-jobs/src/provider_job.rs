@@ -1013,7 +1013,13 @@ impl ScalarContext {
             gradients.insert(name.clone(), NamedArrays::single("model:control", row.gradient));
             diagnostics.insert(name, Value::Object(row.diagnostics));
         }
-        Ok(ExactPoint { design: NamedArrays::single("model:control", array), values, gradients, diagnostics })
+        Ok(ExactPoint {
+            design: NamedArrays::single("model:control", array),
+            values,
+            gradients,
+            diagnostics,
+            descent: BTreeMap::new(),
+        })
     }
 
     fn values(&self, design: &NamedArrays) -> SearchResult<TrialValues> {
@@ -1277,6 +1283,7 @@ fn scalar_point(x: &ArrayD<f64>, evaluation: &implexity_optim::optimizer::Object
         values,
         gradients,
         diagnostics: evaluation.diagnostics.clone(),
+        descent: BTreeMap::new(),
     }
 }
 

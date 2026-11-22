@@ -1537,6 +1537,18 @@ impl ModelOptimizeManager {
             req.get("update_metric").filter(|v| !v.is_null()).or_else(|| cae.get("update_metric")).cloned();
         let update_metric = crate::stage_search::normalise_update_metric(raw_update_metric.as_ref())
             .map_err(|e| JobError::optimize1(format!("native optimizer update metric: {}", e.message())))?;
+        let raw_descent_flow = req
+            .get("descent_flow")
+            .filter(|v| !v.is_null())
+            .or_else(|| cae.get("descent_flow").filter(|v| !v.is_null()))
+            .cloned();
+        let descent_flow = match &raw_descent_flow {
+            Some(raw) => Some(
+                implexity_optim::descent_flow::normalise_descent_flow(Some(raw))
+                    .map_err(|e| JobError::optimize1(format!("native optimizer descent flow: {}", e.message())))?,
+            ),
+            None => None,
+        };
 
         let preflight = (|| -> JobResult<Map<String, Value>> {
             if let Some(result) = crate::provider_hooks::with_hooks(provider.as_ref(), |h| {
@@ -1811,6 +1823,9 @@ impl ModelOptimizeManager {
         digest_payload
             .insert("coordinate_mask_sources".into(), Value::Object(coordinate_mask_sources.clone()));
         digest_payload.insert("update_metric".into(), Value::Object(update_metric.clone()));
+        if let Some(flow) = &descent_flow {
+            digest_payload.insert("descent_flow".into(), Value::Object(flow.clone()));
+        }
         digest_payload.insert("topology_masks".into(), Value::Object(masks.clone()));
         if let Some(e) = &epoch_fields {
             digest_payload.insert("epoch_fields".into(), Value::Object(e.clone()));
@@ -1872,6 +1887,9 @@ impl ModelOptimizeManager {
         js.insert("coordinate_masks".into(), Value::Object(coordinate_masks));
         js.insert("coordinate_mask_sources".into(), Value::Object(coordinate_mask_sources.clone()));
         js.insert("update_metric".into(), Value::Object(update_metric.clone()));
+        if let Some(flow) = &descent_flow {
+            js.insert("descent_flow".into(), Value::Object(flow.clone()));
+        }
         js.insert("solve_id".into(), json!(solve_id));
         js.insert("topology_coordinate".into(), json!("model:control"));
         js.insert("topology_source_ref".into(), json!(source_ref));
@@ -1937,6 +1955,9 @@ impl ModelOptimizeManager {
             ("coordinate_files", Value::Object(coordinate_files)),
         ] {
             fields.insert(k.into(), v);
+        }
+        if let Some(flow) = descent_flow {
+            fields.insert("descent_flow".into(), Value::Object(flow));
         }
         let meta = JobMeta {
             fields,

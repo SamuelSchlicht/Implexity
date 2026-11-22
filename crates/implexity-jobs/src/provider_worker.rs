@@ -1228,6 +1228,7 @@ fn sensitivity_in_effort_scope(
     let named = ops.is_some_and(|o| {
         o.provides(DesignOp::SensitivityDesign) || o.provides(DesignOp::SensitivitiesDesign)
     });
+    let mut descent_by_response: BTreeMap<String, NamedArrays> = BTreeMap::new();
     let (values, gradients_by_response, diagnostics): (
         BTreeMap<String, f64>,
         BTreeMap<String, NamedArrays>,
@@ -1235,6 +1236,7 @@ fn sensitivity_in_effort_scope(
     ) = if named {
         let out =
             crate::solver_recovery::once("provider_sensitivity", || implexity_optim::native_design::batch_sensitivities(provider, problem, design, &responses, 0))?;
+        descent_by_response = out.descent;
         (out.responses, out.gradients, out.diagnostics)
     } else if design.names() == ["model:control"] && !batched {
         let response = &responses[0];
@@ -1328,6 +1330,23 @@ fn sensitivity_in_effort_scope(
                 summary.insert("component_fields".into(), serde_json::json!(names));
             }
             summaries.insert(coordinate.clone(), Value::Object(summary));
+            if let Some(field) = descent_by_response.get(response).and_then(|d| d.get(coordinate)) {
+                let descent_name = if coordinate == "model:control" {
+                    format!("{response}__descent_dmodel_control")
+                } else {
+                    format!("{response}__descent_dcoordinate_{i:03}")
+                };
+                let mut meta = Map::new();
+                meta.insert("shape".into(), serde_json::json!(field.shape()));
+                meta.insert("rank".into(), Value::String("scalar".into()));
+                meta.insert("units".into(), Value::String(format!("response/{coordinate} (design metric)")));
+                meta.insert("signed".into(), Value::Bool(true));
+                meta.insert("response".into(), Value::String(response.clone()));
+                meta.insert("parameter".into(), Value::String(coordinate.clone()));
+                meta.insert("source".into(), Value::String("geometry_descent_metric".into()));
+                field_meta.insert(descent_name.clone(), Value::Object(meta));
+                arrays.insert(descent_name, field.clone());
+            }
         }
         let mut artifact = Value::Null;
         if let Some(root) = request.get("artifact_root").filter(|v| implexity_core::pyobj::truthy(v)) {

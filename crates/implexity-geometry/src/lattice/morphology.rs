@@ -85,6 +85,27 @@ fn extremum_sources(values: &[f64], shape: [usize; 3], offsets: &[[i64; 3]], min
     out
 }
 
+#[must_use]
+pub fn ball_offsets_tight(spacing: [f64; 3], radius: f64) -> Vec<[i64; 3]> {
+    let reach = radius;
+    let bound = reach * reach * (1.0 + 1e-9);
+    #[allow(clippy::cast_possible_truncation)]
+    let counts: [i64; 3] = std::array::from_fn(|a| (reach / spacing[a] + 1e-12).floor() as i64);
+    let mut out = Vec::new();
+    for i in -counts[0]..=counts[0] {
+        for j in -counts[1]..=counts[1] {
+            for k in -counts[2]..=counts[2] {
+                #[allow(clippy::cast_precision_loss)]
+                let [x, y, z] = [i as f64 * spacing[0], j as f64 * spacing[1], k as f64 * spacing[2]];
+                if x * x + y * y + z * z <= bound {
+                    out.push([i, j, k]);
+                }
+            }
+        }
+    }
+    out
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Opening {
     pub source: Vec<usize>,
@@ -94,11 +115,21 @@ impl Opening {
 
     #[must_use]
     pub fn new(values: &[f64], shape: [usize; 3], spacing: [f64; 3], radius: f64) -> Self {
-        let offsets = ball_offsets(spacing, radius);
-        let eroded_source = extremum_sources(values, shape, &offsets, true);
+        Self::with_offsets(values, shape, &ball_offsets(spacing, radius))
+    }
+
+    #[must_use]
+    pub fn with_offsets(values: &[f64], shape: [usize; 3], offsets: &[[i64; 3]]) -> Self {
+        let eroded_source = extremum_sources(values, shape, offsets, true);
         let eroded: Vec<f64> = eroded_source.iter().map(|s| values[*s]).collect();
-        let dilated_source = extremum_sources(&eroded, shape, &offsets, false);
+        let dilated_source = extremum_sources(&eroded, shape, offsets, false);
         Self { source: dilated_source.iter().map(|s| eroded_source[*s]).collect() }
+    }
+
+    #[must_use]
+    pub fn closing(values: &[f64], shape: [usize; 3], spacing: [f64; 3], radius: f64) -> Self {
+        let complement: Vec<f64> = values.iter().map(|v| 1.0 - v).collect();
+        Self::with_offsets(&complement, shape, &ball_offsets_tight(spacing, radius))
     }
 
     #[must_use]

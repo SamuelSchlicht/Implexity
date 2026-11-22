@@ -124,6 +124,7 @@ pub struct DesignSensitivities {
     pub responses: BTreeMap<String, f64>,
     pub gradients: BTreeMap<String, NamedArrays>,
     pub diagnostics: Map<String, Value>,
+    pub descent: BTreeMap<String, NamedArrays>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

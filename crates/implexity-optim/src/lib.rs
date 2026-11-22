@@ -34,6 +34,7 @@ pub mod bounds;
 pub mod candidate_events;
 pub mod constraint_admission;
 pub mod coordinate_bounds;
+pub mod descent_flow;
 pub mod design;
 pub mod design_freedom;
 pub mod design_state;

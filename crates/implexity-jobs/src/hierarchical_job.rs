@@ -100,6 +100,7 @@ use crate::provider_worker::{
 use crate::stage_search::{
     StageCoordinate, StageResponseProgram, StageSearch, StageSearchHooks, normalise_update_metric, point_key,
 };
+use implexity_optim::descent_flow::normalise_descent_flow;
 
 pub const CHECKPOINT_SCHEMA: &str = "implexity-hierarchical-provider-checkpoint/4";
 pub const HISTORY_SCHEMA: &str = "implexity-hierarchical-provider-history/4";
@@ -156,7 +157,7 @@ const HISTORY_REQUIRED_FIELDS: [&str; 49] = [
     "coordinate_updates",
     "diagnostics",
 ];
-const ENGINE_OPTIONAL_FIELDS: [&str; 8] = [
+const ENGINE_OPTIONAL_FIELDS: [&str; 9] = [
     "step_policy",
     "numerical_trial_rejections",
     "numerical_rejections",
@@ -165,6 +166,7 @@ const ENGINE_OPTIONAL_FIELDS: [&str; 8] = [
     "armijo",
     "accepted_value_max_relative_difference",
     "numerical_recovery",
+    "descent_flow",
 ];
 const HISTORY_OPTIONAL_FIELDS: [&str; 6] =
     ["reason", "adaptive", "candidate_admission", "candidate_admission_attempts", "continuation_source", "diagnostic_responses"];
@@ -2002,6 +2004,9 @@ fn matching_time_public_config(config: &Map<String, Value>) -> CaeResult<Option<
 fn matching_time_fingerprint_spec(spec: &Map<String, Value>) -> CaeResult<Value> {
     let mut out = spec.clone();
     out.insert("update_metric".into(), Value::Object(normalise_update_metric(spec.get("update_metric"))?));
+    if spec.get("descent_flow").is_some_and(|v| !v.is_null()) {
+        out.insert("descent_flow".into(), Value::Object(normalise_descent_flow(spec.get("descent_flow"))?));
+    }
     if let Some(rows) = spec.get("design_coordinates").filter(|v| !v.is_null()) {
         let Some(rows) = rows.as_array().filter(|r| r.iter().all(Value::is_object)) else {
             return contract("design_coordinates must be a sequence of mappings");
@@ -2892,6 +2897,7 @@ impl StageExact {
         let owned = design.owned_design()?;
         let mut values = BTreeMap::new();
         let mut gradients = BTreeMap::new();
+        let mut descent = BTreeMap::new();
         let mut per_point = Vec::new();
         for point in self.program.points.clone() {
             let raw = crate::solver_recovery::once("provider_sensitivity", || design_sensitivities(
@@ -2928,6 +2934,17 @@ impl StageExact {
                     })?;
                     g.insert(coordinate, row.clone());
                 }
+                if let Some(fields) = raw.descent.get(name) {
+                    let mut d = NamedArrays::new();
+                    for (coordinate, _) in owned.iter() {
+                        if let Some(row) = fields.get(coordinate) {
+                            d.insert(coordinate, row.clone());
+                        }
+                    }
+                    if d.len() == owned.len() {
+                        descent.insert(key.clone(), d);
+                    }
+                }
                 gradients.insert(key, g);
             }
         }
@@ -2944,7 +2961,7 @@ impl StageExact {
             response_path_consistency(&self.program, declaration.as_ref(), primal_values, &values)?;
         }
         self.primal = None;
-        Ok(ExactPoint { design: owned, values, gradients, diagnostics })
+        Ok(ExactPoint { design: owned, values, gradients, diagnostics, descent })
     }
 
     fn values(&mut self, design: &NamedArrays) -> SearchResult<TrialValues> {
@@ -3147,8 +3164,7 @@ impl StageSearchHooks for StageHooks {
         }
         let exact = Rc::clone(&self.exact);
         let (closure_names, closure_shapes) = (names.clone(), shapes.clone());
-        let program = search.program.clone();
-        let bound_state = search.bound_state.clone();
+        let merit = search.merit_state();
         let exact_fn: ExactEvaluateFn = Box::new(move |target: &ArrayD<f64>| {
             let design = unflatten(&closure_names, &closure_shapes, target)?;
             let evaluated = exact.borrow_mut().values(&design);
@@ -3161,7 +3177,7 @@ impl StageSearchHooks for StageHooks {
                 }
             };
             exact.borrow_mut().exact_values.push(values.clone());
-            let total = program.aggregate(&values, &bound_state)?.total;
+            let total = merit.evaluate(&values, Some(&design))?;
             Ok(ArrayD::from_elem(IxDyn(&[1]), total))
         });
         let spans: NamedArrays =
@@ -3350,6 +3366,7 @@ struct Run {
     projector: Projector,
     step_scales: BTreeMap<String, f64>,
     update_metric: Map<String, Value>,
+    descent_flow: Map<String, Value>,
     responses: Vec<ResponseSpec>,
     response_normalization: Option<Value>,
     normalization_active: bool,
@@ -3499,6 +3516,7 @@ impl Run {
             program,
             self.step_scales.clone(),
             self.update_metric.clone(),
+            &self.descent_flow,
             self.search_settings.clone(),
             stage_coordinates(point_designs, &self.bounds, &self.coordinate_masks, &context.active),
             point,
@@ -3696,6 +3714,8 @@ pub fn run(
         _ => return Err(JobError::contract("hierarchical job solve_id must be non-empty text")),
     };
     let update_metric = normalise_update_metric(spec.get("update_metric"))?;
+    let descent_flow = normalise_descent_flow(spec.get("descent_flow"))?;
+    let declared_flow = spec.get("descent_flow").is_some_and(|v| !v.is_null());
     let mut coordinate_masks = coordinate_designable_masks(spec.get("coordinate_masks"), &designs)?;
     let matching = matching_time_config(spec)?;
     if !matching.is_empty() {
@@ -3890,6 +3910,7 @@ pub fn run(
         projector: projector.clone(),
         step_scales: step_scales.clone(),
         update_metric: update_metric.clone(),
+        descent_flow: descent_flow.clone(),
         responses: responses.clone(),
         response_normalization: response_normalization.clone(),
         normalization_active,
@@ -4566,6 +4587,9 @@ pub fn run(
                 result.insert("status".into(), Value::String(op));
                 result.insert("history".into(), Value::Array(history.clone()));
                 result.insert("update_metric".into(), Value::Object(update_metric.clone()));
+                if declared_flow {
+                    result.insert("descent_flow".into(), Value::Object(descent_flow.clone()));
+                }
                 result.insert("coordinate_step_scales".into(), step_scales_value(&step_scales, &coords));
                 result.insert("run_fingerprint".into(), Value::String(run_fingerprint.clone()));
                 result
@@ -4619,6 +4643,9 @@ pub fn run(
     summary.insert("topology_coordinate".into(), Value::String(primary.clone()));
     summary.insert("design_coordinates".into(), strings(&coords));
     summary.insert("update_metric".into(), Value::Object(update_metric.clone()));
+    if declared_flow {
+        summary.insert("descent_flow".into(), Value::Object(descent_flow.clone()));
+    }
     summary.insert("coordinate_step_scales".into(), step_scales_value(&step_scales, &coords));
     summary
         .insert("stages".into(), Value::Array(stages.iter().map(|s| Value::String(s.id.clone())).collect()));

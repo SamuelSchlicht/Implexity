@@ -988,6 +988,7 @@ fn sensitivities_design(
     Ok(DesignSensitivities {
         responses: values,
         gradients,
+        descent: Default::default(),
         diagnostics: obj(json!({"notes": DESIGN_NOTES, "physical_qualification": false,
             "adjoint": "discrete history adjoint (implexity_ad::scan::scan_adjoint)",
             "derivative_scope": "discrete_history_exact", "peak_stored_states": peaks})),
@@ -1026,6 +1027,7 @@ fn sensitivities_periodic(m: &Mapped, responses: &[String]) -> Result<DesignSens
     Ok(DesignSensitivities {
         responses: out_values,
         gradients,
+        descent: Default::default(),
         diagnostics: obj(json!({"notes": DESIGN_NOTES, "physical_qualification": false,
             "derivative_scope": "periodic_orbit_exact", "regime": periodic.regime(),
             "adjoint": "periodic adjoint of the orbit, including the period dependence of autonomous orbits (implexity_solve::periodic)",

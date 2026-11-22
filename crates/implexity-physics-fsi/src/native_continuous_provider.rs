@@ -502,6 +502,7 @@ impl DesignOperations for NativeContinuousHistoryProvider {
         Ok(DesignSensitivities {
             responses,
             gradients,
+            descent: Default::default(),
             diagnostics: r.evaluation.diagnostics,
         })
     }

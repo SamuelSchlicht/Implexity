@@ -1550,7 +1550,7 @@ impl IndependentProviderEnsemble {
         for (k, v) in merged {
             diag.insert(k, v);
         }
-        Ok(DesignSensitivities { responses: values, gradients, diagnostics: diag })
+        Ok(DesignSensitivities { responses: values, gradients, diagnostics: diag, descent: Default::default() })
     }
 
     fn lifecycle_config(&self) -> CaeResult<OptimizerLifecycleConfig> {

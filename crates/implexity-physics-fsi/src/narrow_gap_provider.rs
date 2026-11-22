@@ -814,6 +814,7 @@ impl DesignOperations for NarrowGapProvider {
         Ok(DesignSensitivities {
             responses,
             gradients,
+            descent: Default::default(),
             diagnostics: diagnostics(),
         })
     }

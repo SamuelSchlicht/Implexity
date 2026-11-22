@@ -381,7 +381,7 @@ impl FsiDynamicProvider {
         diagnostics.insert("derivative_scope".into(), json!(grad.derivative_scope));
         diagnostics.insert("authoritative".into(), json!(grad.authoritative));
         diagnostics.insert("adjoint_certificate".into(), grad.certificate);
-        Ok(DesignSensitivities { responses: values, gradients: out, diagnostics })
+        Ok(DesignSensitivities { responses: values, gradients: out, diagnostics, descent: Default::default() })
     }
 }
 

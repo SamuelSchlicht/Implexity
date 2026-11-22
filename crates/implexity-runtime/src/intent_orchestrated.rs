@@ -440,6 +440,7 @@ impl IntentOrchestratedProvider {
                         }))
                     }
                     ExecutionOutput::Sensitivities(s) => {
+                        let descent = mapping.pullback_descent_batch(design, &s.gradients)?.unwrap_or_default();
                         let mut gradients = BTreeMap::new();
                         for (k, g) in s.gradients {
                             gradients.insert(k, mapping.pullback(design, &g)?);
@@ -448,6 +449,7 @@ impl IntentOrchestratedProvider {
                             responses: s.responses,
                             gradients,
                             diagnostics: reframe(&s.diagnostics)?,
+                            descent,
                         }))
                     }
                     _ => Err(contract("mapped sensitivity requires named complete gradients")),

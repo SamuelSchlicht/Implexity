@@ -791,6 +791,7 @@ impl AlgebraicOrchestratedProvider {
         Ok(DesignSensitivities {
             responses: names.iter().cloned().zip(vals).collect(),
             gradients,
+            descent: Default::default(),
             diagnostics,
         })
     }

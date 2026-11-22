@@ -50,5 +50,9 @@ thiserror = { workspace = true }
 workspace = true
 
 [lib]
-test = false
+test = true
 doctest = false
+
+[[test]]
+name = "descent_regressions"
+path = "tests/descent_regressions.rs"

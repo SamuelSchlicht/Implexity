@@ -412,6 +412,7 @@ impl ControlledAssembly {
             fixed_regions: self.fixed_regions.clone(),
             frozen_geometry: None,
             minimum_wall_mm: None,
+            minimum_gap_mm: None,
         };
         lattice_like
             .doc_attrs()

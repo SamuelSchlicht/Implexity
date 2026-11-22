@@ -459,6 +459,7 @@ impl DesignOperations for NarrowGapLbmProvider {
         Ok(DesignSensitivities {
             responses,
             gradients,
+            descent: Default::default(),
             diagnostics: diagnostics(),
         })
     }

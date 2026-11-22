@@ -36,6 +36,7 @@ use crate::bounds::{
     bound_program_identity, lookup, update_bound_multipliers,
 };
 use crate::candidate_events::CandidateAdmission;
+use crate::descent_flow::{DescentFlow, Directions, Manifold, SecantMemory, manifold as constraint_manifold};
 use crate::numeric::float_value;
 use crate::response_program::measurement_names;
 use crate::search::{
@@ -496,20 +497,55 @@ pub struct StageSearch {
     pub consecutive_stalls: i64,
     pub accepted_since_update: i64,
     pub current: SearchPoint,
+    pub descent_flow: DescentFlow,
+    pub manifold: Option<Manifold>,
+    conjugate: Option<ConjugateState>,
+    conjugate_beta: f64,
+    secant: Option<SecantMemory>,
+    direction_fallback: bool,
     iteration: i64,
+}
+
+#[derive(Debug, Clone)]
+struct ConjugateState {
+    search: NamedArrays,
+    tangent: NamedArrays,
+    norm2: f64,
+    active: Vec<usize>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MeritState {
+    program: StageResponseProgram,
+    bound_state: BoundMultiplierState,
+    descent_flow: DescentFlow,
+    manifold: Option<Manifold>,
+    coordinates: Vec<StageCoordinate>,
+}
+
+impl MeritState {
+    pub fn evaluate(&self, values: &BTreeMap<String, f64>, design: Option<&NamedArrays>) -> CaeResult<f64> {
+        match &self.manifold {
+            Some(m) => m.merit_of(&self.descent_flow, &self.program, &self.bound_state, &self.coordinates, values, design),
+            None => Ok(self.program.aggregate(values, &self.bound_state)?.total),
+        }
+    }
 }
 
 impl StageSearch {
 
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         program: StageResponseProgram,
         step_scales: BTreeMap<String, f64>,
         update_metric: Map<String, Value>,
+        descent_flow: &Map<String, Value>,
         settings: CoordinateOptimizationSettings,
         coordinates: Vec<StageCoordinate>,
         initial_point: ExactPoint,
         state: SearchState,
     ) -> CaeResult<Self> {
+        let descent_flow = DescentFlow::from_wire(descent_flow)?;
         if state.step_policy != settings.step_policy { return contract("checkpoint step policy differs from optimization settings"); }
         if state.bound_state.program != bound_program_identity(&program.expanded) {
             return contract("response-bound multiplier state belongs to another response program");
@@ -520,6 +556,10 @@ impl StageSearch {
             gradients: NamedArrays::new(),
             terms: Vec::new(),
             base_objective: 0.0,
+        };
+        let secant = match descent_flow.directions {
+            Directions::QuasiNewton { memory } => Some(SecantMemory::new(memory)),
+            Directions::Steepest | Directions::Conjugate => None,
         };
         let mut search = Self {
             program,
@@ -534,9 +574,15 @@ impl StageSearch {
             consecutive_stalls: state.consecutive_stalls,
             accepted_since_update: state.accepted_since_update,
             current: placeholder,
+            descent_flow,
+            manifold: None,
+            conjugate: None,
+            conjugate_beta: 0.0,
+            secant,
+            direction_fallback: false,
             iteration: 0,
         };
-        search.current = search.combine(initial_point)?;
+        search.set_current(initial_point)?;
         Ok(search)
     }
 
@@ -573,6 +619,29 @@ impl StageSearch {
 
 
     pub fn combine(&self, point: ExactPoint) -> CaeResult<SearchPoint> {
+        Ok(self.combine_with_manifold(point)?.0)
+    }
+
+    pub fn set_current(&mut self, point: ExactPoint) -> CaeResult<()> {
+        let (current, manifold) = self.combine_with_manifold(point)?;
+        self.current = current;
+        self.manifold = manifold;
+        Ok(())
+    }
+
+    fn combine_with_manifold(&self, point: ExactPoint) -> CaeResult<(SearchPoint, Option<Manifold>)> {
+        if self.descent_flow.null_space() {
+            let m = constraint_manifold(&self.descent_flow, &self.program, &self.bound_state, &self.coordinates, &point)?;
+            let terms = self.program.aggregate(&point.values, &self.bound_state)?.terms;
+            let current = SearchPoint {
+                point,
+                total: m.merit,
+                gradients: m.merit_gradient.clone(),
+                terms,
+                base_objective: m.objective,
+            };
+            return Ok((current, Some(m)));
+        }
         let combined = self.program.aggregate(&point.values, &self.bound_state)?;
         let mut grads = NamedArrays::new();
         for c in &self.coordinates {
@@ -598,18 +667,39 @@ impl StageSearch {
         if grads.iter().any(|(_, g)| g.iter().any(|v| !v.is_finite())) {
             return contract("nonfinite aggregate response derivative");
         }
-        Ok(SearchPoint {
-            point,
-            total: combined.total,
-            gradients: grads,
-            terms: combined.terms,
-            base_objective: combined.base,
-        })
+        Ok((
+            SearchPoint {
+                point,
+                total: combined.total,
+                gradients: grads,
+                terms: combined.terms,
+                base_objective: combined.base,
+            },
+            None,
+        ))
     }
 
 
     pub fn trial_objective(&self, values: &BTreeMap<String, f64>) -> CaeResult<f64> {
-        Ok(self.program.aggregate(values, &self.bound_state)?.total)
+        self.trial_merit(values, None)
+    }
+
+    pub fn trial_merit(&self, values: &BTreeMap<String, f64>, design: Option<&NamedArrays>) -> CaeResult<f64> {
+        match &self.manifold {
+            Some(m) => m.merit_of(&self.descent_flow, &self.program, &self.bound_state, &self.coordinates, values, design),
+            None => Ok(self.program.aggregate(values, &self.bound_state)?.total),
+        }
+    }
+
+    #[must_use]
+    pub fn merit_state(&self) -> MeritState {
+        MeritState {
+            program: self.program.clone(),
+            bound_state: self.bound_state.clone(),
+            descent_flow: self.descent_flow.clone(),
+            manifold: self.manifold.clone(),
+            coordinates: self.coordinates.clone(),
+        }
     }
 
 
@@ -630,6 +720,23 @@ impl StageSearch {
 
     #[must_use]
     pub fn projected_gradient(&self) -> (NamedArrays, f64) {
+        if let Some(m) = &self.manifold {
+            let mut out = NamedArrays::new();
+            let mut norm = 0.0_f64;
+            for c in &self.coordinates {
+                let span = c.span();
+                let Some(t) = m.tangent.get(&c.name) else { continue };
+                let data: Vec<f64> = t
+                    .iter()
+                    .zip(span.iter().zip(c.designable.iter()))
+                    .map(|(t, (s, d))| if *d && *s > 0.0 { t / s } else { 0.0 })
+                    .collect();
+                let p = ArrayD::from_shape_vec(t.raw_dim(), data).unwrap_or_else(|_| ArrayD::zeros(t.raw_dim()));
+                norm = norm.max(p.iter().fold(0.0_f64, |a, v| a.max(v.abs())));
+                out.insert(c.name.clone(), p);
+            }
+            return (out, norm);
+        }
         let mut out = NamedArrays::new();
         let mut norm = 0.0_f64;
         for c in &self.coordinates {
@@ -658,6 +765,59 @@ impl StageSearch {
             out.insert(c.name.clone(), pg);
         }
         (out, norm)
+    }
+
+    fn conjugate_search(&mut self) -> CaeResult<NamedArrays> {
+        let Some(m) = &self.manifold else { return Ok(self.projected_gradient().0) };
+        let tangent = m.tangent.clone();
+        let norm2 = m.pairing(&m.lagrangian_gradient, &tangent)?;
+        let mut search = tangent.clone();
+        let mut beta = 0.0;
+        if let Some(previous) = self.conjugate.as_ref().filter(|p| p.norm2 > 0.0 && p.active == m.active) {
+            let overlap = m.pairing(&m.lagrangian_gradient, &previous.tangent)?;
+            let candidate_beta = ((norm2 - overlap) / previous.norm2).max(0.0);
+            if candidate_beta > 0.0 && candidate_beta.is_finite() {
+                let carried = m.project(&previous.search)?;
+                let mut candidate = NamedArrays::new();
+                for (name, t) in tangent.iter() {
+                    let c = carried.get(name).map_or_else(|| t.clone(), |p| t + &(p * candidate_beta));
+                    candidate.insert(name.to_string(), c);
+                }
+                if m.pairing(&m.lagrangian_gradient, &candidate)? > 0.0 {
+                    search = candidate;
+                    beta = candidate_beta;
+                }
+            }
+        }
+        self.conjugate = Some(ConjugateState { search: search.clone(), tangent, norm2, active: m.active.clone() });
+        self.conjugate_beta = beta;
+        Ok(self.box_normalised(&search))
+    }
+
+    fn quasi_newton_search(&mut self) -> CaeResult<NamedArrays> {
+        let (Some(m), Some(secant)) = (&self.manifold, self.secant.as_mut()) else {
+            return Ok(self.projected_gradient().0);
+        };
+        let search = secant.search(m, &self.current.point.design)?;
+        Ok(self.box_normalised(&search))
+    }
+
+    fn box_normalised(&self, field: &NamedArrays) -> NamedArrays {
+        let mut out = NamedArrays::new();
+        for c in &self.coordinates {
+            let span = c.span();
+            let Some(u) = field.get(&c.name) else { continue };
+            let data: Vec<f64> = u
+                .iter()
+                .zip(span.iter().zip(c.designable.iter()))
+                .map(|(u, (s, d))| if *d && *s > 0.0 { u / s } else { 0.0 })
+                .collect();
+            out.insert(
+                c.name.clone(),
+                ArrayD::from_shape_vec(u.raw_dim(), data).unwrap_or_else(|_| ArrayD::zeros(u.raw_dim())),
+            );
+        }
+        out
     }
 
     #[must_use]
@@ -693,7 +853,7 @@ impl StageSearch {
         )?;
         self.bound_state = state;
         self.accepted_since_update = 0;
-        self.current = self.combine(self.current.point.clone())?;
+        self.set_current(self.current.point.clone())?;
         let mut record = record;
         if let Value::Object(m) = &mut record {
             m.insert("objective_after".into(), float_value(self.current.total));
@@ -723,6 +883,21 @@ impl StageSearch {
             .collect();
         let denominators =
             coordinate_update_denominators(&effective, &bounded, &active, &self.update_metric, &masks)?;
+        if self.manifold.is_some() {
+            // Coordinate-wise scaling after projection changes the null space.
+            // Use the most restrictive requested scale for the entire vector.
+            let factor = active
+                .iter()
+                .filter(|n| projected.get(n).is_some_and(|p| p.iter().any(|v| *v != 0.0)))
+                .filter_map(|n| denominators.get(n).filter(|d| **d > 0.0).map(|d| scale(n) / d))
+                .reduce(f64::min)
+                .unwrap_or(0.0);
+            self.last_denominators = active
+                .iter()
+                .map(|n| (n.clone(), if factor > 0.0 { 1.0 / factor } else { 0.0 }))
+                .collect();
+            return Ok(projected.iter().map(|(n, p)| (n.to_string(), p * -factor)).collect());
+        }
         self.last_denominators = denominators.clone();
         let mut out = NamedArrays::new();
         for (name, value) in projected.iter() {
@@ -745,6 +920,10 @@ impl StageSearch {
         step: f64,
     ) -> CaeResult<NamedArrays> {
         let current = &self.current.point.design;
+        let from_current = source.arrays_equal(current);
+        if self.manifold.is_some() {
+            return self.null_space_trial(hooks, source, direction, step, from_current);
+        }
         let mut raw = NamedArrays::new();
         for c in &self.coordinates {
             let (Some(src), Some(cur), Some(dir)) =
@@ -773,6 +952,79 @@ impl StageSearch {
                 .map_err(|_| CaeError::contract(format!("trial design shape of {} drifted", c.name)))?;
             raw.insert(c.name.clone(), moved);
         }
+        hooks.project(current, raw)
+    }
+
+    fn null_space_trial(
+        &self,
+        hooks: &mut dyn StageSearchHooks,
+        source: &NamedArrays,
+        direction: &NamedArrays,
+        step: f64,
+        from_current: bool,
+    ) -> CaeResult<NamedArrays> {
+        let current = &self.current.point.design;
+        let nominal_step = f(self.settings.step_fraction).min(f(self.settings.move_limit));
+        let reference_step = if from_current { nominal_step } else { step };
+        let mut displacement = NamedArrays::new();
+        let mut limit = f64::INFINITY;
+        for c in &self.coordinates {
+            let (Some(src), Some(cur), Some(dir)) = (
+                source.get(&c.name),
+                current.get(&c.name),
+                direction.get(&c.name),
+            ) else {
+                return contract(format!("trial design omits coordinate {}", c.name));
+            };
+            let span = c.span();
+            let move_limit =
+                self.step_scales.get(&c.name).copied().unwrap_or(1.0) * f(self.settings.move_limit);
+            let range = self
+                .manifold
+                .as_ref()
+                .filter(|_| from_current)
+                .and_then(|m| m.range.get(&c.name))
+                .cloned()
+                .unwrap_or_else(|| ArrayD::zeros(cur.raw_dim()));
+            let mut delta = ArrayD::zeros(cur.raw_dim());
+            for ((((((dv, s), x), d), sp), ((lo, hi), des)), r) in delta
+                .iter_mut()
+                .zip(src)
+                .zip(cur)
+                .zip(dir)
+                .zip(&span)
+                .zip(c.lower.iter().zip(&c.upper).zip(&c.designable))
+                .zip(&range)
+            {
+                if !*des {
+                    continue;
+                }
+                *dv = s - x + reference_step * d * sp + self.descent_flow.range_fraction * r;
+                if *dv != 0.0 {
+                    let available = if *dv > 0.0 { hi - x } else { x - lo };
+                    limit = limit.min(available.max(0.0) / dv.abs());
+                    limit = limit.min(move_limit * sp / dv.abs());
+                }
+            }
+            displacement.insert(c.name.clone(), delta);
+        }
+        // Limit the full reference update by one scalar, then backtrack both
+        // its tangent and restoration parts. Component-wise clipping would
+        // destroy tangency and clipping after backtracking could repeat trials.
+        let fraction = if from_current {
+            (limit.min(1.0) * step / nominal_step).min(limit)
+        } else {
+            limit.min(1.0)
+        };
+        let raw = displacement
+            .iter()
+            .map(|(name, delta)| {
+                let x = current.get(name).ok_or_else(|| {
+                    CaeError::contract(format!("trial design omits coordinate {name}"))
+                })?;
+                Ok((name.to_string(), x + &(delta * fraction)))
+            })
+            .collect::<CaeResult<NamedArrays>>()?;
         hooks.project(current, raw)
     }
 
@@ -891,7 +1143,7 @@ impl StageSearch {
         };
         log.evaluations += 1;
         log.consecutive_numerical = 0;
-        let total = self.trial_objective(&values)?;
+        let total = self.trial_merit(&values, Some(trial))?;
         if self.settings.step_policy == "fixed_step" && !total.is_finite() { return Err(CaeError::convergence("candidate objective is not finite")); }
         if self.settings.step_policy == "backtracking" && (total.is_nan() || total > bound) {
             log.armijo_rejections += 1;
@@ -1100,6 +1352,9 @@ impl StageSearch {
                     RowKind::stopped("converged"),
                 );
             }
+            if self.descent_flow.null_space() {
+                break pg;
+            }
             let at_limit = updates
                 .last()
                 .and_then(|u| u.get("violating_penalties_at_limit"))
@@ -1120,12 +1375,42 @@ impl StageSearch {
             stationary_updates += 1;
         };
         let start = start_stationarity.unwrap_or(Value::Null);
+        let pg = match self.descent_flow.directions {
+            Directions::Conjugate if self.manifold.is_some() => self.conjugate_search()?,
+            Directions::QuasiNewton { .. } if self.manifold.is_some() => self.quasi_newton_search()?,
+            _ => pg,
+        };
+        let accelerated = match self.descent_flow.directions {
+            Directions::Conjugate => self.conjugate_beta > 0.0,
+            Directions::QuasiNewton { .. } => self.secant.as_ref().is_some_and(|s| s.pairs_used > 0),
+            Directions::Steepest => false,
+        };
         let direction = self.direction(&pg)?;
         let (mut step, mut found) = self.line_search(hooks, &direction, &mut log)?;
+        self.direction_fallback = false;
+        if accelerated
+            && found.is_none()
+            && self.settings.step_policy == "backtracking"
+            && log.consecutive_numerical < MAX_CONSECUTIVE_NUMERICAL_REJECTIONS
+        {
+            self.conjugate = None;
+            self.conjugate_beta = 0.0;
+            if let Some(secant) = self.secant.as_mut() {
+                secant.clear(false);
+            }
+            let (pg, _) = self.projected_gradient();
+            let direction = self.direction(&pg)?;
+            (step, found) = self.line_search(hooks, &direction, &mut log)?;
+            self.direction_fallback = true;
+        }
         if self.settings.step_policy == "backtracking" && found.is_none() && !log.rejections.is_empty() {
 
             if let Some((point, record)) = hooks.recover(self)? {
-                self.current = self.combine(point)?;
+                self.set_current(point)?;
+                self.conjugate = None;
+                if let Some(secant) = self.secant.as_mut() {
+                    secant.clear(true);
+                }
                 self.trust_step = f64::min(f(self.settings.step_fraction), f(self.settings.move_limit));
                 let (pg, _) = self.projected_gradient();
                 let direction = self.direction(&pg)?;
@@ -1165,11 +1450,12 @@ impl StageSearch {
                     ..TrialInfo::default()
                 },
             )?;
-            self.current = self.combine(point)?;
+            self.set_current(point)?;
             self.consecutive_stalls = 0;
             self.accepted_since_update += 1;
             self.trust_step = if self.settings.step_policy == "fixed_step" { step } else { f64::min(f(self.settings.move_limit), step * f(self.settings.step_growth)) };
-            if !self.bound_state.multipliers.is_empty()
+            if !self.descent_flow.null_space()
+                && !self.bound_state.multipliers.is_empty()
                 && !self.feasible()?
                 && self.accepted_since_update >= self.settings.multiplier_update_interval
             {
@@ -1187,8 +1473,13 @@ impl StageSearch {
         }
         self.trust_step =
             f64::min(f(self.settings.move_limit), f64::max(f(self.settings.minimum_step_fraction), step));
+        self.conjugate = None;
+        if let Some(secant) = self.secant.as_mut() {
+            secant.clear(false);
+        }
         let mut reason = None;
-        if !self.bound_state.multipliers.is_empty()
+        if !self.descent_flow.null_space()
+            && !self.bound_state.multipliers.is_empty()
             && !self.feasible()?
             && self.consecutive_stalls + 1 < MAX_CONSECUTIVE_STALLS
         {
@@ -1254,6 +1545,24 @@ impl StageSearch {
             })
             .collect();
         row.insert("bound_multipliers".into(), Value::Array(multipliers));
+        if let Some(m) = &self.manifold {
+            let mut record = m.to_value(&self.coordinates);
+            if let Value::Object(r) = &mut record {
+                match (&self.descent_flow.directions, &self.secant) {
+                    (Directions::Conjugate, _) => {
+                        r.insert("conjugate_beta".into(), float_value(self.conjugate_beta));
+                    }
+                    (Directions::QuasiNewton { .. }, Some(secant)) => {
+                        r.insert("quasi_newton".into(), secant.to_value());
+                    }
+                    _ => {}
+                }
+                if self.direction_fallback {
+                    r.insert("direction_fallback".into(), Value::Bool(true));
+                }
+            }
+            row.insert("descent_flow".into(), record);
+        }
         row.insert("multiplier_updates".into(), Value::Array(updates.to_vec()));
         row.insert("trial_evaluations".into(), Value::from(log.evaluations));
         row.insert("step_policy".into(), Value::String(self.settings.step_policy.clone()));
@@ -1320,7 +1629,17 @@ impl StageSearch {
             return contract("search recorded convergence that its final state does not support");
         }
         let mut bounds = Map::new();
-        bounds.insert("treatment".into(), Value::String("soft_augmented_lagrangian_response_bounds".into()));
+        bounds.insert(
+            "treatment".into(),
+            Value::String(
+                if self.descent_flow.null_space() {
+                    "null_space_descent_on_the_constraint_manifold"
+                } else {
+                    "soft_augmented_lagrangian_response_bounds"
+                }
+                .into(),
+            ),
+        );
         bounds.insert("tolerance".into(), float_value(tolerance));
         bounds.insert("satisfied_within_tolerance".into(), Value::Bool(feasible));
         bounds.insert("max_scaled_violation".into(), float_value(measures.max_scaled_violation));

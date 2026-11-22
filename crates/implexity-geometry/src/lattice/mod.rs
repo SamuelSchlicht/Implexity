@@ -30,6 +30,7 @@ pub mod assembly;
 pub mod component_field;
 pub mod config;
 pub mod controls;
+pub mod descent;
 pub mod enrichment;
 pub mod freeze;
 pub mod initialization;

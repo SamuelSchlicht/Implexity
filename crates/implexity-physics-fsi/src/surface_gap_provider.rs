@@ -388,6 +388,7 @@ impl DesignOperations for SurfaceGapHistoryProvider {
         Ok(DesignSensitivities {
             responses,
             gradients,
+            descent: Default::default(),
             diagnostics: r.evaluation.diagnostics,
         })
     }

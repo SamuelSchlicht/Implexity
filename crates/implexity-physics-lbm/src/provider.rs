@@ -361,7 +361,7 @@ impl LbmOperations for LatticeBoltzmannProvider {
             g.insert(COORDINATE, array(gradient, &p.shape())?);
             gradients.insert(name.clone(), g);
         }
-        Ok(DesignSensitivities { responses: out_values, gradients, diagnostics: s.diagnostics })
+        Ok(DesignSensitivities { responses: out_values, gradients, diagnostics: s.diagnostics, descent: Default::default() })
     }
 
     fn admission_value(&self, problem: &Value, candidate: &Design) -> CaeResult<Map<String, Value>> {

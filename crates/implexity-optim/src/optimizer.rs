@@ -595,6 +595,15 @@ pub fn design_sensitivities(
             ))));
         }
         out.gradients.insert(name.clone(), layout.repack(rows, &format!("provider derivative {name}"))?);
+        if let Some(field) = raw.descent.get(name) {
+            if trial && field.iter().any(|(_, a)| a.iter().any(|v| !v.is_finite())) {
+                return Err(SearchError::Trial(TrialFailure::NonFinite(format!(
+                    "provider descent field for {} is not finite",
+                    repr_str(name)
+                ))));
+            }
+            out.descent.insert(name.clone(), layout.repack(field, &format!("provider descent field {name}"))?);
+        }
     }
     Ok(out)
 }
@@ -699,7 +708,7 @@ impl<'a> DesignHooks<'a> {
             }
             gradients.insert(name.clone(), checked);
         }
-        Ok(ExactPoint { design: owned, values, gradients, diagnostics: raw.diagnostics })
+        Ok(ExactPoint { design: owned, values, gradients, diagnostics: raw.diagnostics, descent: raw.descent })
     }
 }
 
@@ -839,6 +848,7 @@ impl<'a> ArrayHooks<'a> {
             values,
             gradients,
             diagnostics,
+            descent: BTreeMap::new(),
         })
     }
 }

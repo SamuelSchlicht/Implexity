@@ -31,6 +31,7 @@ use rayon::prelude::*;
 
 use crate::error::{GResult, GeometryError};
 use crate::lattice::config::{Channels, LatticeConfig};
+use crate::lattice::descent::{self, DescentMetric, LogitMetric};
 use crate::lattice::controls::{CHANNEL_SLICES, Controls};
 use crate::lattice::numerics::{
     Grids, Interp, box_blur3, box_blur3_t, cumintegrate, cumintegrate_t, grad_center, grad_center_t,
@@ -937,8 +938,84 @@ impl SynthState {
     }
 
 
-    #[allow(clippy::too_many_lines)]
     pub fn vjp_with(&self, adj: &FieldAdjoints, extra: &ExtraAdjoints) -> GResult<Vec<f64>> {
+        let comp_adj = self.component_cell_adjoints(adj, extra)?;
+        let nctl = self.grids.n_control();
+        let parts: Vec<(usize, Vec<f64>)> = comp_adj
+            .par_iter()
+            .enumerate()
+            .filter(|(_, v)| !v.is_empty())
+            .map(|(c, v)| (c, self.interp.transpose(v)))
+            .collect();
+        let mut out = vec![0.0; 20 * nctl];
+        for (c, v) in parts {
+            out[c * nctl..(c + 1) * nctl].copy_from_slice(&v);
+        }
+        Ok(out)
+    }
+
+    #[must_use]
+    pub fn control_nodes(&self) -> (usize, Vec<f64>) {
+        (self.grids.n_control(), descent::node_weights(&self.interp, self.grids.cells()))
+    }
+
+    pub fn descent_with(
+        &self,
+        adj: &FieldAdjoints,
+        extra: &ExtraAdjoints,
+        metric: &DescentMetric,
+    ) -> GResult<Vec<f64>> {
+        let comp_adj = self.component_cell_adjoints(adj, extra)?;
+        let cells = self.grids.cells();
+        let nctl = self.grids.n_control();
+        let weights = descent::node_weights(&self.interp, cells);
+        let spacing = descent::control_spacing(&self.grids);
+        let zero = vec![0.0; cells];
+        let arho = adj.rho.as_deref().unwrap_or(&zero);
+        let am = extra.mtilde.as_deref().unwrap_or(&zero);
+        let beta_mask = self.opts.beta_mask;
+        let mut out = vec![0.0; 20 * nctl];
+        for (c, field) in comp_adj.iter().enumerate() {
+            if field.is_empty() || metric.fixed.contains(&c) {
+                continue;
+            }
+            let node = match c {
+                0 if metric.thickness == LogitMetric::Fisher => {
+                    let natural: Vec<f64> = field
+                        .iter()
+                        .enumerate()
+                        .map(|(i, v)| v / descent::logistic_slope(self.ic[0].get(i).copied().unwrap_or(0.0)))
+                        .collect();
+                    descent::lumped(&self.interp, &weights, &natural)
+                }
+                1 if metric.occupancy == LogitMetric::Fisher => {
+                    let natural: Vec<f64> = (0..cells)
+                        .map(|i| (arho[i] * self.fields.rho_lat[i] + am[i]) / beta_mask)
+                        .collect();
+                    descent::lumped(&self.interp, &weights, &natural)
+                }
+                2..=7 => descent::dirichlet_riesz(
+                    self.grids.nc,
+                    spacing,
+                    &weights,
+                    metric.phase_length_mm * 1e-3, // control spacing is in metres
+                    &self.interp.transpose(field),
+                )?,
+                _ => descent::lumped(&self.interp, &weights, field),
+            };
+            let scale = if c == 1 { metric.occupancy_mobility } else { 1.0 };
+            for (o, v) in out[c * nctl..(c + 1) * nctl].iter_mut().zip(&node) {
+                *o = scale * v;
+            }
+        }
+        if !out.iter().all(|v| v.is_finite()) {
+            return Err(GeometryError::Value("nonfinite lattice descent field".into()));
+        }
+        Ok(out)
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn component_cell_adjoints(&self, adj: &FieldAdjoints, extra: &ExtraAdjoints) -> GResult<Vec<Vec<f64>>> {
         let g = &self.grids;
         let cells = g.cells();
         let n = g.n;
@@ -1132,18 +1209,7 @@ impl SynthState {
         if ch.residual {
             comp_adj[18] = acol(12);
         }
-        let nctl = g.n_control();
-        let parts: Vec<(usize, Vec<f64>)> = comp_adj
-            .par_iter()
-            .enumerate()
-            .filter(|(_, v)| !v.is_empty())
-            .map(|(c, v)| (c, self.interp.transpose(v)))
-            .collect();
-        let mut out = vec![0.0; 20 * nctl];
-        for (c, v) in parts {
-            out[c * nctl..(c + 1) * nctl].copy_from_slice(&v);
-        }
-        Ok(out)
+        Ok(comp_adj)
     }
 }
 

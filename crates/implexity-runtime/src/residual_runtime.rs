@@ -1037,7 +1037,7 @@ impl CompositeOrchestratedProvider {
             let column: Vec<f64> = (0..d).map(|i| adj.gradients.data[i * m + j]).collect();
             gradients.insert(name.clone(), p.layout.unpack(&column)?);
         }
-        Ok(DesignSensitivities { responses: values, gradients, diagnostics })
+        Ok(DesignSensitivities { responses: values, gradients, diagnostics, descent: Default::default() })
     }
 
     fn lifecycle_config(&self) -> CaeResult<OptimizerLifecycleConfig> {

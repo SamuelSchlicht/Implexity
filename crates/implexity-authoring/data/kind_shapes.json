@@ -137,7 +137,8 @@
         "fixed_regions",
         "geometry_grid",
         "frozen_geometry",
-        "minimum_wall_mm"
+        "minimum_wall_mm",
+        "minimum_gap_mm"
       ],
       "struct": [
         "control_schema",

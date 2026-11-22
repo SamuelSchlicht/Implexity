@@ -1804,6 +1804,7 @@ fn sensitivities_design(
     Ok(DesignSensitivities {
         responses: values,
         gradients,
+        descent: Default::default(),
         diagnostics: obj(json!({"notes": kind.notes(), "physical_qualification": false})),
     })
 }

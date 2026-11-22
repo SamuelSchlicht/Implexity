@@ -42,7 +42,8 @@ use crate::lattice::enrichment::{PARAMETER as DETAIL_PARAMETER, ResidualEnrichme
 use crate::lattice::freeze::FrozenGeometry;
 use crate::lattice::morphology::Opening;
 use crate::lattice::numerics::{Grids, build_grids, trilerp_at, trilerp_const};
-use crate::lattice::synth::{FieldAdjoints, SynthOptions, SynthState, synthesize};
+use crate::lattice::descent::{self, COMPONENTS, DescentMetric, MaterialMetric, PullbackMetric, SparseRow, TransportOperator};
+use crate::lattice::synth::{ExtraAdjoints, FieldAdjoints, SynthOptions, SynthState, synthesize};
 use crate::node::{
     Attr, ConstructArgs, EvalCtx, Kernel, KernelBox, KernelInputs, KindInfo, Node, NodeOp, ParamSpec,
     Prepared,
@@ -261,6 +262,7 @@ pub struct LatticeSpec {
     pub fixed_regions: Vec<FixedRegion>,
     pub frozen_geometry: Option<FrozenGeometry>,
     pub minimum_wall_mm: Option<f64>,
+    pub minimum_gap_mm: Option<f64>,
 }
 
 pub const LATTICE_STRUCT: [&str; 15] = [
@@ -287,6 +289,7 @@ pub struct GeometryFields {
     gate_rho: Vec<f64>,
     gate_phase: Vec<f64>,
     opening: Option<(Opening, Vec<f64>)>,
+    closing: Option<(Opening, Vec<f64>)>,
     state: SynthState,
 }
 
@@ -298,20 +301,27 @@ impl GeometryFields {
 
 
     pub fn vjp(&self, adj_rho: &[f64], adj_phase: &[f64]) -> GResult<Vec<f64>> {
+        self.state.vjp(&self.synthesis_adjoints(adj_rho, adj_phase)?)
+    }
+
+    pub fn descent(&self, adj_rho: &[f64], adj_phase: &[f64], metric: &DescentMetric) -> GResult<Vec<f64>> {
+        self.state.descent_with(&self.synthesis_adjoints(adj_rho, adj_phase)?, &ExtraAdjoints::default(), metric)
+    }
+
+    fn synthesis_adjoints(&self, adj_rho: &[f64], adj_phase: &[f64]) -> GResult<FieldAdjoints> {
         let n = self.rho.len();
         if adj_rho.len() != n || adj_phase.len() != n {
             return Err(GeometryError::Value("field adjoint does not match the geometry grid".into()));
         }
         let mut rho: Vec<f64> = adj_rho.iter().zip(&self.gate_rho).map(|(a, g)| a * g).collect();
+        if let Some((closing, gate)) = &self.closing {
+            rho = closing.transpose(&rho).iter().zip(gate).map(|(a, g)| a * g).collect();
+        }
         if let Some((opening, gate)) = &self.opening {
             rho = opening.transpose(&rho).iter().zip(gate).map(|(a, g)| a * g).collect();
         }
         let phase: Vec<f64> = adj_phase.iter().zip(&self.gate_phase).map(|(a, g)| a * g).collect();
-        self.state.vjp(&FieldAdjoints {
-            rho: Some(rho),
-            phase_fraction: Some(phase),
-            ..FieldAdjoints::default()
-        })
+        Ok(FieldAdjoints { rho: Some(rho), phase_fraction: Some(phase), ..FieldAdjoints::default() })
     }
 }
 
@@ -350,6 +360,7 @@ impl LatticeSpec {
         let beta_phase = scalar(attrs, "beta_phase", 8.0)?;
         let beta_topology = scalar(attrs, "beta_topology", 8.0)?;
         let minimum_wall = attrs.remove("minimum_wall_mm");
+        let minimum_gap = attrs.remove("minimum_gap_mm");
         if origin.len() != 3
             || domain.len() != 3
             || !origin.iter().chain(&domain).all(|v| v.is_finite())
@@ -402,6 +413,7 @@ impl LatticeSpec {
             fixed_regions,
             frozen_geometry,
             minimum_wall_mm: None,
+            minimum_gap_mm: None,
         };
         let mut spec = spec;
         let gs = spec.geometry_shape();
@@ -428,6 +440,25 @@ impl LatticeSpec {
                 if w < max_cell {
                     return model_err(
                         "minimum_wall_mm is below one geometry cell; refine geometry_grid explicitly rather than silently drop the wall guarantee",
+                    );
+                }
+                Some(w)
+            }
+        };
+        spec.minimum_gap_mm = match minimum_gap {
+            None | Some(Attr::Null) => None,
+            Some(a) => {
+                const MSG: &str = "minimum_gap_mm must be a positive finite length or null";
+                if matches!(a, Attr::Bool(_)) {
+                    return model_err(MSG);
+                }
+                let w = py_float(&a).or_else(|_| model_err(MSG))?;
+                if !(w.is_finite() && w > 0.0) {
+                    return model_err(MSG);
+                }
+                if w < 2.0 * min_cell {
+                    return model_err(
+                        "minimum_gap_mm is below two geometry cells; refine geometry_grid explicitly rather than silently drop the gap guarantee",
                     );
                 }
                 Some(w)
@@ -536,6 +567,21 @@ impl LatticeSpec {
         } else {
             None
         };
+        let closing = if let Some(gap) = self.minimum_gap_mm {
+            let spacing_mm: [f64; 3] = std::array::from_fn(|a| grids.spacing[a] * 1000.0);
+            let closing = Opening::closing(&rho, self.geometry_shape(), spacing_mm, 0.5 * gap);
+            rho = closing.apply(&rho);
+            for r in &self.fixed_regions {
+                for (c, p) in xyz.iter().enumerate() {
+                    if r.contains_cell(*p) {
+                        rho[c] = r.occupancy;
+                    }
+                }
+            }
+            Some((closing, gate_rho.clone()))
+        } else {
+            None
+        };
         if let Some(fr) = &self.frozen_geometry {
             if fr.matches_grid(self.geometry_shape(), self.origin_mm, self.domain_mm) {
                 fr.apply_grid(&mut rho, &mut phase);
@@ -564,7 +610,7 @@ impl LatticeSpec {
                 }
             }
         }
-        Ok(GeometryFields { rho, phase_fraction: phase, gate_rho, gate_phase, opening, state })
+        Ok(GeometryFields { rho, phase_fraction: phase, gate_rho, gate_phase, opening, closing, state })
     }
 
     pub fn sample<S: Scalar>(&self, rho: &[S], phase: &[S], x: [S; 3]) -> (S, S) {
@@ -623,6 +669,9 @@ impl LatticeSpec {
         if let Some(w) = self.minimum_wall_mm {
             out.push(format!("minimum_wall_mm={}", PyObj::Float(w).repr()));
         }
+        if let Some(w) = self.minimum_gap_mm {
+            out.push(format!("minimum_gap_mm={}", PyObj::Float(w).repr()));
+        }
         if let Some(e) = &self.residual_enrichment {
             out.push(format!("residual_enrichment={}", e.to_wire()));
         }
@@ -679,6 +728,7 @@ impl LatticeSpec {
         .into_iter()
         .chain(self.minimum_wall_mm.map(|w| ("minimum_wall_mm".into(), json!(w))),
         )
+        .chain(self.minimum_gap_mm.map(|w| ("minimum_gap_mm".into(), json!(w))))
         .chain(
             self.residual_enrichment
                 .as_ref()
@@ -713,6 +763,9 @@ impl LatticeSpec {
         }
         if let Some(w) = self.minimum_wall_mm {
             out.push(("minimum_wall_mm".into(), Attr::Float(w)));
+        }
+        if let Some(w) = self.minimum_gap_mm {
+            out.push(("minimum_gap_mm".into(), Attr::Float(w)));
         }
         out.push((
             "fixed_regions".into(),
@@ -1102,6 +1155,146 @@ impl ControlledLattice {
             adj_phase,
         )?;
         gf.vjp(&gr, &gp)
+    }
+
+    pub fn analysis_fine_descent(
+        &self,
+        node: &Node,
+        adj_rho: &[f64],
+        adj_phase: &[f64],
+        metric: &DescentMetric,
+    ) -> GResult<Vec<f64>> {
+        let gf = self.geometry_fields(node)?;
+        if self.spec.analysis_grid == self.spec.geometry_shape() {
+            return gf.descent(adj_rho, adj_phase, metric);
+        }
+        let pts = self.spec.cell_points(self.spec.analysis_grid);
+        if adj_rho.len() != pts.len() || adj_phase.len() != pts.len() {
+            return Err(GeometryError::Value("field adjoint does not match the analysis grid".into()));
+        }
+        let (gr, gp) = sample_transpose(&self.spec, &gf.rho, &gf.phase_fraction, &pts, adj_rho, adj_phase)?;
+        gf.descent(&gr, &gp, metric)
+    }
+
+    pub fn analysis_fine_descent_batch(
+        &self,
+        node: &Node,
+        adjoints: &[(Vec<f64>, Vec<f64>)],
+        metric: &DescentMetric,
+        phase_output: bool,
+    ) -> GResult<Vec<Vec<f64>>> {
+        let gf = self.geometry_fields(node)?;
+        let same = self.spec.analysis_grid == self.spec.geometry_shape();
+        let pts = if same { Vec::new() } else { self.spec.cell_points(self.spec.analysis_grid) };
+        let mut geometry_adjoints = Vec::with_capacity(adjoints.len());
+        for (ar, ap) in adjoints {
+            if same {
+                if ar.len() != gf.rho.len() || ap.len() != gf.rho.len() {
+                    return Err(GeometryError::Value("field adjoint does not match the analysis grid".into()));
+                }
+                geometry_adjoints.push((ar.clone(), ap.clone()));
+            } else {
+                if ar.len() != pts.len() || ap.len() != pts.len() {
+                    return Err(GeometryError::Value("field adjoint does not match the analysis grid".into()));
+                }
+                geometry_adjoints.push(sample_transpose(&self.spec, &gf.rho, &gf.phase_fraction, &pts, ar, ap)?);
+            }
+        }
+        let mut fields = geometry_adjoints
+            .iter()
+            .map(|(gr, gp)| gf.descent(gr, gp, metric))
+            .collect::<GResult<Vec<_>>>()?;
+        let block = metric.pullback_components();
+        if block.is_empty() {
+            return Ok(fields);
+        }
+        let (nodes, node_weights) = gf.state().control_nodes();
+        let entries: Vec<usize> = block.iter().flat_map(|c| (0..nodes).map(move |n| c * nodes + n)).collect();
+        let mut position = vec![usize::MAX; COMPONENTS * nodes];
+        for (p, e) in entries.iter().enumerate() {
+            position[*e] = p;
+        }
+        let (rho, phase): (Vec<f64>, Vec<f64>) = if same {
+            (gf.rho.clone(), gf.phase_fraction.clone())
+        } else {
+            pts.iter().map(|p| self.spec.sample_const::<f64>(&gf.rho, &gf.phase_fraction, *p)).unzip()
+        };
+        let cells = rho.len();
+        let geometry_cells = gf.rho.len();
+        let outputs = if phase_output { 2 } else { 1 };
+        let transport = metric.material == MaterialMetric::Transport;
+        let mut rows: Vec<(f64, SparseRow)> = Vec::new();
+        let mut occupancy_rows: Vec<(usize, SparseRow)> = Vec::new();
+        let mut unit_rho = vec![0.0; geometry_cells];
+        let mut unit_phase = vec![0.0; geometry_cells];
+        for k in 0..cells {
+            for output in 0..outputs {
+                let (seed_rho, seed_phase) = if output == 0 { (1.0, 0.0) } else { (0.0, 1.0) };
+                let dense = if same {
+                    unit_rho[k] = seed_rho;
+                    unit_phase[k] = seed_phase;
+                    let d = gf.vjp(&unit_rho, &unit_phase);
+                    unit_rho[k] = 0.0;
+                    unit_phase[k] = 0.0;
+                    d?
+                } else {
+                    let (gr, gp) = sample_transpose(
+                        &self.spec,
+                        &gf.rho,
+                        &gf.phase_fraction,
+                        &pts[k..=k],
+                        &[seed_rho],
+                        &[seed_phase],
+                    )?;
+                    gf.vjp(&gr, &gp)?
+                };
+                let row: SparseRow = dense
+                    .iter()
+                    .enumerate()
+                    .filter(|(e, v)| **v != 0.0 && position[*e] != usize::MAX)
+                    .map(|(e, v)| (position[e], *v))
+                    .collect();
+                if !row.is_empty() {
+                    if transport && output == 0 {
+                        occupancy_rows.push((k, row));
+                    } else {
+                        let fraction = if output == 0 { rho[k] } else { phase[k] };
+                        rows.push((descent::material_weight(metric.material, fraction), row));
+                    }
+                }
+            }
+        }
+        let transport = if transport {
+            let grid = self.spec.analysis_grid;
+            #[allow(clippy::cast_precision_loss)]
+            let spacing: [f64; 3] = std::array::from_fn(|a| self.spec.domain_mm[a] / grid[a] as f64);
+            Some(TransportOperator::new(occupancy_rows, grid, spacing, &rho, metric.transport_length_mm)?)
+        } else {
+            None
+        };
+        let pullback = PullbackMetric::new(
+            &entries,
+            &block,
+            nodes,
+            rows,
+            transport,
+            metric.damping,
+            metric.regularization,
+            &node_weights,
+            metric.prior.as_ref(),
+        )?;
+        for ((gr, gp), field) in geometry_adjoints.iter().zip(fields.iter_mut()) {
+            let g = gf.vjp(gr, gp)?;
+            let gb: Vec<f64> = entries.iter().map(|e| g[*e]).collect();
+            let r = pullback.riesz(&gb)?;
+            for (p, e) in entries.iter().enumerate() {
+                field[*e] = r[p];
+            }
+        }
+        if !fields.iter().flatten().all(|v| v.is_finite()) {
+            return Err(GeometryError::Value("nonfinite lattice descent field".into()));
+        }
+        Ok(fields)
     }
 }
 

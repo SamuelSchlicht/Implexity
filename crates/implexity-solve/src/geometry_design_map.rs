@@ -36,6 +36,7 @@ use implexity_core::wire::fingerprint_value;
 use implexity_geometry::field_registration::GridRegistration;
 use implexity_geometry::lattice::assembly::ControlledAssembly;
 use implexity_geometry::lattice::controls::{CONTROL_SCHEMA, control_contract, validate_control};
+use implexity_geometry::lattice::descent::DescentMetric;
 use implexity_geometry::lattice::enrichment::{
     COORDINATE as DETAIL_COORDINATE, PARAMETER as DETAIL_PARAMETER,
 };
@@ -158,7 +159,7 @@ pub fn normalise(raw: &Value) -> CaeResult<Map<String, Value>> {
     let raw = raw.as_object().ok_or_else(|| err("geometry design map must be a mapping"))?;
     let schema = raw.get("schema").and_then(Value::as_str);
     let assembly_schema = schema == Some(ASSEMBLY_MAP_SCHEMA);
-    let mut allowed = vec!["schema", "geometry", "outputs", "constants"];
+    let mut allowed = vec!["schema", "geometry", "outputs", "constants", "descent_metric"];
     if assembly_schema {
         allowed.extend(["kind", "phase_role"]);
     }
@@ -224,11 +225,21 @@ pub fn normalise(raw: &Value) -> CaeResult<Map<String, Value>> {
         };
         checked.insert(key.clone(), to_nested_list(&shape, &data));
     }
+    let descent = match raw.get("descent_metric") {
+        None | Some(Value::Null) => None,
+        Some(v) => Some(DescentMetric::from_value(v).map_err(|e| geo(&e))?),
+    };
+    if descent.is_some() && kind != Kind::Lattice {
+        return Err(err("a descent metric requires a lattice.controlled geometry map"));
+    }
     let mut result = Map::new();
     result.insert("schema".into(), json!(schema));
     result.insert("geometry".into(), Value::Object(attrs_json(node.op().doc_attrs())));
     result.insert("outputs".into(), Value::Object(outputs));
     result.insert("constants".into(), Value::Object(checked));
+    if let Some(metric) = &descent {
+        result.insert("descent_metric".into(), metric.to_value());
+    }
     if assembly_schema {
         result.insert("kind".into(), json!(kind.name()));
         result.insert("phase_role".into(), role.cloned().unwrap_or_else(|| json!({"mode": "coupled"})));
@@ -544,6 +555,65 @@ impl GeometryDesignMap {
         Ok(out)
     }
 
+    pub fn descent_metric(&self) -> CaeResult<Option<DescentMetric>> {
+        match self.spec.get("descent_metric") {
+            None | Some(Value::Null) => Ok(None),
+            Some(v) => Ok(Some(DescentMetric::from_value(v).map_err(|e| geo(&e))?)),
+        }
+    }
+
+    pub fn pullback_descent(&self, design: &NamedArrays, gradients: &NamedArrays) -> CaeResult<Option<NamedArrays>> {
+        let one = BTreeMap::from([(String::new(), gradients.clone())]);
+        Ok(self.pullback_descent_batch(design, &one)?.and_then(|mut fields| fields.remove("")))
+    }
+
+    pub fn pullback_descent_batch(
+        &self,
+        design: &NamedArrays,
+        gradients: &BTreeMap<String, NamedArrays>,
+    ) -> CaeResult<Option<BTreeMap<String, NamedArrays>>> {
+        let Some(metric) = self.descent_metric()? else { return Ok(None) };
+        let Some(lattice) = self.lattice().filter(|l| l.spec.residual_enrichment.is_none()) else {
+            return Ok(None);
+        };
+        let control =
+            self.require_control(design, "a mapped descent field requires the authoritative control tensor")?;
+        let cells = self.analysis_shape().iter().product::<usize>();
+        let outputs = self.outputs();
+        let phase_output = outputs.iter().any(|(_, field)| field.as_str() == "phase_fraction");
+        let mut names = Vec::with_capacity(gradients.len());
+        let mut adjoints = Vec::with_capacity(gradients.len());
+        for (name, physical) in gradients {
+            let (mut adj_rho, mut adj_phase) = (vec![0.0; cells], vec![0.0; cells]);
+            for (key, field) in &outputs {
+                let target = match field.as_str() {
+                    "rho" => &mut adj_rho,
+                    "phase_fraction" => &mut adj_phase,
+                    _ => continue,
+                };
+                let g = physical.get(key).ok_or_else(|| err("physical derivatives must be explicitly named"))?;
+                if g.len() != cells || !g.iter().all(|v| v.is_finite()) {
+                    return Err(err(format!("invalid physical derivative shape/finiteness for {key}")));
+                }
+                for (t, v) in target.iter_mut().zip(g.iter()) {
+                    *t += v;
+                }
+            }
+            names.push(name.clone());
+            adjoints.push((adj_rho, adj_phase));
+        }
+        let node = self.bound(control, design)?;
+        let fields = lattice
+            .analysis_fine_descent_batch(&node, &adjoints, &metric, phase_output)
+            .map_err(|e| geo(&e))?;
+        let mut out = BTreeMap::new();
+        for (name, field) in names.into_iter().zip(fields) {
+            let array = ArrayD::from_shape_vec(IxDyn(control.shape()), field).map_err(|e| err(e.to_string()))?;
+            out.insert(name, NamedArrays::single(CONTROL_COORDINATE, array));
+        }
+        Ok(Some(out))
+    }
+
     fn reframe_registration(
         raw: &Map<String, Value>,
         view: &View,
@@ -796,6 +866,9 @@ impl GeometryDesignMap {
         }
         if self.spec["schema"] == ASSEMBLY_MAP_SCHEMA {
             result.insert("phase_role".into(), self.spec["phase_role"].clone());
+        }
+        if let Some(metric) = self.spec.get("descent_metric") {
+            result.insert("descent_metric".into(), metric.clone());
         }
         Ok(result)
     }
